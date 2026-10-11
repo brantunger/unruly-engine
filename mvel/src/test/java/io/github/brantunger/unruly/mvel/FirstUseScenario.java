@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,12 +16,16 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 /**
- * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds three engines
- * that find MVEL with {@link java.util.ServiceLoader}, as an application does, naming it the default language so the
- * build prepares it, and prints {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP} line:
+ * Run by {@link FirstUseClassInitializationTest} in a JVM that logs every class it initializes. It builds six
+ * engines: five that find MVEL with {@link java.util.ServiceLoader}, as an application does, four of them naming it
+ * the default language so the build prepares it, and one in a language of the test's own; and prints
+ * {@link #BUILT}. It then takes MVEL's first steps, each begun with a {@link #STEP} line:
  * a load of a condition that compares with {@code null}, a load of an action that calls a method MVEL can't find on
- * the output's type, a load and a run of an action that assigns, a load, a run, a load and a run of a rule that reads
- * a fact's property, loads and runs of an inline list, of
+ * the output's type, a load and a run of an action that assigns, a load of a condition with a {@code BigDecimal}
+ * literal, a load of one that reads a value's class, a load and a run of a rule that calls {@code getClass()} and
+ * {@code Class.forName}, a load and a run, in a language of the test's own, whose action writes to an output that
+ * overrides a generic setter, a load, a run, a load and a run of a rule that reads a fact's property, loads and runs of
+ * an inline list, of
  * {@code new} and of {@code soundslike}, a load that fails nested in a run's action, a {@code validate()} that fails, a
  * load that fails, not nested, a load and a run that each ask for the class loader many times, a load in which MVEL
  * goes round in a loop, a load and a run of a rule it goes round in a loop running, a load of a chain MVEL looks up as
@@ -47,6 +52,31 @@ final class FirstUseScenario {
     static final String ASSIGNMENT_LOAD = "a load of an action that assigns";
     /** The step whose run is the first to run an assignment (#1103). */
     static final String ASSIGNMENT_RUN = "a first run of an action that assigns";
+    /**
+     * The step whose load is the first to compile a {@code BigDecimal} literal, which MVEL's analysis makes a
+     * {@code BigDecimal} of (#1115).
+     */
+    static final String BIG_DECIMAL_LOAD = "a load of a condition with a BigDecimal literal";
+    /**
+     * The step whose load is the first to read the generic return type of a method, {@code getClass()}'s, which MVEL's
+     * analysis reads for the method a rule calls (#1115).
+     */
+    static final String GENERIC_RETURN_LOAD = "a load of a condition that reads a value's class";
+    /** The step that loads the rule that calls {@code getClass()} and {@code Class.forName}. */
+    static final String ANNOTATED_CALLS_LOAD = "a load of a rule that calls getClass() and Class.forName";
+    /**
+     * The step whose run is the first to call a method of the JDK's with a runtime annotation reflectively, as MVEL
+     * calls a method: {@code getClass()}, which is native and an intrinsic, and {@code Class.forName}, which is
+     * caller-sensitive (#1115).
+     */
+    static final String ANNOTATED_CALLS_RUN = "a first run of a rule that calls getClass() and Class.forName";
+    /**
+     * The step whose run is the first to write, through the default output writer, to an output that overrides a
+     * generic setter, so the writer reads the generic setter's parameter type and its type variable's declaration
+     * (#1115). In a language of the test's own, as MVEL's actions change the output themselves.
+     */
+    static final String GENERIC_SETTER_WRITE = "a load and a run that write to an output that overrides a generic "
+            + "setter";
     /** The step whose run is the first to read a property through its getter. */
     static final String PROPERTY_RUN = "a first run of the rule that reads a property";
     /** The step that loads and runs the first inline list. */
@@ -151,6 +181,32 @@ final class FirstUseScenario {
         }
     }
 
+    /**
+     * Declares a setter with a type variable, which {@link IterableBox} overrides.
+     *
+     * @param <T> The type of its content
+     */
+    public static class Box<T> {
+        Object content;
+
+        /**
+         * Sets the content.
+         *
+         * @param content The content
+         */
+        public void setContent(T content) {
+            this.content = content;
+        }
+    }
+
+    /** An output that overrides a generic setter for an {@link Iterable}, which the compiler adds a bridge for. */
+    public static final class IterableBox extends Box<Iterable<?>> {
+        @Override
+        public void setContent(Iterable<?> content) {
+            this.content = content;
+        }
+    }
+
     /** A fact with a property, which a rule reads through its getter. */
     public static final class Applicant {
         /**
@@ -189,7 +245,13 @@ final class FirstUseScenario {
         // The engine whose rules import java.util, so one can call ArrayList like a method.
         RulesEngine<Map<String, Object>> imported = RulesEngineBuilder.firstMatch(maps)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME).imports("java.util").build();
+        // The engine whose action writes to an output that overrides a generic setter.
+        Supplier<IterableBox> boxes = IterableBox::new;
+        RulesEngine<IterableBox> writes = RulesEngineBuilder.firstMatch(boxes)
+                .language(new ToyExpressionLanguage(ToyExpressionLanguage.LANGUAGE_NAME, true))
+                .defaultLanguage(ToyExpressionLanguage.LANGUAGE_NAME).build();
         NestedLoad nestedLoad = new NestedLoad(nested);
+        List<Integer> items = List.of(1);
         mark(BUILT);
 
         List<String> unexpected = new ArrayList<>();
@@ -204,6 +266,24 @@ final class FirstUseScenario {
         mark(STEP + ASSIGNMENT_RUN);
         if (!engine.run(new FactMap<>()).isEmpty()) {
             unexpected.add(ASSIGNMENT_RUN);
+        }
+        // Before any other step, so none of them reads a generic type, calls a method of the JDK's with a runtime
+        // annotation or makes a BigDecimal first (#1115).
+        mark(STEP + BIG_DECIMAL_LOAD);
+        engine.load(List.of(rule("decimal", "x > 1.5B", "output.put('k', 1);")));
+        mark(STEP + GENERIC_RETURN_LOAD);
+        engine.load(List.of(rule("class", "s.getClass().getName() == 'java.lang.String'", "output.put('k', 1);")));
+        mark(STEP + ANNOTATED_CALLS_LOAD);
+        engine.load(List.of(rule("calls", "s.getClass() == java.lang.Class.forName('java.lang.String')",
+                "output.put('k', 1);")));
+        mark(STEP + ANNOTATED_CALLS_RUN);
+        if (!Map.of("k", 1).equals(engine.run(new FactMap<>(new Fact<>("s", "a"))))) {
+            unexpected.add(ANNOTATED_CALLS_RUN);
+        }
+        mark(STEP + GENERIC_SETTER_WRITE);
+        writes.load(List.of(rule("writes", "true", "put content items")));
+        if (!items.equals(writes.run(new FactMap<>(new Fact<>("items", items))).content)) {
+            unexpected.add(GENERIC_SETTER_WRITE);
         }
         mark(STEP + "a load");
         engine.load(List.of(Rule.builder().ruleName("doubles").condition("x > 1 && name == 'a'")
@@ -255,6 +335,7 @@ final class FirstUseScenario {
         nested.close();
         acts.close();
         imported.close();
+        writes.close();
     }
 
     // A load that fails, nested in a run's action, and a validate() that fails, in steps of their own; and loads that

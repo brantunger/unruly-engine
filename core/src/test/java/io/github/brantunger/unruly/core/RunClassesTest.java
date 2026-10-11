@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandles;
+import java.util.AbstractList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -11,10 +12,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #911: how {@code RunClasses} initializes what a lookup can't reach, what isn't there, and what it can only name in a
- * native image. Which classes it initializes is {@code FirstRunClassInitializationTest}'s to check.
+ * native image. Which classes it initializes is {@code FirstRunClassInitializationTest}'s to check. #1115: that it
+ * reads no class's methods in a native image, and that a reflective call that throws is ignored.
  */
 @DisplayName("RunClasses initializes a class a lookup can't reach by name, skips one that isn't there, and names none"
-        + " in a native image (#911, #951)")
+        + " in a native image, nor reads any method (#911, #951, #1115)")
 class RunClassesTest {
 
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
@@ -29,6 +31,13 @@ class RunClassesTest {
     private static final AtomicBoolean REACHABLE_INITIALIZED = new AtomicBoolean();
     private static final AtomicBoolean NAMED_INITIALIZED = new AtomicBoolean();
     private static final AtomicBoolean NAMED_WHILE_BUILDING_INITIALIZED = new AtomicBoolean();
+
+    // A public method that throws.
+    public static final class Throwing {
+        public void fail() {
+            throw new IllegalStateException("thrown by the test");
+        }
+    }
 
     // Not public, so a public lookup can't reach it.
     private static final class Unreachable {
@@ -101,6 +110,35 @@ class RunClassesTest {
 
         assertFalse(UNREACHABLE_IN_IMAGE_INITIALIZED.get(),
                 "a class the lookup can't reach was named in a native image");
+    }
+
+    @Test
+    @DisplayName("in a native image, no class's methods are read (#1115)")
+    void nativeImageReadsNoMembers() {
+        // A list that fails when a class is taken from it.
+        List<Class<?>> unread = new AbstractList<>() {
+            @Override
+            public Class<?> get(int index) {
+                throw new AssertionError("a class's methods were read in a native image");
+            }
+
+            @Override
+            public int size() {
+                return 1;
+            }
+        };
+        System.setProperty(IMAGE_CODE, "runtime");
+        try {
+            RunClasses.readMembers(unread);
+        } finally {
+            System.clearProperty(IMAGE_CODE);
+        }
+    }
+
+    @Test
+    @DisplayName("a method called reflectively that throws is called, and what it throws ignored (#1115)")
+    void invokedMethodThrows() throws NoSuchMethodException {
+        assertDoesNotThrow(() -> RunClasses.invoke(Throwing.class.getMethod("fail"), new Throwing()));
     }
 
     @Test

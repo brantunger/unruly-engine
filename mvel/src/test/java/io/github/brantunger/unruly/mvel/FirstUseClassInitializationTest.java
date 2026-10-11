@@ -46,15 +46,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * MVEL's: {@code CollectionParser}, {@code NewObjectNode} and {@code Soundex}. #1097: a first load that fails for an
  * import with too many parts initializes MVEL's {@code ImportNode}, and one for a package import too far into the
  * text for MVEL to read, the JDK's {@code Formatter}, its {@code FormatSpecifier} and {@code Locale.Category}, which
- * MVEL's own message uses. #1099: the load of a rule MVEL goes round in a loop running, the JDK's classes that read a
- * generic type, which MVEL's analysis reads for {@code java.lang.String.class}, and which differ between JDK releases,
- * so the test says rather than checks which. Its first read of a property through
- * its getter initializes none, as {@code prepare()} initializes {@code GetterAccessor}, whose empty array every call of
- * a method without arguments reads. With the engine logging, as an application's SLF4J provider may, the first message
- * it logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple. The test checks that
- * each step initializes exactly those, so it fails if one stops reaching its class, and if a step initializes any
- * other. It is checked with MVEL's JIT on, as it is by default, and off, as in a native image, which sets MVEL's
- * optimizer up with other classes, and with the engine logging.
+ * MVEL's own message uses. Its first read of a property through its getter initializes none, as {@code prepare()}
+ * initializes {@code GetterAccessor}, whose empty array every call of a method without arguments reads. #1115: nor does
+ * its first {@code BigDecimal} literal, as {@code prepare()} initializes {@code BigDecimal} and {@code BigInteger}, nor
+ * its first read of a method's generic return type, its first reflective call of a method of the JDK's with a runtime
+ * annotation, or a first write to an output that overrides a generic setter, which reads the setter's generic parameter
+ * type, as building the first engine reads the generic types and annotations of the JDK's methods: each could overflow
+ * deep in a stack in a static initializer of the JDK's, and leave the class unusable for the life of the JVM. The steps
+ * that take them come before any other step that could. With the engine logging, as an application's SLF4J provider
+ * may, the first message it logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple.
+ * The test checks that each step initializes exactly those, so it fails if one stops reaching its class, and if a step
+ * initializes any other. It is checked with MVEL's JIT on, as it is by default, and off, as in a native image, which
+ * sets MVEL's optimizer up with other classes, and with the engine logging.
  * </p>
  *
  * <p>
@@ -88,7 +91,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
-        + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066, #1103)")
+        + "features and the JIT it leaves to their first use (#945, #1012, #1042, #1066, #1103, #1115)")
 class FirstUseClassInitializationTest {
 
     private static final String INITIALIZING = "Initializing '";
@@ -116,13 +119,6 @@ class FirstUseClassInitializationTest {
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Locale$Category",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter$FormatSpecifier");
-    // What the load of a rule MVEL goes round in a loop running may initialize, which prepare() leaves to it (#1099):
-    // the JDK's classes that read a generic type. MVEL's analysis reads the generic return type of a method for
-    // java.lang.String.class, a Class<?> (PropertyVerifier.getReturnType, Method.getGenericReturnType), as it does
-    // for any rule that reads a class's class, a first use on a normal load that predates #1099. Which of them it
-    // initializes differs between JDK releases, 5 on 21, 6 on 25 and 9 on 26, so they are left out by their package,
-    // in that step alone, and the run that goes round in a loop, in the step after it, may initialize none.
-    private static final String GENERICS_READ = FirstUseScenario.RUN_LOOP_LOAD + ": sun/reflect/generics/";
     // What the first message logged initializes, with slf4j-simple, which building an engine leaves to it.
     private static final List<String> BY_LOGGING = List.of(
             FirstUseScenario.FAILING_NESTED_LOAD + ": org/slf4j/event/Level",
@@ -378,10 +374,7 @@ class FirstUseClassInitializationTest {
             } else if (at >= 0 && !line.contains(NO_INITIALIZER) && !line.contains(SCENARIO)
                     && !LAMBDA_FORM.matcher(line).find()) {
                 int name = at + INITIALIZING.length();
-                String entry = step + ": " + line.substring(name, line.indexOf('\'', name));
-                if (!entry.startsWith(GENERICS_READ)) {
-                    initialized.add(entry);
-                }
+                initialized.add(step + ": " + line.substring(name, line.indexOf('\'', name)));
             }
         }
         return initialized;

@@ -225,7 +225,7 @@ it.
 
 ### Preparing the language's classes
 
-See [Nested runs](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack).
+See [Deep stacks](../deep-stacks.md#-what-a-language-prepares).
 
 ```java
 // Initializes the classes with a static initializer that your first compile or run would use, perhaps deep in a

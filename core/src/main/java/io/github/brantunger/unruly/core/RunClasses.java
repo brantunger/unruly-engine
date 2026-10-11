@@ -16,10 +16,14 @@ import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Method;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -32,8 +36,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@link NoClassDefFoundError}. Initializing them here, once {@link StackHeadroom#checkInitializing()} has made room
  * for it, leaves those calls nothing to initialize. So are the few of the engine's classes without one that a rule's
  * or a run's first failure would otherwise be the first to load, as a class's first load deep in a stack can overflow
- * too (#1066, #1093). In a native image, the classes it can only name are left to the
- * image, which can't look a name up that it has no metadata for. A language's own classes are its to initialize, in
+ * too (#1066, #1093). So are the JDK's classes that a first read of a generic type or of a method's annotations, or a
+ * first reflective call of a native method, initializes, in a language's load or run or a write through a generic
+ * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). In a native
+ * image, the classes it can only name are left to the image, which can't look a name up that it has no metadata for,
+ * and no method is read. A language's own classes are its to initialize, in
  * {@link ExpressionLanguage#prepare()}, which {@link #prepare(Collection)} calls with room made for it in the same way.
  *
  * <p>
@@ -60,6 +67,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * </p>
  */
 final class RunClasses {
+
+    // The name of the method readMembers calls reflectively. A constant, so this class has no static initializer.
+    private static final String HASH_CODE = "hashCode";
 
     // Set once every class has been initialized, so a later engine checks no room and initializes nothing.
     private static volatile boolean initialized;
@@ -92,6 +102,10 @@ final class RunClasses {
         RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                 rule.toBuilder().ruleName("b").priority(1).build())));
         initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
+        // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
+        // reflection, which differs between JDK releases, so that is done here on the JDK's own classes (#1115).
+        readMembers(List.of(Object.class, Class.class, Math.class, String.class, Thread.class, System.class,
+                Iterable.class));
         // A rule list's first use of a language reads whether its class is prepared before it checks any room, as it
         // must not check on every load, so what the first read of a class does is done here: creating the flag, whose
         // class's static initializer sets up the JDK's field access.
@@ -185,6 +199,68 @@ final class RunClasses {
         }
         for (String name : named) {
             initialize(name);
+        }
+    }
+
+    /**
+     * Reads the generic return and parameter types and the annotations of the public methods of {@code types}, and
+     * the class or method that declares each of those types that is a type variable, then calls
+     * {@link Object#hashCode()} reflectively. A JVM's first read of a generic type initializes the JDK's classes that
+     * parse and stand for one, its first read of a method's annotations initializes the proxy class of each
+     * annotation type it finds, on JDK 26 its first {@link TypeVariable#getGenericDeclaration()} links the JDK's
+     * pattern switch in it, and on JDK 21 its first reflective call of a native method initializes the JDK's accessor
+     * for one. A language's first load or run may do any of these: MVEL's analysis reads the generic return type of a
+     * method a rule calls, and its run calls the method reflectively, which reads the method's annotations to tell
+     * whether it's caller-sensitive. So may the default output writer's first write through a generic setter's bridge,
+     * which reads the setter's generic parameter type and its type variable's declaration. Deep in a stack, any of
+     * them could overflow in a static initializer of the JDK's, and leave that class unusable for the life of the JVM,
+     * in the application's own code too. Done here, they find those classes initialized, for the shapes of generic
+     * type and the annotation types the methods of {@code types} have: a shape or an annotation type they don't have
+     * is still left to its first use. In a native image nothing is read or called, as nothing is named: which
+     * classes' methods an image can reflect on is its application's metadata to decide.
+     *
+     * @param types The classes whose public methods are read
+     */
+    static void readMembers(List<Class<?>> types) {
+        if (inNativeImage()) {
+            return;
+        }
+        for (Class<?> type : types) {
+            for (Method method : type.getMethods()) {
+                // Read for what reading them initializes: an array, never null.
+                Objects.requireNonNull(method.getDeclaredAnnotations());
+                readDeclaration(method.getGenericReturnType());
+                for (Type parameter : method.getGenericParameterTypes()) {
+                    readDeclaration(parameter);
+                }
+            }
+        }
+        // Found among the public methods, which hold it, rather than looked up by name, which could fail.
+        for (Method method : Object.class.getMethods()) {
+            if (HASH_CODE.equals(method.getName())) {
+                invoke(method, new Object());
+            }
+        }
+    }
+
+    /**
+     * Calls a method with no arguments reflectively, on {@code target}, and ignores what it returns or throws.
+     *
+     * @param method The method
+     * @param target The object to call it on
+     */
+    static void invoke(Method method, Object target) {
+        try {
+            method.invoke(target);
+        } catch (ReflectiveOperationException ignored) {
+            // Called all the same: what it threw is no part of the call's first use.
+        }
+    }
+
+    // Reads the class or method that declares a type that is a type variable, which is never null.
+    private static void readDeclaration(Type type) {
+        if (type instanceof TypeVariable<?> variable) {
+            Objects.requireNonNull(variable.getGenericDeclaration());
         }
     }
 
