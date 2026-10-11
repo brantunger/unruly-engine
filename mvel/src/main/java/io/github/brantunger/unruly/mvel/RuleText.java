@@ -25,24 +25,30 @@ final class RuleText {
      */
     static final String MVEL_WHITESPACE = "[\\x00-\\x20]";
 
-    // The characters a span of a word addWords adds may start after, a word being a run of characters between MVEL's
-    // whitespace: MVEL lexes a name whole from different ones in different places, such as ,a in (,a) == 5, \a in
-    // max(1+\a,2), a!b in isdef a!b/**/ and a.b in a.b--, so a span may start after any of them. A span keeps a minus
-    // sign or a dot inside it, so an author's word glued to one is kept whole too, and still checked, such as my-fact
-    // in my-fact-1 and in my-fact*2, which MVEL reads as my minus fact (#1089). A span stops before any character that
-    // isn't part of an identifier, these and others such as # or a no-break space, as MVEL stops ,a there in ,a#b.
-    private static final String WORD_ENDS = "()[]{},;'\"=<>!&|?:*/+%-.";
-    // The ends no name MVEL lexes holds after its first character, but for one isdef reads: a span that holds one there
-    // is added only before ++, -- or an assignment, as below, or where it starts just after isdef, or starts the word
-    // that follows isdef and MVEL's whitespace, as isdef reads a name up to MVEL's whitespace, ( { or a comment. So
-    // (,a) == 5 adds ,a but not (,a or ,a), and a dense word adds about as many spans as it has ends, not the square of
-    // them, unless it has many minus signs, dots, ++, -- or assignments, or several isdefs (#1129).
-    private static final String INSIDE_STOPS = "()[]{},;'\"=<>!&|?:*/+%";
+    // A span of a word addWords adds, a word being a run of characters between MVEL's whitespace, starts at the word's
+    // start or just after any character that isn't part of an identifier, as ParseTools.isIdentifierPart tells: MVEL
+    // lexes a name whole from different ones in different places, such as ,a in (,a) == 5, \a in max(1+\a,2), a!b in
+    // isdef a!b/**/, a.b in a.b-- and my] in x^my]+=1, so no operator, such as ^ or #, falls through a list of them
+    // (#1119, #1143). A span keeps a minus sign or a dot inside it, so an author's word glued to one is kept whole
+    // too, and still checked, such as my-fact in my-fact-1 and in my-fact*2, which MVEL reads as my minus fact
+    // (#1089). A span stops before any character that isn't part of an identifier too, such as # or a no-break space,
+    // as MVEL stops ,a there in ,a#b.
+    // The characters below are those no name MVEL lexes holds after its first character, but for one isdef reads: a
+    // span that holds one there is added only before ++, -- or an assignment, as below, or where it starts just after
+    // isdef, or starts the word that follows isdef and MVEL's whitespace, as isdef reads a name up to MVEL's
+    // whitespace, ( { or a comment. So (,a) == 5 adds ,a but not (,a or ,a), and a dense word of them adds about as
+    // many spans as it has of them, not the square of them (#1129). A word with many other characters that aren't
+    // part of an identifier, such as minus signs, dots, backslashes or no-break spaces, which MVEL may read inside a
+    // name, or with many ++, -- or assignments, or several isdefs, can still add the square of them, within the
+    // limits below.
+    private static final String INSIDE_STOPS = "()[]{},;'\"=<>!&|?:*/+%#^\u00ab\u00bb\u00ac~";
     // The assignment operators: MVEL reads the name before one from where its token starts, whatever it holds, as my]
-    // in my]=1, and so before ++ or --, as my] in my]--. Each counts only when no = follows it, so == is none.
+    // in my]=1, and so before ++ or --, as my] in my]--; U+00AB=, U+00BB= and U+00AC= are MVEL's own short forms of
+    // <<=, >>= and >>>=. Each counts only when no = follows it, so == is none.
     private static final String[] ASSIGNMENTS = {"=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=",
-        ">>>="};
-    // A span also starts just after isdef that starts a word or follows an end, as MVEL reads #a in isdef#a.
+        ">>>=", "\u00ab=", "\u00bb=", "\u00ac="};
+    // A span also starts just after isdef that starts a word or follows a character that isn't part of an identifier,
+    // as MVEL reads #a in isdef#a and in x#isdef#a.
     private static final String ISDEF = "isdef";
 
     // The characters besides MVEL's whitespace that end a piece addPieces adds, as 2.29.0 to 2.29.4 split words
@@ -173,22 +179,24 @@ final class RuleText {
      * may read as several names but a rule's author may have written as a fact's, such as {@code my-fact} in
      * {@code my-fact == 1}, which MVEL reads as {@code my} minus {@code fact}: so a fact named so is still checked,
      * and rejected, rather than the rule reading other facts. Adds every span of the word that starts at its start,
-     * just after one of its ends, or just after {@code isdef} that starts the word or follows an end and isn't followed
-     * by part of an identifier, and stops at its end or just before a character that isn't part of an identifier, as
-     * {@link ParseTools#isIdentifierPart(int)} tells, an end being one of
-     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % - .}. A span that holds one of those but {@code -} and
-     * {@code .} after its first character, which no name MVEL lexes holds, is added only where it stops just before
-     * {@code ++}, {@code --} or an assignment operator not followed by {@code =}, past MVEL's whitespace, as MVEL
-     * reads the name before one from where its token starts, such as {@code my]} in {@code my]--}; but every span is
-     * added that starts just after {@code isdef}, or starts the word that follows it and MVEL's whitespace, as
+     * just after a character that isn't part of an identifier, as {@link ParseTools#isIdentifierPart(int)} tells, or
+     * just after {@code isdef} that starts the word or follows such a character and isn't followed by part of an
+     * identifier, and stops at its end or just before a character that isn't part of an identifier. A span that holds
+     * one of {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ ~}, U+00AB, U+00BB or U+00AC after its first
+     * character, which no name MVEL lexes holds, is added only where it stops just before {@code ++}, {@code --} or
+     * an assignment operator not followed by {@code =}, past MVEL's whitespace, as MVEL reads the name before one from
+     * where its token starts, such as {@code my]} in {@code my]--} and in {@code x^my]+=1}; but every span is added
+     * that starts just after {@code isdef}, or starts the word that follows it and MVEL's whitespace, as
      * {@code isdef} reads a name up to MVEL's whitespace, {@code (}, <code>{</code> or a comment. So each part between
      * dots, and each name MVEL lexes whole, such as {@code ,a} in {@code (,a) == 5} and in {@code ,a#b}, {@code \a} in
      * {@code max(1+\a,2)}, {@code a!b} in {@code isdef a!b} with a comment glued to it, {@code #a} in
-     * {@code isdef#a}, {@code a.b} in {@code a.b--} and {@code my]} in {@code my]--}, but not {@code (,a} or
-     * {@code ,a)} in {@code (,a) == 5}; and for {@code my-fact-1}, {@code my}, {@code fact}, {@code 1},
-     * {@code my-fact}, {@code fact-1} and {@code my-fact-1}. So a word adds about as many spans as it has ends; but in
-     * a word with many minus signs, dots, {@code ++}, {@code --} or assignments, or with several {@code isdef}s, the
-     * spans can grow as the square of the characters that aren't part of an identifier (#1129).
+     * {@code isdef#a} and in {@code x#isdef#a}, {@code a.b} in {@code a.b--} and {@code my]} in {@code my]--}, but not
+     * {@code (,a} or {@code ,a)} in {@code (,a) == 5}; and for {@code my-fact-1}, {@code my}, {@code fact},
+     * {@code 1}, {@code my-fact}, {@code fact-1} and {@code my-fact-1}. So a word dense with those characters adds
+     * about as many spans as it has of them; but in a word with many other characters that aren't part of an
+     * identifier, such as minus signs, dots, backslashes or no-break spaces, or with many {@code ++}, {@code --} or
+     * assignments, or with several {@code isdef}s, the spans can grow as the square of the characters that aren't
+     * part of an identifier (#1129).
      * Adds a backslash alone for each in the word, as MVEL reads {@code \\a} as the name {@code \} and then
      * {@code \a} of it, and a high surrogate alone for each, as MVEL reads a letter beyond U+FFFF as its high surrogate
      * and then its low one of it, even for a word with too many characters that aren't part of an identifier, which
@@ -223,8 +231,8 @@ final class RuleText {
         }
         for (int from = start; from < end; from++) {
             boolean afterIsdef = followsIsdef(text, start, from);
-            if (from == start || WORD_ENDS.indexOf(text.charAt(from - 1)) >= 0 || afterIsdef) {
-                // isdef reads a name up to MVEL's whitespace, ( { or a comment, so a span it may read keeps every end.
+            if (from == start || !ParseTools.isIdentifierPart(text.charAt(from - 1)) || afterIsdef) {
+                // isdef reads a name up to MVEL's whitespace, ( { or a comment, so a span it may read keeps every stop.
                 boolean whole = afterIsdef || from == start && wordFollowsIsdef(text, start);
                 boolean stopInside = false;
                 for (int to = from + 1; to <= end; to++) {
@@ -296,8 +304,9 @@ final class RuleText {
 
     /**
      * Tells whether a word follows the keyword {@code isdef} and MVEL's whitespace, the keyword starting the text or
-     * following MVEL's whitespace or an end: MVEL reads the name after it whole, up to MVEL's whitespace, {@code (},
-     * <code>{</code> or a comment, such as {@code a!b} in {@code isdef a!b} with a comment glued to it.
+     * following MVEL's whitespace or a character that isn't part of an identifier: MVEL reads the name after it whole,
+     * up to MVEL's whitespace, {@code (}, <code>{</code> or a comment, such as {@code a!b} in {@code isdef a!b} with a
+     * comment glued to it and in {@code x^isdef a!b}.
      *
      * @param text  The expression's text
      * @param start Where the word starts
@@ -313,13 +322,15 @@ final class RuleText {
         }
         keyword -= ISDEF.length();
         return keyword >= 0 && text.startsWith(ISDEF, keyword) && (keyword == 0
-                || isMvelWhitespace(text.charAt(keyword - 1)) || WORD_ENDS.indexOf(text.charAt(keyword - 1)) >= 0);
+                || isMvelWhitespace(text.charAt(keyword - 1))
+                || !ParseTools.isIdentifierPart(text.charAt(keyword - 1)));
     }
 
     /**
-     * Tells whether a character of a word follows the keyword {@code isdef} that starts the word or follows an end, and
-     * isn't part of an identifier itself, so {@code isdef} is a keyword there: MVEL reads the name glued to it whole,
-     * such as {@code #a} in {@code isdef#a} and {@code \a} in {@code (isdef\a)}.
+     * Tells whether a character of a word follows the keyword {@code isdef} that starts the word or follows a character
+     * that isn't part of an identifier, and isn't part of an identifier itself, so {@code isdef} is a keyword there:
+     * MVEL reads the name glued to it whole, such as {@code #a} in {@code isdef#a} and in {@code x#isdef#a}, and
+     * {@code \a} in {@code (isdef\a)}.
      *
      * @param text  The expression's text
      * @param start Where the word starts
@@ -329,7 +340,7 @@ final class RuleText {
     private static boolean followsIsdef(String text, int start, int at) {
         int keyword = at - ISDEF.length();
         return keyword >= start && text.startsWith(ISDEF, keyword)
-                && (keyword == start || WORD_ENDS.indexOf(text.charAt(keyword - 1)) >= 0)
+                && (keyword == start || !ParseTools.isIdentifierPart(text.charAt(keyword - 1)))
                 && !ParseTools.isIdentifierPart(text.charAt(at));
     }
 

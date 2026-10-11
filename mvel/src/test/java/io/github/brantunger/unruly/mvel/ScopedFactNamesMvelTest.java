@@ -426,6 +426,65 @@ class ScopedFactNamesMvelTest {
         }
     }
 
+    static Stream<Arguments> readAfterAGluedOperator() {
+        String put = "output.put('r', 1)";
+        return Stream.of(
+                Arguments.of("x == 1", "output.put('r', x^my]+=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x#my]+=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x^my]++)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x^my]\u00ab=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x^my]\u00bb=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x^my]\u00ac=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', my]\u00ab=1)", "my]"),
+                Arguments.of("x == 1", "output.put('r', x#isdef#a)", "#a"),
+                Arguments.of("x^isdef a!b/**/", put, "a!b"));
+    }
+
+    static Stream<Arguments> readNoneAfterAGluedOperator() {
+        return Stream.of(
+                Arguments.of("a == 1", "output.put('r', a^b.c)", "b.c"),
+                Arguments.of("a == 1", "output.put('r', a#b.c)", "b.c"),
+                Arguments.of("a == 1", "output.put('r', a\u00abb.c)", "b.c"),
+                Arguments.of("a == 1", "output.put('r', a\u00acb.c)", "b.c"),
+                Arguments.of("a == 1", "output.put('r', a^`b)", "`b"),
+                Arguments.of("a == 1", "output.put('r', a\u00a0+\u00a0b.c)", "b.c"));
+    }
+
+    /**
+     * A name MVEL reads just after an operator glued to it that isn't one of a fixed list of ends, such as {@code my]}
+     * in {@code x^my]+=1}, which MVEL reads and writes, or {@code #a} in {@code x#isdef#a}: it's checked, and the run
+     * rejected, as it is when a space stands between them (#1143).
+     */
+    @ParameterizedTest(name = "{0} | {1}, fact {2}")
+    @MethodSource("readAfterAGluedOperator")
+    void nameAfterAGluedOperatorChecked(String condition, String action, String fact) {
+        assertRejected(condition, action, fact);
+    }
+
+    /**
+     * A name no rule can read just after an operator glued to it, such as {@code b.c} in {@code a^b.c}: it's checked
+     * as it is in {@code a ^ b.c}, so whether the fact is rejected doesn't hang on how the author spaced the operator
+     * (#1119).
+     */
+    @ParameterizedTest(name = "{0} | {1}, fact {2}")
+    @MethodSource("readNoneAfterAGluedOperator")
+    void nameNoneReadsAfterAGluedOperatorChecked(String condition, String action, String fact) {
+        assertRejected(condition, action, fact);
+    }
+
+    /** Runs the rule with the facts it reads beside the one named, which a rule that isn't checked runs against. */
+    private static void assertRejected(String condition, String action, String fact) {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition(condition).action(action).build()));
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>("my", 100), new Fact<>("a", 1),
+                            new Fact<>("b", new HashMap<>(Map.of("c", 2))), new Fact<>(fact, 5))));
+            assertEquals("'" + fact + "' is not a valid fact name: rules can only refer to a fact named with a Java"
+                    + " identifier", ex.getMessage());
+        }
+    }
+
     /**
      * A span with an end inside it, such as {@code &!false} in {@code true&&!false}, is a name MVEL never reads, so it
      * isn't among the names the rules read, and a fact by it isn't checked: no rule reads it (#1129).
