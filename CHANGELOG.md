@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.14](https://github.com/brantunger/unruly-engine/compare/v2.29.13...v2.29.14) (2026-10-11)
+
+
+### Bug Fixes
+
+* report a stack overflow the JDK wraps in an InternalError as the rule's failure rather than a fatal error, a class an overflow left unusable by its own error rather than as an overflow, and an overflow in a language's other calls as the stack overflowing rather than a bare StackOverflowError ([#1164](https://github.com/brantunger/unruly-engine/issues/1164)) ([a43e4a9](https://github.com/brantunger/unruly-engine/commit/a43e4a930822ebe449c1ab5b3ad4eaf0d9d2af43))
+
 ## [2.29.13](https://github.com/brantunger/unruly-engine/compare/v2.29.12...v2.29.13) (2026-10-11)
 
 
