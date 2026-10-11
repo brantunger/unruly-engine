@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.29.16](https://github.com/brantunger/unruly-engine/compare/v2.29.15...v2.29.16) (2026-10-11)
+
+
+### Bug Fixes
+
+* start a span of MVEL's fact-name scan after any character that isn't part of an identifier, so a fact named my] that x^my]+=1 or my]«=1 reads is checked as it is when the operator is spaced ([#1171](https://github.com/brantunger/unruly-engine/issues/1171)) ([3a0a611](https://github.com/brantunger/unruly-engine/commit/3a0a611d18f4d5e9ae13d8c0ce34e4c18d879234))
+
 ## [2.29.15](https://github.com/brantunger/unruly-engine/compare/v2.29.14...v2.29.15) (2026-10-11)
 
 
