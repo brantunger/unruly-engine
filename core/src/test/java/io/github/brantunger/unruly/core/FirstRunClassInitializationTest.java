@@ -65,6 +65,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * for those are failing steps too, and in a failing step a class the JDK makes for a lambda or a method reference of
  * anyone's, the JDK's own included, counts as well: a first use deep in a stack links it there, whoever's it is.
  * </p>
+ *
+ * <p>
+ * #1115: a first read of a generic type or of a method's annotations, by a language or by the default output writer,
+ * initializes the JDK's classes that do them, so the first build reads those of the JDK's methods, which the test
+ * checks by the JDK's classes it initializes; and in a native image, where it reads nothing, by one of them it leaves
+ * alone.
+ * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
         + "(#911, #945)")
@@ -119,7 +126,14 @@ class FirstRunClassInitializationTest {
                     CopyPermits.class.getName() + "$Returned"))
             .toList();
 
-    // The JDK's that RunClasses names. Those the JDK running the test doesn't have are left out.
+    // One of the JDK's classes that only reading the JDK's methods initializes, which a native image doesn't (#1115).
+    private static final String VOID_DESCRIPTOR = "sun.reflect.generics.tree.VoidDescriptor";
+
+    // The JDK's that RunClasses names, then those it reaches as it reads the generic types and annotations of the JDK's
+    // methods (#1115): those that parse and stand for a generic type and read annotations, measured initialized by the
+    // first build on JDK 21, 25 and 26. Not those it reaches on some of them only, such as SwitchBootstraps on JDK 26
+    // and the accessor of native methods on JDK 21, nor the proxy classes of annotation types, whose names depend on
+    // the order they were made in. Those the JDK running the test doesn't have are left out.
     private static final List<String> JDK_CLASSES = List.of("java.util.stream.MatchOps$MatchKind",
             "java.util.stream.Collectors", "java.util.stream.Collector$Characteristics",
             "java.lang.ClassValue$ClassValueMap", "java.lang.invoke.MethodHandleImpl$BindCaller",
@@ -129,7 +143,14 @@ class FirstRunClassInitializationTest {
             "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
             "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
             "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError",
-            "java.lang.invoke.WrongMethodTypeException");
+            "java.lang.invoke.WrongMethodTypeException", VOID_DESCRIPTOR,
+            "sun.reflect.generics.tree.BottomSignature", "sun.reflect.generics.tree.BooleanSignature",
+            "sun.reflect.generics.tree.Wildcard", "sun.reflect.generics.reflectiveObjects.TypeVariableImpl",
+            "sun.reflect.generics.reflectiveObjects.WildcardTypeImpl",
+            "sun.reflect.generics.repository.ClassRepository", "sun.reflect.generics.repository.GenericDeclRepository",
+            "sun.reflect.generics.parser.SignatureParser", "sun.reflect.generics.factory.CoreReflectionFactory",
+            "sun.reflect.generics.visitor.Reifier", "sun.reflect.annotation.AnnotationParser",
+            "sun.reflect.annotation.AnnotationType");
 
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "
@@ -202,12 +223,15 @@ class FirstRunClassInitializationTest {
     }
 
     @Test
-    @DisplayName("in a native image, which names no class, building the first engine initializes the engine's")
+    @DisplayName("in a native image, which names no class, building the first engine initializes the engine's, and "
+            + "reads no method of the JDK's (#1115)")
     void initializedWhenBuiltInImage(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> lines = scenario(dir, "-Dorg.graalvm.nativeimage.imagecode=runtime");
 
         assertEquals(List.of(), notInitializedBy(lines.subList(0, lines.indexOf(FirstRunScenario.BUILT)),
                 ENGINE_CLASSES), "not initialized when the first engine was built");
+        assertTrue(lines.subList(0, lines.indexOf(FirstRunScenario.BUILT)).stream()
+                .noneMatch(line -> line.contains(logged(VOID_DESCRIPTOR))), "the JDK's methods read in an image");
     }
 
     // Runs the scenario in a new JVM with the options given, and returns what it printed once it has printed every

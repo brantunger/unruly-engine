@@ -16,6 +16,8 @@ import org.mvel2.util.ErrorUtil;
 import org.mvel2.util.ParseTools;
 
 import java.lang.invoke.MethodHandles;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -109,7 +111,13 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     /**
      * Initializes the classes with a static initializer that loading MVEL rules, running them and a load that fails
      * would otherwise be the first to use: this language's own, MVEL's, and those of the JDK that only they use, such
-     * as the JDK's logging, which MVEL logs with. A load or a run may be nested deep in another run's stack, where a
+     * as the JDK's logging, which MVEL logs with, and {@link java.math.BigInteger} and {@link java.math.BigDecimal},
+     * which MVEL makes a rule's first {@code BigDecimal} literal, such as {@code 1.5B}, with. On JDK 25 and later,
+     * {@code BigDecimal}'s static initializer initializes the JDK's {@link java.util.concurrent.ForkJoinPool} and
+     * {@link java.util.concurrent.ForkJoinTask} too, without starting a thread, so a setting of the common pool made
+     * after this has no effect (#1115). The JDK's classes that MVEL's first read of a method's generic return type and
+     * its first reflective call of a method with a runtime annotation initialize are the engine's to initialize, as it
+     * builds the JVM's first engine. A load or a run may be nested deep in another run's stack, where a
      * {@link StackOverflowError} inside one of them would leave the class unusable for the life of the JVM, and so
      * every later MVEL load or run, or every later report of a compile error. The engine calls this once it has made
      * room for it: when it builds an engine whose builder names MVEL, as its default language or otherwise, or else
@@ -157,11 +165,15 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
             return;
         }
         initializeErrorReporting();
+        // With the JDK's BigInteger and BigDecimal, which MVEL's analysis is the first to use for a rule's first
+        // BigDecimal literal, such as 1.5B, after ParseTools, which makes it. On JDK 25 and later, BigDecimal's static
+        // initializer initializes the JDK's ForkJoinPool and ForkJoinTask as well (#1115).
         initialize(MethodHandles.lookup(), List.of(ExactNameClassLoader.class, ExceptionReads.class, FactNames.class,
                 SplittableRandom.class, AbstractParser.class, ConditionAssignments.class, MvelAnalysis.class,
-                MvelExpression.class, MVEL.class, ParseTools.class, OperatorNode.class, Operator.class,
-                AtomicReference.class, CallSites.class, MathProcessor.class, DataConversion.class,
-                PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class, MvelCompileErrors.class));
+                MvelExpression.class, MVEL.class, ParseTools.class, BigInteger.class, BigDecimal.class,
+                OperatorNode.class, Operator.class, AtomicReference.class, CallSites.class, MathProcessor.class,
+                DataConversion.class, PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class,
+                MvelCompileErrors.class));
         // This module's classes without a static initializer that a load that fails would otherwise be the first to
         // load: a condition that assigns, a class called like a method, an import with too many parts, and the place
         // of either in the text. A class's first load deep in a stack can overflow as initializing one can (#1066,

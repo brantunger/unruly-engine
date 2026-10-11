@@ -97,7 +97,13 @@ final class StackHeadroom {
      * argument, a comparison with {@code null} and an assignment, and its compile of a call of a method the value
      * doesn't have, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow and
      * skips the warm-up. A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the
-     * reflective call needs.
+     * reflective call needs. Measured again once the JVM's first build also read the generic types and annotations of
+     * the JDK's methods and MVEL's {@code prepare()} also initialized {@code BigInteger} and {@code BigDecimal}
+     * (#1115), on JDK 21, 25 and 26, each time at the first depth whose check passed, in a new JVM, which found more
+     * than the sweep above: the fewest from which every larger reserve measured left nothing behind were the same with
+     * them as without, 320 at a first build, interpreted, where 120 to 200 passed and 240 and 280 did not, and 720 at
+     * a first use, compiled, where 560 passed and 640 did not, as MVEL's own {@code FactNames} and
+     * {@code ErrorReporting} still need the most.
      */
     static final int INITIALIZING_FRAMES = 960;
 

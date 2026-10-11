@@ -98,11 +98,13 @@ of 8, 5 ms.
 
 ## 🪜 A first load or run deep in a stack
 
-An engine whose builder names MVEL prepares it at `build()`, else at its first use: it initializes the classes with a
-static initializer that its MVEL module uses directly, then runs a property read, a method call, one with a `String`
-literal, a `null` comparison and an assignment, and compiles a call MVEL can't resolve, so the JVM's first load and
-run load fewer classes, needing less stack; see
-[A first build or load deep in a stack](../nested-runs.md#-a-first-build-or-load-deep-in-a-stack).
+An engine whose builder names MVEL prepares it at `build()`, else at its first use: it initializes `BigDecimal`,
+`BigInteger` and the classes with a static initializer that its MVEL module uses directly, then runs a property read, a
+method call, one with a `String` literal, a `null` comparison and an assignment, and compiles a call MVEL can't
+resolve, so the JVM's first load and run need less stack.
+
+The JVM's first `build()` also warms up the JDK's reflection; see
+[A first build or load deep in a stack](../deep-stacks.md).
 Some first steps still need more stack than the engine checks for.
 
 **A JVM's first `load()` of a feature those expressions lack** can load classes, needing more stack than its check. Too
@@ -115,8 +117,8 @@ overflowed (see below). Load and run your rules, or same-shaped ones, near the t
 
 **If those expressions overflow**, they're skipped, and the JVM's first load or run loads their classes instead:
 deep in a stack, a load at that depth can fail as above, and a run its rule, with a `StackOverflowError` in the cause
-chain, until one with more room succeeds. The next `build()` of an engine whose builder names MVEL tries them again.
-MVEL found without being named is prepared only once, by the first rule list that uses it, so they aren't tried again.
+chain, until one with more room succeeds. The next `build()` of an engine whose builder names MVEL tries them again;
+unnamed MVEL, prepared once, never does.
 
 **MVEL's loop detection** walks the stack from an analysis's or run's 114th call for the class loader, as in a
 chain of 57 parts or more, two calls a part. A walk with no room is skipped, and the next comes when due, so the walk
@@ -141,8 +143,9 @@ its first compile initializes ASM's classes and some of the JDK's. MVEL marks th
 it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor stays on MVEL's
 slower reflective path, still correct.
 
-An overflow in a class's static initializer leaves that class unusable for the JVM's life: every later use of that
-feature fails, and after the JIT's, every other accessor's first compile fails one run the same way.
+An overflow in a class's static initializer, MVEL's, ASM's or the JDK's, leaves that class unusable for the JVM's life,
+in your code too: every later use fails, and after the JIT's, every other accessor's first compile fails one run the
+same way.
 
 ## 🪵 MVEL's own logging
 

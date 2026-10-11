@@ -13,7 +13,6 @@ failure is logged.
 
 - [What counts as nested](#-what-counts-as-nested)
 - [Stops and failures](#-stops-and-failures)
-- [A first build or load deep in a stack](#-a-first-build-or-load-deep-in-a-stack)
 - [What is logged](#-what-is-logged)
 
 ---
@@ -40,6 +39,9 @@ at once.
 - **A nested run never waits for a copy** while a run on its thread holds or is getting one; see
   [Runs that don't wait](compiled-copies.md#runs-that-dont-wait).
 
+A nested run or load can start deep in a stack, where a JVM's first use of a class can leave it unusable; see
+[A first build or load deep in a stack](deep-stacks.md).
+
 ## ⏳ Stops and failures
 
 **A stop that leaves the expression stops the outer run too.** When the outer run is past its deadline or
@@ -56,54 +58,6 @@ the stop is in its cause chain.
 run is past its deadline or interrupted; see [What stops a run](stopping-runs.md#-what-stops-a-run). The outer rule
 fails with `a nested run() failed: ...`, with the nested failure in its cause chain; `run()` rethrows a fatal
 `Error` instead. Each rule it passes through gets one `onError`, each run one `onRunError`.
-
-## 🪜 A first build or load deep in a stack
-
-A nested run or load can start deep in a stack; a language's first runs [check more room](exceptions-by-method.md).
-A `StackOverflowError` inside a class's static initializer leaves the class unusable for the JVM's life: every later
-use throws `NoClassDefFoundError`.
-
-**The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. Without room, `build()`
-throws `StackOverflowError` before it touches any of them or checks any setting, even a wrong one. The next `build()`
-checks again.
-
-The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
-where 256 KB can be too small.
-
-**A language initializes its own classes in [`prepare()`](languages/custom.md#preparing-the-languages-classes), and
-may run its library once,** after the same check, made once per language class:
-
-| The language is | Prepared |
-| --- | --- |
-| Named with `language(...)`, `defaultLanguage(...)`, `option(...)` or `languageImports(...)` | At every `build()`, after the settings are checked |
-| Found by `ServiceLoader`, unnamed, even as the only language: the usual MVEL setup | Once, at the first `load()` or `validate()` that uses it, an empty list using the default |
-
-A first use too deep throws `StackOverflowError` from the check, unlogged, leaving the language untouched and earlier
-rules loaded; for what `prepare()` throws, see
-[its contract](languages/custom.md#preparing-the-languages-classes).
-
-> [!TIP]
-> To check the room at `build()`, not at a deep first `load()`, name the language
-> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` can need
-> more stack than its check: load your rules once near the top too; see
-> [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
-
-Not covered: a name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the
-problem before any check; another instance of a prepared language class, such as a wrapper around another language,
-which gets no check, nor at a first use `prepare()`; and listeners' or your code's classes and javac-default
-concatenations: the JVM's first, or on JDK 25 and later one of several values, fails for good if linked too deep.
-
-Tests in new JVMs cover the engine's and MVEL's first builds, loads and runs: outputs, facts, listeners, failures,
-nested runs, `validate()` and `close()`. They fail if a first load or run, or a first build before its check,
-initializes a class with a static initializer, other than the application's, the JDK's hidden method-handle classes, and
-the documented ones below. HotSpot records an overflow initializing one with an `ExceptionInInitializerError`, which the
-first build initializes, keeping it usable.
-
-A path they don't take may initialize one, as may a JDK other than 21 and 25, whose classes the engine names, skipping
-missing ones; a native image names none. Nothing prepares
-[what MVEL leaves to first use](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), or the logging
-classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
 
 ## 🪵 What is logged
 

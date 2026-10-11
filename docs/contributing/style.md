@@ -116,6 +116,7 @@ documentation lives.
 | Virtual threads | 🧶 | Carrier pinning | 📌 |
 | Flight Recorder events | 📡 | What a run reports | 📊 |
 | Fact names | 🔤 | License | 📄 |
+| A first use deep in a stack | 🪜 | | |
 
 ## 💬 Callouts
 
