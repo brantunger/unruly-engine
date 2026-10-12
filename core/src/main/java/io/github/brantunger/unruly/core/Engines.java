@@ -25,7 +25,8 @@ public final class Engines {
      * because building, loading or running may be done deep in a stack, and a {@link StackOverflowError} inside a
      * class's static initializer leaves the class unusable for the life of the JVM. So the room for them is checked
      * first, and an engine built too deep throws {@link StackOverflowError} before any of them is touched, and before
-     * its settings are checked; the next build checks again.
+     * its settings are checked; the next build checks again. A build on another thread meanwhile waits for this one to
+     * finish, and if this one threw, checks the room and initializes them itself.
      *
      * @throws StackOverflowError if the classes aren't initialized yet and the thread has too little stack left to
      *                            initialize them

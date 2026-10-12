@@ -37,9 +37,9 @@ engine.load(rules);                // MVEL's first load of each feature your rul
 ## 🧭 What the first build prepares
 
 **The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. Without room, `build()`
-throws `StackOverflowError` before it touches any of them or checks any setting, even a wrong one. The next `build()`
-checks again.
+the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. A `build()` on another
+thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it touches any of them or
+checks any setting, even a wrong one. The next `build()` checks again.
 
 The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
 where 256 KB can be too small.
