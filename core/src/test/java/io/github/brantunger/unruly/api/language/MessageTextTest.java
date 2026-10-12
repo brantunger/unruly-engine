@@ -75,6 +75,8 @@ class MessageTextTest {
                 new String[]{"a" + (char) 0x2028 + "b", "a\\u2028b"},
                 new String[]{"a" + (char) 0x2029 + "b", "a\\u2029b"},
                 new String[]{"a" + (char) 0x7f + "b", "a\\u007fb"},
+                new String[]{"a" + (char) 0xa0 + "b", "a\\u00a0b"},
+                new String[]{"a" + (char) 0x3000 + "b", "a\\u3000b"},
                 new String[]{limit, limit},
                 new String[]{limit + "y", limit + "... (1 more characters)"},
                 new String[]{"\n".repeat(MAX_NAME_LENGTH + 3),
@@ -147,15 +149,17 @@ class MessageTextTest {
     }
 
     @Test
-    @DisplayName("every code point on its own is kept, or, if it is a control, separator, format, surrogate or "
-            + "default-ignorable one, escaped as String.format writes each of its UTF-16 units")
+    @DisplayName("every code point on its own is kept, or, if it is a control, line or paragraph separator, space "
+            + "separator other than U+0020, format, surrogate or default-ignorable one, escaped as String.format "
+            + "writes each of its UTF-16 units")
     void everyCodePointAlone() {
         BitSet ignorable = defaultIgnorable();
         for (int point = 0; point <= Character.MAX_CODE_POINT; point++) {
             int type = Character.getType(point);
             boolean escaped = Character.isISOControl(point) || type == Character.LINE_SEPARATOR
                     || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                    || type == Character.SURROGATE || ignorable.get(point);
+                    || type == Character.SURROGATE || ignorable.get(point)
+                    || (type == Character.SPACE_SEPARATOR && point != ' ');
             String expected = switch (point) {
                 case '\n' -> "\\n";
                 case '\r' -> "\\r";

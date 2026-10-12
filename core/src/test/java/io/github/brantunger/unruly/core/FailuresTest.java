@@ -62,6 +62,23 @@ class FailuresTest {
     }
 
     @Test
+    @DisplayName("every space separator but the ordinary space, such as the no-break space, is escaped")
+    void spaceSeparatorsEscaped() {
+        String text = "a" + (char) 0xa0 + "b" + (char) 0x1680 + "c" + (char) 0x2000 + (char) 0x2001 + (char) 0x2002
+                + (char) 0x2003 + (char) 0x2004 + (char) 0x2005 + (char) 0x2006 + (char) 0x2007 + (char) 0x2008
+                + (char) 0x2009 + (char) 0x200a + "d" + (char) 0x202f + "e" + (char) 0x205f + "f" + (char) 0x3000;
+
+        assertEquals("a\\u00a0b\\u1680c\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009"
+                + "\\u200ad\\u202fe\\u205ff\\u3000", Failures.escape(text));
+    }
+
+    @Test
+    @DisplayName("an ordinary space is kept")
+    void ordinarySpaceKept() {
+        assertEquals("a b", Failures.escape("a b"));
+    }
+
+    @Test
     @DisplayName("format characters a viewer shows, such as the Arabic number sign, stay escaped")
     void visibleFormatCharactersEscaped() {
         String text = "a" + (char) 0x0600 + "b" + (char) 0x0605 + "c" + (char) 0x06dd + "d" + (char) 0xfff9 + "e"

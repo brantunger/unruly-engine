@@ -38,9 +38,9 @@ import java.util.Objects;
  * <p>
  * The escapes, the note {@code ... (N more characters)} and the limits, {@link #MAX_NAME_LENGTH} (200 characters,
  * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 2.x. javac inlines the
- * two constants into the classes that read them. Which characters are escaped follows Unicode: format characters are
- * read from the running JDK's Unicode version, so a later JDK, or a later 2.x release, may escape more characters as
- * Unicode marks them.
+ * two constants into the classes that read them. Which characters are escaped follows Unicode: format characters and
+ * space separators are read from the running JDK's Unicode version, so a later JDK may escape more characters as
+ * Unicode marks them, and a later 2.x release may escape more kinds of character.
  * </p>
  */
 public final class MessageText {
@@ -63,17 +63,18 @@ public final class MessageText {
 
     /**
      * Escapes text for a message, without shortening it. {@code \n}, {@code \r} and {@code \t} become those
-     * two-character escapes. Every other ISO control character, line or paragraph separator, format character
-     * (category Cf), other {@code Default_Ignorable_Code_Point} character and lone surrogate becomes a backslash,
-     * {@code u} and four lowercase hex digits, one for each UTF-16 unit, so an escaped character outside the Basic
-     * Multilingual Plane becomes two escapes, and each escaped unit shows as 2 or 6 characters. Everything else is
-     * kept, a valid surrogate pair such as an emoji included. A backslash isn't escaped, so escaping text twice gives
-     * the same text.
+     * two-character escapes. Every other ISO control character, line or paragraph separator, space separator
+     * (category Zs) other than U+0020, format character (category Cf), other {@code Default_Ignorable_Code_Point}
+     * character and lone surrogate becomes a backslash, {@code u} and four lowercase hex digits, one for each UTF-16
+     * unit, so an escaped character outside the Basic Multilingual Plane becomes two escapes, and each escaped unit
+     * shows as 2 or 6 characters. Everything else is kept, a valid surrogate pair such as an emoji included. A
+     * backslash isn't escaped, so escaping text twice gives the same text.
      *
      * <p>
-     * Format characters are those of the running JDK's Unicode version ({@link Character#getType(int)}). The other
-     * default-ignorable characters are U+034F, U+115F to U+1160, U+17B4 to U+17B5, U+180B to U+180F, U+2065, U+3164,
-     * U+FE00 to U+FE0F, U+FFA0, U+FFF0 to U+FFF8 and U+E0000 to U+E0FFF.
+     * Space separators and format characters are those of the running JDK's Unicode version
+     * ({@link Character#getType(int)}): the space separators are U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F and
+     * U+3000 besides U+0020. The other default-ignorable characters are U+034F, U+115F to U+1160, U+17B4 to U+17B5,
+     * U+180B to U+180F, U+2065, U+3164, U+FE00 to U+FE0F, U+FFA0, U+FFF0 to U+FFF8 and U+E0000 to U+E0FFF.
      * </p>
      *
      * <p>
