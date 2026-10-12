@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.0](https://github.com/brantunger/unruly-engine/compare/v2.29.16...v2.30.0) (2026-10-12)
+
+
+### Features
+
+* add MessageText.escapeWithin and quoteWithin, so any language can fit escaped text into the room a message leaves, and never cut a name over 200 characters inside an escape ([#1175](https://github.com/brantunger/unruly-engine/issues/1175)) ([3171b44](https://github.com/brantunger/unruly-engine/commit/3171b44e7eb90e715636864c37598ab185bb768d))
+
 ## [2.29.16](https://github.com/brantunger/unruly-engine/compare/v2.29.15...v2.29.16) (2026-10-11)
 
 
