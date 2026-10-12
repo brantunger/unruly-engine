@@ -1623,14 +1623,17 @@ public final class Failures {
      * (category Cf), such as bidi controls and zero-width and tag characters, which could reorder the rest of a line in
      * a viewer or make two different names look the same, and the other characters Unicode marks
      * {@code Default_Ignorable_Code_Point}, which a viewer shows as nothing, such as the Hangul fillers, the combining
-     * grapheme joiner, variation selectors and the code points kept unassigned for more of them. An escaped character
-     * outside the Basic Multilingual Plane, such as a tag character or a variation selector from U+E0100, is escaped as
-     * its two UTF-16 units, each a backslash, {@code u} and four hex digits.
+     * grapheme joiner, variation selectors and the code points kept unassigned for more of them. So is every space
+     * separator (category Zs) other than the ordinary space U+0020: U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F
+     * and U+3000, which a viewer shows as a space or a mark, so a name ending in a no-break space would look like a
+     * valid name followed by an ordinary space. An escaped character outside the Basic Multilingual Plane, such as a
+     * tag character or a variation selector from U+E0100, is escaped as its two UTF-16 units, each a backslash,
+     * {@code u} and four hex digits.
      *
      * <p>
-     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control, format or
-     * default-ignorable character, so a caller that can't tell whether a message has been through here may escape it
-     * again.
+     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control, format,
+     * space-separator or default-ignorable character, so a caller that can't tell whether a message has been through
+     * here may escape it again.
      * </p>
      *
      * <p>
@@ -1641,7 +1644,7 @@ public final class Failures {
      *
      * @param text The text
      * @return The text, with every character that could start a line, every format or other default-ignorable
-     *         character and every lone surrogate escaped
+     *         character, every space separator other than U+0020 and every lone surrogate escaped
      */
     public static String escape(String text) {
         StringBuilder escaped = new StringBuilder(text.length());
@@ -1657,7 +1660,8 @@ public final class Failures {
                     // The loop reads code points, so only a lone surrogate has the type SURROGATE.
                     if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
                             || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)) {
+                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)
+                            || (type == Character.SPACE_SEPARATOR && c != ' ')) {
                         for (char unit : Character.toChars(c)) {
                             appendEscape(escaped, unit);
                         }

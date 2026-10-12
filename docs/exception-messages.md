@@ -15,14 +15,16 @@ parsing the message.
 ## 🧾 Shortening and escaping
 
 Messages about a rule name it, for example `Failed to evaluate condition for rule 'prime-rate': ...`. Line
-breaks, tabs, control characters, line and paragraph separators, format characters such as bidi controls, lone
-surrogates, and the other characters Unicode marks default-ignorable, which show as nothing (U+3164 HANGUL FILLER,
-variation selectors, unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` and four lowercase hex digits
-(`\u202e`), one per UTF-16 unit, so two for a character outside the BMP.
+breaks, tabs, control characters, line and paragraph separators, spaces other than an ordinary one (U+00A0
+NO-BREAK SPACE, U+1680 OGHAM SPACE MARK), format characters such as bidi controls, lone surrogates, and the other
+characters Unicode marks default-ignorable, which show as nothing (U+3164 HANGUL FILLER, variation selectors,
+unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` and four lowercase hex digits (`\u202e`), one per UTF-16
+unit, so two for a character outside the BMP.
 
-Neither a name nor a quoted fact value can start a log line, change how it reads or pass for another name through
-an invisible character, and escaping twice changes nothing. Ordinary text shows escapes too, such as an emoji's
-U+FE0F.
+Neither a name nor a fact value an exception quotes can start a log line, change how it reads or pass for another
+name through an invisible or look-alike character, and escaping twice changes nothing. Legitimate text shows escapes
+too: an emoji's U+FE0F, CJK text's U+3000, and the U+202F that the JDK puts between a French number's digit groups
+and before an en-US time's AM or PM.
 
 Shortening never splits a character made of two `char`s, an escape, or raw text that reads as one (a backslash and
 `n`, `r` or `t`, or a backslash, `u` and four lowercase hex digits): it leaves that out whole, so up to 5 fewer

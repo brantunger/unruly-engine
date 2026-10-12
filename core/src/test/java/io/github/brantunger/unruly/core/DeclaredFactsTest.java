@@ -106,6 +106,21 @@ class DeclaredFactsTest {
     }
 
     @Test
+    @DisplayName("with requireDeclaredFacts, a fact nobody declared whose name ends in a no-break space fails the run, "
+            + "and the message shows the space escaped, so the name doesn't look like a valid one")
+    void undeclaredNameWithNoBreakSpaceEscaped() {
+        RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class)
+                .requireDeclaredFacts());
+        FactStore<Object> store = new FactMap<>(new Fact<>("applicant", new Applicant(700)));
+        store.setValue("x" + (char) 0xa0, 1);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class, () -> engine.run(store));
+
+        assertEquals("Fact 'x\\u00a0' wasn't declared, and this engine was built with requireDeclaredFacts()",
+                thrown.getMessage());
+    }
+
+    @Test
     @DisplayName("with requireDeclaredFacts, a declared fact the run leaves out fails the run")
     void missingWhenRequired() {
         RulesEngine<Map<String, Object>> engine = engine(builder -> builder.fact("applicant", Applicant.class)
