@@ -19,6 +19,9 @@ class MessageTextTest {
 
     private static final int MAX_TEXT_LENGTH = 1_000;
 
+    // A backslash, u and four lowercase hex digits, written out so the source holds no escape javac reads.
+    private static final String READS_AS_ESCAPE = "\\" + "u0041";
+
     /**
      * The code points with Unicode's {@code Default_Ignorable_Code_Point} property, which a viewer shows as nothing,
      * as {@code DerivedCoreProperties.txt} lists them (the same in Unicode 15.0 to 17.0), one line or range a line.
@@ -93,7 +96,9 @@ class MessageTextTest {
                 new String[]{"a" + low + "b", "a\\udc00b"},
                 new String[]{"" + low + high, "\\udc00\\ud800"},
                 new String[]{beforeLast + high, beforeLast + "\\ud800"},
-                new String[]{beforeLast + high + "y", beforeLast + "... (2 more characters)"});
+                new String[]{beforeLast + high + "y", beforeLast + "... (2 more characters)"},
+                new String[]{"x".repeat(MAX_NAME_LENGTH - 2) + READS_AS_ESCAPE + "y",
+                        "x".repeat(MAX_NAME_LENGTH - 2) + "... (7 more characters)"});
     }
 
     /** A text, and what {@link MessageText#truncate} must make of it. */
@@ -127,6 +132,8 @@ class MessageTextTest {
     void quoteCasesHold() {
         for (String[] expected : quoteCases()) {
             assertEquals(expected[1], MessageText.quote(expected[0]), "quoted " + expected[0] + " differently");
+            assertEquals(expected[1], MessageText.escapeWithin(expected[0], MessageText.MAX_NAME_LENGTH,
+                    Integer.MAX_VALUE), "escaped " + expected[0] + " to 200 characters differently from quote");
         }
     }
 
@@ -159,9 +166,12 @@ class MessageTextTest {
             String alone = Character.toString(point);
             String quoted = MessageText.quote(alone);
             String written = MessageText.escape(alone);
-            if (!expected.equals(quoted) || !expected.equals(written)) {
-                fail(String.format("quoted U+%04X as %s and escaped it as %s, not %s", point, quoted, written,
-                        expected));
+            String fitted = MessageText.escapeWithin(alone, Integer.MAX_VALUE);
+            String quotedWithin = MessageText.quoteWithin(alone, Integer.MAX_VALUE);
+            if (!expected.equals(quoted) || !expected.equals(written) || !expected.equals(fitted)
+                    || !expected.equals(quotedWithin)) {
+                fail(String.format("quoted U+%04X as %s, escaped it as %s, within a room as %s and quoted it within "
+                        + "a room as %s, not %s", point, quoted, written, fitted, quotedWithin, expected));
             }
         }
     }
@@ -239,6 +249,194 @@ class MessageTextTest {
                 assertThrows(NullPointerException.class, () -> MessageText.truncate(null)).getMessage());
         assertEquals("name must not be null",
                 assertThrows(NullPointerException.class, () -> MessageText.quote(null)).getMessage());
+        assertEquals("text must not be null",
+                assertThrows(NullPointerException.class, () -> MessageText.escapeWithin(null, 1)).getMessage());
+        assertEquals("text must not be null",
+                assertThrows(NullPointerException.class, () -> MessageText.escapeWithin(null, 1, 1)).getMessage());
+        assertEquals("name must not be null",
+                assertThrows(NullPointerException.class, () -> MessageText.quoteWithin(null, 1)).getMessage());
+    }
+
+    // #1152: the limits a language works out its room from. javac inlines them, so they can't change in 2.x.
+    @Test
+    @DisplayName("the published limits are 200 characters for a name and 1,000 for other text, as quote and truncate "
+            + "keep")
+    void limitsPublished() {
+        String limit = "a".repeat(MessageText.MAX_TEXT_LENGTH);
+
+        assertEquals(MAX_NAME_LENGTH, MessageText.MAX_NAME_LENGTH);
+        assertEquals(MAX_TEXT_LENGTH, MessageText.MAX_TEXT_LENGTH);
+        assertEquals(limit, MessageText.truncate(limit));
+        assertEquals(limit + "... (1 more characters)", MessageText.truncate(limit + "b"));
+        assertEquals("x".repeat(MessageText.MAX_NAME_LENGTH) + "... (1 more characters)",
+                MessageText.quote("x".repeat(MessageText.MAX_NAME_LENGTH + 1)));
+    }
+
+    @Test
+    @DisplayName("a cut inside \\n, \\r, \\t or a \\u escape the text holds leaves the escape out whole")
+    void ownEscapesLeftOutWhole() {
+        String rest = "c".repeat(30);
+
+        assertEquals("ab... (36 more characters)", MessageText.escapeWithin("ab\\u0001" + rest, 29));
+        assertEquals("ab... (36 more characters)", MessageText.escapeWithin("ab\\u0001" + rest, 31));
+        assertEquals("ab... (32 more characters)", MessageText.escapeWithin("ab\\n" + rest, 27));
+        assertEquals("ab... (32 more characters)", MessageText.escapeWithin("ab\\r" + rest, 27));
+        assertEquals("ab... (32 more characters)", MessageText.escapeWithin("ab\\t" + rest, 27));
+        assertEquals("\\u00e9... (36 more characters)",
+                MessageText.escapeWithin("\\u00e9\\u00e9" + rest, 34));
+    }
+
+    @Test
+    @DisplayName("a backslash that doesn't start an escape, or an escape that ends before the cut, is cut as any text")
+    void otherBackslashesCutAsText() {
+        String rest = "c".repeat(30);
+
+        assertEquals("ab\\... (31 more characters)", MessageText.escapeWithin("ab\\q" + rest, 27));
+        assertEquals("ab\\u0... (33 more characters)", MessageText.escapeWithin("ab\\u00g1" + rest, 29));
+        assertEquals("ab\\u0... (33 more characters)", MessageText.escapeWithin("ab\\u00AB" + rest, 29));
+        assertEquals("ab\\n... (31 more characters)", MessageText.escapeWithin("ab\\nc" + rest, 28));
+        assertEquals("ab\\u", MessageText.escapeWithin("ab\\u", 4));
+    }
+
+    @Test
+    @DisplayName("a backslash that ends the text is kept, whether the text fits or is cut after it")
+    void backslashAtTheEnd() {
+        assertEquals("ab\\", MessageText.escapeWithin("ab\\", 100));
+        assertEquals("ab\\", MessageText.escapeWithin("ab\\", 3));
+        assertEquals("ab\\... (30 more characters)", MessageText.escapeWithin("ab\\" + "c".repeat(30), 27));
+    }
+
+    @Test
+    @DisplayName("text that fits once escaped is escaped whole")
+    void fitsWhole() {
+        assertEquals("a\\nb", MessageText.escapeWithin("a\nb", 4));
+        assertEquals("", MessageText.escapeWithin("", 0));
+    }
+
+    @Test
+    @DisplayName("an escape is kept whole or left out, and the count is of the characters left out, not escaped ones")
+    void escapeNotCut() {
+        assertEquals("\\u200b... (9 more characters)", MessageText.escapeWithin("\u200b".repeat(10), 30));
+    }
+
+    @Test
+    @DisplayName("a surrogate pair is kept whole or left out")
+    void surrogatePairNotCut() {
+        String text = "x".repeat(10) + Character.toString(0x1F600) + "y".repeat(30);
+
+        assertEquals("x".repeat(10) + "... (32 more characters)", MessageText.escapeWithin(text, 35));
+        assertEquals("x".repeat(10) + Character.toString(0x1F600) + "... (30 more characters)",
+                MessageText.escapeWithin(text, 36));
+    }
+
+    @Test
+    @DisplayName("a count one digit shorter leaves room for one more character")
+    void shorterCountKeepsMore() {
+        assertEquals("a".repeat(101) + "... (99 more characters)", MessageText.escapeWithin("a".repeat(200), 125));
+    }
+
+    @Test
+    @DisplayName("a room too small for the count gets the count alone")
+    void roomForCountAlone() {
+        assertEquals("... (3 more characters)", MessageText.escapeWithin("a\nb", 3));
+    }
+
+    @Test
+    @DisplayName("a negative room is taken as no room, and empty text is escaped as empty whatever the room")
+    void negativeRoom() {
+        assertEquals("... (3 more characters)", MessageText.escapeWithin("abc", -5));
+        assertEquals("", MessageText.escapeWithin("", -1));
+        assertEquals("", MessageText.escapeWithin("", 5, -1));
+        assertEquals("", MessageText.quoteWithin("", -1));
+        assertEquals("... (3 more characters)", MessageText.quoteWithin("abc", -1));
+    }
+
+    @Test
+    @DisplayName("text escaped within a room shows at most the first characters asked for, never inside a surrogate "
+            + "pair or text that reads as an escape, and none when none are")
+    void mostCharactersShown() {
+        String emoji = Character.toString(0x1F600);
+
+        assertEquals("abc... (3 more characters)", MessageText.escapeWithin("abcdef", 3, Integer.MAX_VALUE));
+        assertEquals("abcdef", MessageText.escapeWithin("abcdef", 6, Integer.MAX_VALUE));
+        assertEquals("abcdef", MessageText.escapeWithin("abcdef", 10, Integer.MAX_VALUE));
+        assertEquals("a\\nb", MessageText.escapeWithin("a\nb", 3, 4));
+        assertEquals("c".repeat(100) + "... (50 more characters)",
+                MessageText.escapeWithin("c".repeat(150), 100, Integer.MAX_VALUE));
+        assertEquals("ab... (8 more characters)",
+                MessageText.escapeWithin("ab" + READS_AS_ESCAPE + "cd", 4, Integer.MAX_VALUE));
+        assertEquals("x... (3 more characters)", MessageText.escapeWithin("x" + emoji + "y", 2, Integer.MAX_VALUE));
+        assertEquals("... (3 more characters)", MessageText.escapeWithin("abc", 0, Integer.MAX_VALUE));
+        assertEquals("... (3 more characters)", MessageText.escapeWithin("abc", -1, Integer.MAX_VALUE));
+        // The room cuts it shorter than the most asked for: 6 characters and a count of 44 take 30.
+        assertEquals("a".repeat(6) + "... (44 more characters)", MessageText.escapeWithin("a".repeat(50), 40, 30));
+    }
+
+    @Test
+    @DisplayName("a name is quoted as a name when that fits the room, and escaped within the room when it doesn't")
+    void nameQuotedWithin() {
+        String name = "n".repeat(300);
+
+        assertEquals(MessageText.quote(name), MessageText.quoteWithin(name, 225));
+        assertEquals("n".repeat(200) + "... (100 more characters)", MessageText.quoteWithin(name, 225));
+        assertEquals("n".repeat(199) + "... (101 more characters)", MessageText.quoteWithin(name, 224));
+    }
+
+    // The whole name, 209 characters escaped as 879, fit in rooms of 879 to 892, where the quoted name, with its count
+    // of the 9 left out, takes 893: more of the name was shown than quote() shows.
+    @Test
+    @DisplayName("a name escaped within a room shows no more of it than quoting it shows")
+    void nameWithinShowsNoMoreThanQuoted() {
+        String name = "\u200b".repeat(134) + ".".repeat(75);
+
+        assertEquals(893, MessageText.quote(name).length());
+        assertEquals("\\u200b".repeat(134) + ".".repeat(52) + "... (23 more characters)",
+                MessageText.quoteWithin(name, 880));
+        assertEquals("\\u200b".repeat(134) + ".".repeat(51) + "... (24 more characters)",
+                MessageText.quoteWithin(name, 879));
+    }
+
+    // Quoting shows 199 characters of this name, so escaping it within a room shows no more, though the whole name, of
+    // 201 characters, would fit in 210.
+    @Test
+    @DisplayName("a name escaped within a room leaves out a surrogate pair its limit falls inside, as quoting it does, "
+            + "and a short name is escaped within the room like any text")
+    void nameWithinAtLimitsOfQuote() {
+        String name = "x".repeat(199) + Character.toString(0x1F600);
+
+        assertEquals(MessageText.quote(name), MessageText.quoteWithin(name, 222));
+        assertEquals("x".repeat(186) + "... (15 more characters)", MessageText.quoteWithin(name, 210));
+        assertEquals("\\u200b... (9 more characters)", MessageText.quoteWithin("\u200b".repeat(10), 30));
+    }
+
+    // #1121 with #1152: quoteWithin is quote wherever quote fits, and shows a first part of what quote shows where it
+    // doesn't, also where the 200-character limit falls inside raw text that reads as an escape.
+    @Test
+    @DisplayName("a name quoted within a room is quoted as quote quotes it when that fits, and shows no more of it in "
+            + "every smaller room")
+    void quoteWithinAgreesWithQuote() {
+        List<String> names = List.of("", "short\n", "n".repeat(300), "x".repeat(199) + Character.toString(0x1F600),
+                "a".repeat(198) + READS_AS_ESCAPE + "b".repeat(10), "a".repeat(199) + "\\nb",
+                "a".repeat(194) + READS_AS_ESCAPE + "b", "\u200b".repeat(134) + ".".repeat(75));
+        for (String name : names) {
+            String quoted = MessageText.quote(name);
+
+            assertEquals(quoted, MessageText.quoteWithin(name, Integer.MAX_VALUE), name);
+            assertEquals(quoted, MessageText.quoteWithin(name, quoted.length()), name);
+            for (int room = quoted.length() - 1; room >= -1; room--) {
+                String within = MessageText.quoteWithin(name, room);
+
+                assertTrue(within.length() <= Math.max(room, 0) || within.startsWith("... ("), room + ": " + within);
+                assertTrue(shown(quoted).startsWith(shown(within)), room + ": " + within + " shows more than "
+                        + quoted);
+            }
+        }
+    }
+
+    /** The part of a quoted name before its count of what was left out, or all of it if it has none. */
+    private static String shown(String quoted) {
+        int note = quoted.lastIndexOf("... (");
+        return note < 0 ? quoted : quoted.substring(0, note);
     }
 
     /** Each UTF-16 unit of a code point, as {@code String.format} writes its escape. */

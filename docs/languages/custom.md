@@ -277,10 +277,22 @@ warning's issue, as [Reading exception messages](../exception-messages.md) descr
 message shows its class name, and any root cause's in `(caused by ...)` unless already named.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
-Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`; its cut never
-splits one. Text the engine shows as it came, such as the issues you throw, is yours to make safe: since 2.16.0,
-`io.github.brantunger.unruly.api.language.MessageText` has `quote(name)` for a name and, as `truncate` cuts plainly,
-`escape(truncate(text))` for other text.
+Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`. Text the engine
+shows as it came, such as the issues you throw, is yours to make safe with
+`io.github.brantunger.unruly.api.language.MessageText`. To keep a note after such text whole, give `escapeWithin` or
+`quoteWithin` the room the rest of the message leaves:
+
+```java
+String fact = "'" + MessageText.quote(factName) + "'";                // a name: cut to 200 characters, then escaped
+String text = MessageText.escape(MessageText.truncate(libraryText));  // truncate cuts plainly, so escape after it
+// The escaped result, its "... (N more characters)" included, fits in the room (a room too small for that count gets
+// the count alone), never cut inside an escape or raw text that reads as one. MAX_NAME_LENGTH is 200 and
+// MAX_TEXT_LENGTH 1,000: within it, the same text can also be your exception's message, which the engine then never
+// shortens. escapeWithin(text, most, room) shows no more than the text's first `most` characters.
+// The class name gets a name's 200 characters of room; the text gets the room the note leaves.
+String note = " (caused by " + MessageText.quoteWithin(causeClassName, MessageText.MAX_NAME_LENGTH) + ")";
+String issueText = MessageText.escapeWithin(libraryText, MessageText.MAX_TEXT_LENGTH - note.length()) + note;
+```
 
 The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:
 <first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
