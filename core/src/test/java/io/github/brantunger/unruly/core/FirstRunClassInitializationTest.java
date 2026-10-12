@@ -19,7 +19,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -133,7 +136,8 @@ class FirstRunClassInitializationTest {
     // methods (#1115): those that parse and stand for a generic type and read annotations, measured initialized by the
     // first build on JDK 21, 25 and 26. Not those it reaches on some of them only, such as SwitchBootstraps on JDK 26
     // and the accessor of native methods on JDK 21, nor the proxy classes of annotation types, whose names depend on
-    // the order they were made in. Those the JDK running the test doesn't have are left out.
+    // the order they were made in. Those the JDK running the test doesn't have are left out, as RunClasses skips them,
+    // but only those MISSING_BY_RELEASE says it lacks (#1154).
     private static final List<String> JDK_CLASSES = List.of("java.util.stream.MatchOps$MatchKind",
             "java.util.stream.Collectors", "java.util.stream.Collector$Characteristics",
             "java.lang.ClassValue$ClassValueMap", "java.lang.invoke.MethodHandleImpl$BindCaller",
@@ -152,12 +156,24 @@ class FirstRunClassInitializationTest {
             "sun.reflect.generics.visitor.Reifier", "sun.reflect.annotation.AnnotationParser",
             "sun.reflect.annotation.AnnotationType");
 
+    // #1154: the names of JDK_CLASSES each JDK release lacks, in JDK_CLASSES' order, by the release's feature number,
+    // measured on JDK 21, 24, 25 and 26. The JDK's internal class names differ between releases, so a name one release
+    // lacks is left out; but a name no release has, a typo, or a class a release renames, would be left out unnoticed,
+    // and the class it meant unchecked, so the names the running JDK lacks must be exactly its entry's. A release with
+    // no entry may lack only names that a release with one lacks.
+    private static final Map<Integer, List<String>> MISSING_BY_RELEASE = Map.of(
+            21, List.of("java.lang.ClassValue$RemovalToken", "java.lang.invoke.ClassSpecializer$Factory$1$1Var",
+                    "java.lang.invoke.ClassSpecializer$Factory$1$5$1"),
+            24, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken"),
+            25, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var"),
+            26, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var"));
+
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "
             + "hidden ones")
     void initializedWhenBuilt(@TempDir Path dir) throws IOException, InterruptedException {
         List<String> lines = scenario(dir);
-        List<String> jdkClasses = JDK_CLASSES.stream().filter(FirstRunClassInitializationTest::exists).toList();
+        List<String> jdkClasses = presentJdkClasses();
 
         assertEquals(List.of(), initializedBy(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
                 lines.indexOf(FirstRunScenario.RAN))), "initialized by first loads and runs");
@@ -311,6 +327,24 @@ class FirstRunClassInitializationTest {
     // With the closing quote, so a class's name doesn't match a longer one it begins.
     private static String logged(String className) {
         return INITIALIZING + className.replace('.', '/') + "'";
+    }
+
+    // The names of JDK_CLASSES the JDK running the test has, once it checked that those it lacks are those
+    // MISSING_BY_RELEASE says. The scenario runs on the same JDK: ChildJvm starts this JVM's java.
+    private static List<String> presentJdkClasses() {
+        int release = Runtime.version().feature();
+        List<String> missing = JDK_CLASSES.stream().filter(name -> !exists(name)).toList();
+        List<String> expected = MISSING_BY_RELEASE.get(release);
+        if (expected != null) {
+            assertEquals(expected, missing, "names of JDK_CLASSES JDK " + release + " lacks");
+        } else {
+            Set<String> lackedByListed = MISSING_BY_RELEASE.values().stream().flatMap(List::stream)
+                    .collect(Collectors.toSet());
+            List<String> unexpected = missing.stream().filter(name -> !lackedByListed.contains(name)).toList();
+            assertEquals(List.of(), unexpected, "names of JDK_CLASSES JDK " + release + " lacks that no release in "
+                    + "MISSING_BY_RELEASE lacks: add JDK " + release + "'s entry, or correct the names");
+        }
+        return JDK_CLASSES.stream().filter(name -> !missing.contains(name)).toList();
     }
 
     private static boolean exists(String className) {

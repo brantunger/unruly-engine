@@ -69,8 +69,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * an accessor compiled before it compiles it, so it stays reflective, slower but correct. If the overflow strikes a
  * class's static initializer, of ASM's or the JDK's, that class stays unusable for the JVM's life, and every other
  * accessor's first compile fails one run the same way. The test checks that one of ASM's classes was initialized there,
- * so it can't pass because the runs were too slow for the JIT, and that none of the engine's or this module's was. With
- * the JIT off, or the engine's reflective optimizer the default, the step initializes nothing.
+ * so it can't pass because the runs were too slow for the JIT, that none of the engine's or this module's was, and
+ * (#1155) that no class was but ASM's and the JDK's {@code Math$RandomNumberGeneratorHolder} and {@code Random}, the
+ * JDK's it was measured to initialize there on JDK 21, 24, 25 and 26, as MVEL names each accessor it compiles with
+ * {@code Math.random()}: not one list, as {@code Random} is initialized there on 21 and 24 only, and on 25 and later
+ * already by the Flight Recorder's {@code Throttler} when the first build registers the engine's events. With the JIT
+ * off, or the engine's reflective optimizer the default, the step initializes nothing.
  * </p>
  *
  * <p>
@@ -110,6 +114,15 @@ class FirstUseClassInitializationTest {
             + "java/lang/invoke/LambdaForm\\$[A-Za-z]+\\+0x");
     // The start of what initializedByFirstSteps records for a class the last step, MVEL's JIT, initialized.
     private static final String IN_JIT_STEP = FirstUseScenario.JIT + ": ";
+    // The package of ASM's classes, which MVEL's JIT compiles an accessor with, and initializes in the last step.
+    private static final String ASM = "org/mvel2/asm/";
+    // The JDK's classes the last step, MVEL's JIT, may initialize besides ASM's (#1155), measured on JDK 21, 24, 25 and
+    // 26, as MVEL's ASMAccessorOptimizer names each accessor it compiles with Math.random(): Math's holder of the
+    // random number generator on each, and Random on 21 and 24 only, as on 25 and later the Flight Recorder's
+    // Throttler initializes Random first, when the first build registers the engine's events. Any other class it
+    // initializes, the JDK's, MVEL's or another library's, fails the test.
+    private static final List<String> BY_JIT = List.of("java/lang/Math$RandomNumberGeneratorHolder",
+            "java/util/Random");
     // What the steps that use one of MVEL's features for the first time initialize, which prepare() leaves to them.
     private static final List<String> BY_FEATURES = List.of(
             FirstUseScenario.INLINE_LIST + ": org/mvel2/util/CollectionParser",
@@ -305,16 +318,19 @@ class FirstUseClassInitializationTest {
     }
 
     // The steps before the last initialized just what was expected, and the last, MVEL's JIT, one of ASM's classes,
-    // so it did compile, and none of the engine's or this module's. Which of the JDK's it initializes differs between
-    // JDK releases.
+    // so it did compile, none of the engine's or this module's, and none but ASM's and BY_JIT's (#1155). Which of the
+    // JDK's it initializes differs between JDK releases, so it isn't checked exactly.
     private static void assertInitialized(List<String> expected, List<String> initialized) {
         List<String> byJit = initialized.stream().filter(entry -> entry.startsWith(IN_JIT_STEP)).toList();
         assertEquals(expected, initialized.stream().filter(entry -> !entry.startsWith(IN_JIT_STEP)).toList(),
                 "initialized by first steps");
-        assertTrue(byJit.stream().anyMatch(entry -> entry.startsWith(IN_JIT_STEP + "org/mvel2/asm/")),
+        assertTrue(byJit.stream().anyMatch(entry -> entry.startsWith(IN_JIT_STEP + ASM)),
                 "no class of ASM's initialized by the runs that MVEL's JIT compiles in: " + byJit);
         assertEquals(List.of(), byJit.stream().filter(entry -> entry.startsWith(IN_JIT_STEP + "io/github/brantunger/"))
                 .toList(), "the engine's or this module's, initialized by MVEL's JIT");
+        assertEquals(List.of(), byJit.stream().filter(entry -> !entry.startsWith(IN_JIT_STEP + ASM)
+                && !BY_JIT.contains(entry.substring(IN_JIT_STEP.length()))).toList(),
+                "initialized by MVEL's JIT, but neither ASM's nor the JDK's it's known to initialize");
     }
 
     private static List<String> whenBuilt(List<String> classes) {
