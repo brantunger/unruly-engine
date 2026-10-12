@@ -81,7 +81,9 @@ above names.
 > To check the room at `build()`, not at a deep first `load()`, name the language
 > (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` can need
 > more stack than its check: load your rules once near the top too; see
-> [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
+> [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack). That doesn't help a rule
+> whose language looks a dotted name up as a class on every `load()` or `validate()`, as MVEL does: give each such
+> call [more room](exceptions-by-method.md).
 
 ## 🚧 What isn't covered
 

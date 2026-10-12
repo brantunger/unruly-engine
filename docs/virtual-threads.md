@@ -133,10 +133,10 @@ shortens the waiting without removing the pinning.
 `load()` for the copies it makes. It doesn't move the accessor classes, which MVEL's JIT still generates during each
 copy's first runs, or the compiling of a copy a run makes itself.
 
-Measured with MVEL's JIT, then its default, on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing 2,000,000
-runs of 21 MVEL rules, and `copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned events
-fell by about a third, from 1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput didn't
-change, at about 690,000–745,000 runs a second. On JDK 21 there were no pins either way.
+Measured with MVEL's JIT, its default before 2.29.15, on JDK 26.0.1 with 32 cores, 100,000 virtual threads sharing
+2,000,000 runs of 21 MVEL rules, and `copiesAtLoad(16)`, the default limit there, against copies made by runs: pinned
+events fell by about a third, from 1,214–1,316 to 775–842 over three runs, a one-time cost either way. Throughput
+didn't change, at about 690,000–745,000 runs a second. On JDK 21 there were no pins either way.
 
 Without a limit, that pinning is what made the copies pile up before build slots: the run loading a class keeps its
 carrier, but on JDK 24 and later the runs waiting for that class give theirs up, so more virtual threads start and
