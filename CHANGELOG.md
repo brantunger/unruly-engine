@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.2](https://github.com/brantunger/unruly-engine/compare/v2.30.1...v2.30.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* name a fact store whose asMap() returns null, reject a null name in FactMap.getValue, and fill the gaps in the exceptions table and load()'s Javadoc ([#1183](https://github.com/brantunger/unruly-engine/issues/1183)) ([2f5bafb](https://github.com/brantunger/unruly-engine/commit/2f5bafb5e27fb47d1a3caaf9b714baff3c4b2e68))
+
 ## [2.30.1](https://github.com/brantunger/unruly-engine/compare/v2.30.0...v2.30.1) (2026-10-12)
 
 
