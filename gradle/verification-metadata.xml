@@ -29,6 +29,9 @@
          <trusted-key id="0CC641C3A62453AB390066C4A41F13C999945293" group="commons-collections" name="commons-collections" version="3.2.2"/>
          <trusted-key id="19BEAB2D799C020F17C69126B16698A4ADF4D638" group="org.checkerframework" name="checker-qual"/>
          <trusted-key id="1BD97A6A154E7810EE0BC832E2F38302C8075E3D">
+            <trusting group="net.rubygrapefruit" version="0.22-milestone-29"/>
+            <trusting group="org.gradle.buildtool.internal" version="1.34"/>
+            <trusting group="org.gradle.fileevents" name="gradle-fileevents" version="0.2.8"/>
             <trusting group="org.gradle.kotlin" name="gradle-kotlin-dsl-plugins" version="6.7.3"/>
             <trusting group="org.gradle.kotlin" name="gradle-kotlin-dsl-plugins" version="6.7.6"/>
          </trusted-key>
@@ -47,6 +50,9 @@
          <trusted-key id="2FC53E6B1F681184F4CCD637F5C81DE10A0B8ECC" group="org.yaml" name="snakeyaml" version="2.5"/>
          <trusted-key id="32118CF76C9EC5D918E54967CA80D1F0EB6CA4BA" group="org.codehaus.plexus"/>
          <trusted-key id="331224E1D7BE883D16E8A685825C06C827AF6B66" group="me.champeau.gradle" name="japicmp-gradle-plugin" version="0.4.6"/>
+         <trusted-key id="34441E504A937F43EB0DAEF96A65176A0FB1CD0B">
+            <trusting group="org.apache.groovy" version="4.0.33"/>
+         </trusted-key>
          <trusted-key id="3F2A008A91D11A7FAC4A0786F13D3E721D56BD54" group="org.reflections" name="reflections" version="0.10.2"/>
          <trusted-key id="41A1A08C62FCA78B79D3081164A16FAAEC16A4BE" group="org.apache.commons" name="commons-math3" version="3.6.1"/>
          <trusted-key id="41CD49B4EF5876F9E9F691DABAC30622339994C4" group="org.jspecify" name="jspecify" version="1.0.1"/>
