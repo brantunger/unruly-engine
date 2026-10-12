@@ -231,8 +231,8 @@ try {
   `io.github.brantunger.unruly` logger and log a redacted form yourself.
 - **Listeners hear about it first.** When a condition or action fails, `onError` and then `onRunError` receive the
   same exception before `run()` throws it; [the table](#-what-happens-on-each-failure) shows the failures
-  that skip `onError` or every listener. A fact store's `asMap()` or a fact's `getValue()` that throws reaches no
-  listener and isn't logged; see [Implementing FactStore](facts.md#-implementing-factstore).
+  that skip `onError` or every listener. A fact store's `asMap()`, a fact's `getValue()` or the clock that throws
+  reaches no listener and isn't logged; see [Implementing FactStore](facts.md#-implementing-factstore).
 - **An interrupt isn't lost.** When a rule, output writer, listener, output supplier or language throws an
   `InterruptedException`, even wrapped, or suppressed within the [glossary's limit](glossary.md#fatal-error), the
   engine restores the interrupt status; see

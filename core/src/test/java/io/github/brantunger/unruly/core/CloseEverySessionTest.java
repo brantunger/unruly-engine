@@ -608,6 +608,35 @@ class CloseEverySessionTest {
     }
 
     @Test
+    @DisplayName("guard: a reload whose old session fails to close because it was interrupted returns normally, logs it"
+            + " at WARN, and leaves the interrupt for the caller to see (#1138)")
+    void interruptedSessionCloseOnReloadKeepsTheInterruptStatus() {
+        RecordingLanguage language = new RecordingLanguage();
+        RulesEngine<Map<String, Object>> engine = engine(language, 2);
+        engine.load(rules("old"));
+        // Only the old rules' sessions: the reload makes sessions 3 and 4 for the new ones.
+        language.sessionCloseFailures.put(1, new IllegalStateException("stuck",
+                new InterruptedException("interrupted while closing")));
+        List<Rule> next = rules("new");
+        Outcome<Throwable> outcome;
+        boolean interrupted;
+
+        try {
+            outcome = capture(() -> engine.load(next));
+        } finally {
+            // Read, and cleared, whatever load() did: a thread left interrupted would fail the tests after this one.
+            interrupted = Thread.interrupted();
+        }
+
+        assertNull(outcome.thrown());
+        assertTrue(interrupted, "the interrupt inside the close failure was swallowed");
+        assertEquals(sessionsThenCompiler(1, 2), language.closed, "every old session, then the old compiler");
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language"
+                + " failed to close a session: stuck"), outcome.logs());
+        assertEquals(Map.of("new", true), engine.run(new FactMap<>()));
+    }
+
+    @Test
     @DisplayName("guard: a run that succeeds and then gives back the last copy of closed rules throws the fatal Error"
             + " from closing it")
     void runSucceedsThenFatalOnGiveBack() {

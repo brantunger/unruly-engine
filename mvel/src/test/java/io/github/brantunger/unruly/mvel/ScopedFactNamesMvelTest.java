@@ -201,6 +201,24 @@ class ScopedFactNamesMvelTest {
     }
 
     @Test
+    @DisplayName("guard: a fact declared with an MVEL keyword loads when no rule holds the word, and is rejected by the"
+            + " load of a rule that does (#1138)")
+    void declaredKeywordCheckedOnlyWhereRulesHoldIt() {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).fact("new", Integer.class).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition("true").action("output.put('r', 1)").build()));
+            assertEquals(Map.of("r", 1), engine.run(new FactMap<>(new Fact<>("new", 1))));
+
+            List<Rule> holdsNew = List.of(Rule.builder().ruleName("n").condition("true")
+                    .action("output.put('r', new java.util.ArrayList())").build());
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(holdsNew));
+            assertEquals(1, ex.failures().size(), ex.getMessage());
+            assertTrue(ex.failures().get(0).getMessage().startsWith("Declared fact 'new' can't be used: "),
+                    ex.getMessage());
+        }
+    }
+
+    @Test
     @DisplayName("a fact named with an MVEL keyword is read by kw's rules when no MVEL rule names it")
     void mvelKeywordReadByAnotherLanguage() {
         try (RulesEngine<Map<String, Object>> engine = engine(new Keywordy(true, true))) {

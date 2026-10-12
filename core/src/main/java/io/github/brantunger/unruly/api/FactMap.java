@@ -20,7 +20,9 @@ import java.util.function.BiFunction;
  * Every way of adding a fact rejects a {@code null} name, and rejects a key that differs from the
  * {@link FactReference#getName() name} of the fact stored under it, with {@link IllegalArgumentException}.
  * That includes {@link Map.Entry#setValue} on an {@link #entrySet()} entry and {@link #replaceAll}.
- * The varargs constructor also rejects two facts with the same name.
+ * The varargs constructor also rejects two facts with the same name. {@link #getValue} rejects a {@code null} name
+ * too, while {@link #get}, {@link #containsKey} and {@link #remove} follow the {@link Map} contract: a {@code null}
+ * key is never stored, so they find nothing under it.
  * </p>
  *
  * <p>
@@ -108,8 +110,16 @@ public class FactMap<T extends @Nullable Object> implements FactStore<T>, Map<St
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * @param name {@inheritDoc}
+     * @return {@inheritDoc}
+     * @throws IllegalArgumentException if {@code name} is {@code null}
+     */
     @Override
     public @Nullable T getValue(String name) {
+        checkEntry(name, null);
         FactReference<T> ref = facts.get(name);
         return ref != null ? ref.getValue() : null;
     }

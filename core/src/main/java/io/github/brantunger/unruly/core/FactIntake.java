@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import io.github.brantunger.unruly.api.FactReference;
@@ -74,11 +75,14 @@ final class FactIntake {
      * @param facts The key/value fact store
      * @param runs  What is in progress on the run's thread, which marks each call-out
      * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
+     * @throws NullPointerException if the store's {@link FactStore#asMap()} returns {@code null}
      */
     Map<String, Object> factValues(FactStore<?> facts, LoggedFailures.Runs runs) {
         Map<String, Object> entryMap = new HashMap<>();
         runs.callOut();
-        for (Map.Entry<String, ? extends FactReference<?>> entry : facts.asMap().entrySet()) {
+        Map<String, ? extends FactReference<?>> view = Objects.requireNonNull(facts.asMap(),
+                "the fact store's asMap() returned null");
+        for (Map.Entry<String, ? extends FactReference<?>> entry : view.entrySet()) {
             // A null reference is bound as null, like a Fact holding null. Skipping it left the name
             // unresolvable, so `x == null` failed instead of matching.
             FactReference<?> fact = entry.getValue();
