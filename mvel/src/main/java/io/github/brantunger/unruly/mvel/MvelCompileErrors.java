@@ -46,8 +46,8 @@ final class MvelCompileErrors {
     // What an expression that calls an imported class like a method, such as ArrayList(y), is reported as.
     private static final String CLASS_CALLED_LIKE_METHOD = "a class can't be called like a method: use new";
     private static final char NEW_LINE = '\n';
-    // The keyword of an import, then what MVEL skips as whitespace before the name: every character up to a space.
-    private static final String IMPORT_KEYWORD = "import" + RuleText.MVEL_WHITESPACE + "*";
+    // The keyword of an import; MVEL skips whitespace after it (see RuleText.isMvelWhitespace).
+    private static final String IMPORT_KEYWORD = "import";
     // MVEL's description of an error whose message is missing, such as a class's failed static initializer.
     private static final String MISSING_DESCRIPTION = "null";
     // What MVEL says of a malformed statement such as b = = 1 when an assert inside MVEL doesn't stop it first.
@@ -83,6 +83,13 @@ final class MvelCompileErrors {
         POSITION.matcher(message).find();
         ERROR.matcher(message).find();
         UNKNOWN_ARRAY_TYPE.matcher(UNKNOWN_CLASS + ": Zzz[]").matches();
+        // A load that fails for an import of a whole package MVEL can't read makes MVEL build a String with bounds
+        // outside its text, and the JDK formats that exception's message with String.format. JDK 21's
+        // Formatter compiles a regular expression in its static initializer, whose classes that failing load would
+        // be the first to load (#1093). This loads them: an optional group and a range, for Pattern's Branch,
+        // BranchConn and range predicate, as MVEL's former escape pattern did by accident. Formatter itself is left
+        // to its first use (#1097, #1100); JDK 24 and later parse the format without a pattern.
+        Pattern.compile("([0-9])?x").matcher("x").matches();
     }
 
     /**
@@ -156,7 +163,7 @@ final class MvelCompileErrors {
      *
      * <p>
      * A name that escapes to more than the message has room for is shortened, as MVEL's descriptions are (see
-     * {@link FactNames#quoteWithin}), so the message is at most 1,000 characters.
+     * {@link MessageText#quoteWithin}), so the message is at most 1,000 characters.
      * </p>
      *
      * @param text The expression's source text, which holds the name as MVEL read it
@@ -178,32 +185,63 @@ final class MvelCompileErrors {
                 default -> index + 1;
             };
         }
-        // MVEL passes the name as a slice of the text just after its import, so the pattern matches there, and that
-        // import is in code as MVEL reads it. The scan reads comments and literals as MVEL does (#747), so it finds
-        // MVEL's import in code. The first match in the text is the answer only if that ever failed, and is still a
-        // place in the text, so the position is always within it.
-        Matcher imports = Pattern.compile(IMPORT_KEYWORD + "(" + Pattern.quote(e.rejectedName()) + ")")
-                .matcher(text);
-        // The first in code, and only if there is none, the first of all. A loop rather than a stream and a lambda:
-        // this runs only when a load fails, and the JVM's first such load, maybe deep in a stack, would link the
-        // lambda and first use the JDK's stream classes there, either of which can overflow (#1012, #1097).
+        // MVEL passes the name as a slice of the text just after its import, so the name follows an import there, and
+        // that import is in code as MVEL reads it. The scan reads comments and literals as MVEL does (#747), so it
+        // finds MVEL's import in code. The first import of the name in the text is the answer only if that ever
+        // failed, and is still a place in the text, so the position is always within it.
+        String name = e.rejectedName();
+        // The first in code, and only if there is none, the first of all, each import of the name found after the last
+        // one ends, as a regular expression's find() finds them. A loop rather than a stream and a lambda, and a scan
+        // rather than a regular expression: this runs only when a load fails, and the JVM's first such load, maybe
+        // deep in a stack, would link the lambda and first use the JDK's stream classes, or the classes of a pattern
+        // the warm-up didn't use, there, any of which can overflow (#1012, #1093, #1097).
         int at = -1;
-        while (at < 0 && imports.find()) {
-            if (code[imports.start()]) {
-                at = imports.start(1);
+        int first = -1;
+        int keyword = text.indexOf(IMPORT_KEYWORD);
+        while (at < 0 && keyword >= 0) {
+            int named = nameAfterImport(text, keyword, name);
+            if (named < 0) {
+                keyword = text.indexOf(IMPORT_KEYWORD, keyword + 1);
+            } else {
+                first = first < 0 ? named : first;
+                at = code[keyword] ? named : -1;
+                keyword = text.indexOf(IMPORT_KEYWORD, named + name.length());
             }
         }
         if (at < 0) {
             // With no import of the name in the text at all, which MVEL never passes, the scan fails as a stream's
             // findFirst().orElseThrow() did.
-            if (!imports.reset().find()) {
+            if (first < 0) {
                 throw new NoSuchElementException("No value present");
             }
-            at = imports.start(1);
+            at = first;
         }
         Position position = positionOf(text, at);
         String description = e.describedWithin(roomAfter(messageStart(position.line(), position.column())));
         return at(position.line(), position.column(), description, e);
+    }
+
+    /**
+     * Finds a name just after an {@code import}, past the whitespace MVEL skips after the keyword, as
+     * {@code import[\x00-\x20]*(name)} would match at the keyword: the most whitespace that leaves the name after it.
+     *
+     * @param text    The expression's source text
+     * @param keyword Where an {@code import} starts in it
+     * @param name    The name
+     * @return Where the name starts, or -1 if it doesn't follow that {@code import}
+     */
+    private static int nameAfterImport(String text, int keyword, String name) {
+        int after = keyword + IMPORT_KEYWORD.length();
+        int end = after;
+        while (end < text.length() && RuleText.isMvelWhitespace(text.charAt(end))) {
+            end++;
+        }
+        for (int at = end; at >= after; at--) {
+            if (text.startsWith(name, at)) {
+                return at;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -268,13 +306,13 @@ final class MvelCompileErrors {
 
     /**
      * Tells how many characters a message's start leaves for its description in the engine's limit, so the engine
-     * reports the message without shortening it again (see {@link FactNames#escapeWithin}).
+     * reports the message without shortening it again (see {@link MessageText#escapeWithin}).
      *
      * @param start The message's start, from {@link #messageStart}
      * @return The room for the description
      */
     private static int roomAfter(String start) {
-        return FactNames.MAX_DESCRIPTION_LENGTH - start.length();
+        return MessageText.MAX_TEXT_LENGTH - start.length();
     }
 
     /**
@@ -388,14 +426,14 @@ final class MvelCompileErrors {
      * @return The exception to throw
      */
     static InvalidExpressionException plainRejection(RuntimeException e) {
-        return positionless(FactNames.escapeWithin(String.valueOf(e.getMessage()), roomAfter(messageStart(0, 0))), e);
+        return positionless(MessageText.escapeWithin(String.valueOf(e.getMessage()), roomAfter(messageStart(0, 0))), e);
     }
 
     /**
      * Reports an error MVEL gave no line or column for, with one issue that has none either. For an expression MVEL
      * rejected with a plain {@link RuntimeException} (see {@link #rejectedPlainly}), MVEL's message, escaped as the
      * engine escapes its messages and shortened so the whole message fits in the engine's limit (see
-     * {@link FactNames#escapeWithin}), is the description, such as {@code failed to compile: illegal use of reserved
+     * {@link MessageText#escapeWithin}), is the description, such as {@code failed to compile: illegal use of reserved
      * word: in}. An expression MVEL's parser read out of bounds for, as it does for a
      * {@code .} or {@code ?} it can't read past, such as in {@code b.}, {@code b. == 1} or {@code foo(?)}, or for blank
      * parentheses, such as in {@code ( ) + 1}, is {@code failed to compile: malformed expression}. An expression that
@@ -425,7 +463,7 @@ final class MvelCompileErrors {
      * engine escapes its messages, a line break shown as {@code \n}, so it's one line in the issue too, and shortened,
      * saying how many of its characters were left out, so the whole message, {@code failed to compile at line 1,
      * column 8: } and the engine's note on the root cause included, is at most 1,000 characters (see
-     * {@link FactNames#escapeWithin}). The engine then reports the message without shortening it again, and the issue
+     * {@link MessageText#escapeWithin}). The engine then reports the message without shortening it again, and the issue
      * has the same description.
      * </p>
      *
@@ -513,7 +551,7 @@ final class MvelCompileErrors {
         } else {
             String described = described(innermost(chain));
             description = outOfBoundsInMvel(root, described) ? MALFORMED_EXPRESSION
-                    : FactNames.escapeWithin(named(described, rejectedType), room);
+                    : MessageText.escapeWithin(named(described, rejectedType), room);
         }
         if (MISSING_DESCRIPTION.equals(description)) {
             description = failedAssert(root) ? BADLY_FORMED
@@ -586,9 +624,9 @@ final class MvelCompileErrors {
     /**
      * Puts the errors MVEL listed with its exception on one line: one error's description alone, as the issue has
      * its line and column, or several as {@code (line,column) description}, joined with {@code ; }. The line is
-     * escaped as the engine escapes its messages and shortened to the room given (see {@link FactNames#escapeWithin}),
-     * as each description can hold the expression's own text; the positions and separators hold nothing escaping
-     * changes.
+     * escaped as the engine escapes its messages and shortened to the room given (see
+     * {@link MessageText#escapeWithin}), as each description can hold the expression's own text; the positions and
+     * separators hold nothing escaping changes.
      *
      * @param errors The errors, at least one
      * @param room   The most characters the line may take
@@ -596,13 +634,13 @@ final class MvelCompileErrors {
      */
     private static String oneLine(List<ErrorDetail> errors, int room) {
         if (errors.subList(1, errors.size()).isEmpty()) {
-            return FactNames.escapeWithin(String.valueOf(errors.get(0).getMessage()), room);
+            return MessageText.escapeWithin(String.valueOf(errors.get(0).getMessage()), room);
         }
         List<String> described = new ArrayList<>();
         for (ErrorDetail error : errors) {
             described.add("(" + error.getLineNumber() + "," + error.getColumn() + ") " + error.getMessage());
         }
-        return FactNames.escapeWithin(String.join("; ", described), room);
+        return MessageText.escapeWithin(String.join("; ", described), room);
     }
 
     /**
@@ -724,8 +762,8 @@ final class MvelCompileErrors {
      * Names the root cause of a compile error whose description MVEL left missing, in the engine's note: its class,
      * and its message if it has one, as {@code core.Failures} names one. Each is escaped as the engine escapes its
      * messages, so the issue's description is one line too, and shortened so the note fits in the room (see
-     * {@link FactNames#escapeWithin}), so the note is never cut off: the class name as a name, within what the rest of
-     * the note leaves with the message's count alone, and the message within what the class name leaves.
+     * {@link MessageText#escapeWithin}), so the note is never cut off: the class name as a name, within what the rest
+     * of the note leaves with the message's count alone, and the message within what the class name leaves.
      *
      * @param chain What MVEL threw and its causes
      * @param room  The most characters the note may take
@@ -739,14 +777,14 @@ final class MvelCompileErrors {
         String rootMessage = ExceptionReads.messageOf(root);
         String className = root.getClass().getName();
         if (rootMessage == null) {
-            return " (caused by " + FactNames.quoteWithin(className, room - " (caused by )".length()) + ")";
+            return " (caused by " + MessageText.quoteWithin(className, room - " (caused by )".length()) + ")";
         }
         // The class name leaves room for the message, or for its count alone if that's shorter. Escaped, a message is
         // never shorter than it is raw, so only one shorter raw than its count is escaped to measure it.
         int count = FactNames.leftOut(rootMessage.length()).length();
         int least = ": ".length() + (rootMessage.length() < count
                 ? Math.min(MessageText.escape(rootMessage).length(), count) : count);
-        String named = " (caused by " + FactNames.quoteWithin(className, room - " (caused by )".length() - least);
-        return named + ": " + FactNames.escapeWithin(rootMessage, room - named.length() - ": )".length()) + ")";
+        String named = " (caused by " + MessageText.quoteWithin(className, room - " (caused by )".length() - least);
+        return named + ": " + MessageText.escapeWithin(rootMessage, room - named.length() - ": )".length()) + ")";
     }
 }

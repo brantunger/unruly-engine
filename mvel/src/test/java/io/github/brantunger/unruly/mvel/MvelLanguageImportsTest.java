@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -114,7 +115,7 @@ class MvelLanguageImportsTest {
 
         String quoted = "'a" + "\\u200b".repeat(60) + "'";
         String cause = thrown.getCause().getMessage();
-        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertTrue(cause.length() <= MessageText.MAX_TEXT_LENGTH, cause.length() + ": " + cause);
         assertEquals(REJECTED + quoted + ", " + quoted + ", and 6 more", thrown.getMessage());
     }
 
@@ -133,7 +134,7 @@ class MvelLanguageImportsTest {
 
         String quoted = "'" + name + "'";
         String cause = thrown.getCause().getMessage();
-        assertEquals(FactNames.MAX_DESCRIPTION_LENGTH, cause.length(), cause);
+        assertEquals(MessageText.MAX_TEXT_LENGTH, cause.length(), cause);
         assertEquals(REJECTED + String.join(", ", quoted, quoted, quoted, quoted, "'" + last + "'"),
                 thrown.getMessage());
     }
@@ -152,7 +153,7 @@ class MvelLanguageImportsTest {
 
         String quoted = "'" + name + "'";
         String cause = thrown.getCause().getMessage();
-        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertTrue(cause.length() <= MessageText.MAX_TEXT_LENGTH, cause.length() + ": " + cause);
         assertEquals(REJECTED + String.join(", ", quoted, quoted, quoted, quoted) + ", and 2 more",
                 thrown.getMessage());
     }
@@ -169,7 +170,7 @@ class MvelLanguageImportsTest {
                 () -> engine.load(List.of(MVEL_RULE)));
 
         String cause = thrown.getCause().getMessage();
-        assertTrue(cause.length() <= FactNames.MAX_DESCRIPTION_LENGTH, cause.length() + ": " + cause);
+        assertTrue(cause.length() <= MessageText.MAX_TEXT_LENGTH, cause.length() + ": " + cause);
         assertTrue(thrown.getMessage().endsWith("failed to create a compiler: " + cause), thrown.getMessage());
         Matcher listed = Pattern.compile(Pattern.quote(REJECTED.substring(REJECTED.indexOf("MVEL takes")))
                 + "'a((?:\\\\u0001)+)\\.\\.\\. \\((\\d+) more characters\\)', and 1 more").matcher(cause);

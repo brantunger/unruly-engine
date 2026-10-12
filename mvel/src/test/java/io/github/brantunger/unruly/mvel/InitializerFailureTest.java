@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -568,7 +569,7 @@ class InitializerFailureTest {
         String description = loadFailure(WideClassNameNoMessageInit.class).issues().get(0).message();
 
         assertEquals("null (caused by " + wideNameShown(160) + ")", description);
-        assertTrue(description.length() <= FactNames.MAX_DESCRIPTION_LENGTH, description.length() + " characters");
+        assertTrue(description.length() <= MessageText.MAX_TEXT_LENGTH, description.length() + " characters");
     }
 
     @Test
@@ -577,7 +578,7 @@ class InitializerFailureTest {
         String description = loadFailure(WideClassNameInit.class).issues().get(0).message();
 
         assertEquals("null (caused by " + wideNameShown(158) + ": init failed)", description);
-        assertTrue(description.length() <= FactNames.MAX_DESCRIPTION_LENGTH, description.length() + " characters");
+        assertTrue(description.length() <= MessageText.MAX_TEXT_LENGTH, description.length() + " characters");
     }
 
     /**

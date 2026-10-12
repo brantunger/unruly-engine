@@ -22,7 +22,11 @@ variation selectors, unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` a
 
 Neither a name nor a quoted fact value can start a log line, change how it reads or pass for another name through
 an invisible character, and escaping twice changes nothing. Ordinary text shows escapes too, such as an emoji's
-U+FE0F. Shortening never splits such a character or an escape. Limits count `char`s before escaping, except for
+U+FE0F.
+
+Shortening never splits a character made of two `char`s, an escape, or raw text that reads as one (a backslash and
+`n`, `r` or `t`, or a backslash, `u` and four lowercase hex digits): it leaves that out whole, so up to 5 fewer
+characters show. Limits count `char`s before escaping, except for
 [text escaped already](nested-runs.md#-what-is-logged), so escaped text can show more than its limit, and the
 `(N more characters)` count is the `char`s cut:
 

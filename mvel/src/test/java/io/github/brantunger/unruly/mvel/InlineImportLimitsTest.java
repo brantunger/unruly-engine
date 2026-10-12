@@ -250,6 +250,27 @@ class InlineImportLimitsTest {
         assertEquals(18, e.issues().get(0).column(), "column");
     }
 
+    // #1152: the scan that replaced a regular expression finds the import in code after one in a comment and one in a
+    // string, past any whitespace MVEL skips, a control character included, or none, and none where no name follows an
+    // import.
+    @Test
+    @DisplayName("the position is the first import of the name in code, past MVEL's whitespace after the keyword")
+    void positionPastMvelWhitespaceAfterCommentAndString() {
+        String text = "x = 'import p';\n/* import p */ y = 1; import" + (char) 1 + " \tp; importp";
+        InvalidExpressionException e = MvelCompileErrors.importTooLarge(text, new Imports.ImportTooLarge("p", "'"));
+
+        assertEquals(2, e.issues().get(0).line(), "line");
+        assertEquals(32, e.issues().get(0).column(), "column");
+        // A name just after the keyword, with no whitespace between, follows it too.
+        InvalidExpressionException unspaced = MvelCompileErrors.importTooLarge("importp",
+                new Imports.ImportTooLarge("p", "'"));
+        assertEquals(1, unspaced.issues().get(0).line(), "line");
+        assertEquals(7, unspaced.issues().get(0).column(), "column");
+        // An import that ends the text has no name after it.
+        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importTooLarge("x = 1; // import",
+                new Imports.ImportTooLarge("p", "'")));
+    }
+
     // MVEL never passes a name that isn't in the text; were it to, the scan fails as a stream's orElseThrow() did.
     @Test
     @DisplayName("with no import of the name in the text, the scan throws NoSuchElementException")

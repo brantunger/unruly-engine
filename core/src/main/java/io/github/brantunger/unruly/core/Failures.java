@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.MessageText;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,11 +29,17 @@ import java.util.Set;
  */
 public final class Failures {
 
-    /** How much of an exception's message an error message includes; see {@link #describe}. */
-    static final int MAX_DESCRIPTION_LENGTH = 1_000;
+    /**
+     * How much of an exception's message an error message includes; see {@link #describe}. {@code MessageText}
+     * publishes it.
+     */
+    static final int MAX_DESCRIPTION_LENGTH = MessageText.MAX_TEXT_LENGTH;
 
-    /** How much of a fact, rule or language name a message includes; see {@link #quote}. */
-    static final int MAX_NAME_LENGTH = 200;
+    /**
+     * How much of a fact, rule or language name a message includes; see {@link #quote}. {@code MessageText} publishes
+     * it.
+     */
+    static final int MAX_NAME_LENGTH = MessageText.MAX_NAME_LENGTH;
 
     /** How many links of an exception's cause chain the engine reads; see {@link #causeChain}. */
     static final int MAX_CAUSE_CHAIN_LENGTH = 100;
@@ -890,7 +897,7 @@ public final class Failures {
         if (text == null || text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
-        return text.substring(0, keptBeforeEscape(text));
+        return text.substring(0, keptBeforeEscape(text, MAX_DESCRIPTION_LENGTH));
     }
 
     /**
@@ -1088,17 +1095,38 @@ public final class Failures {
         if (text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
-        return cut(text, keptBeforeEscape(text));
+        return cut(text, keptBeforeEscape(text, MAX_DESCRIPTION_LENGTH));
     }
 
     /**
-     * How many characters of text longer than {@value #MAX_DESCRIPTION_LENGTH} {@link #shortenBeforeEscape} keeps: as
-     * many as {@link #truncate} keeps, or fewer, up to the backslash of an escape they would end inside.
+     * How many characters of text longer than {@code limit} to keep, as {@link #shortenBeforeEscape} keeps
+     * {@value #MAX_DESCRIPTION_LENGTH} and {@link #shorten(String)} keeps {@value #MAX_NAME_LENGTH}: as many as
+     * {@link #shorten(String, int)} keeps, or fewer, up to the backslash of an escape they would end inside, or of text
+     * that reads as one.
+     *
+     * @param text  The text, longer than {@code limit}
+     * @param limit The most characters to keep, at least 1
+     * @return How many of its first characters to keep
      */
-    private static int keptBeforeEscape(String text) {
-        int kept = keptLength(text, MAX_DESCRIPTION_LENGTH);
+    private static int keptBeforeEscape(String text, int limit) {
+        int kept = keptLength(text, limit);
         int backslash = text.lastIndexOf('\\', kept - 1);
         return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
+    }
+
+    /**
+     * Tells whether a cut at {@code at} falls inside an escape {@link #escape} writes, or inside text that reads as
+     * one. Only the last backslash before the cut can start one, as no escape holds a backslash after its first
+     * character, and only one at most 5 characters before it, as no escape is longer than 6.
+     *
+     * @param text The text
+     * @param at   Where the text would be cut
+     * @return {@code true} if an escape starts before the cut and ends after it
+     */
+    private static boolean insideEscape(String text, int at) {
+        int from = Math.max(0, at - 5);
+        int backslash = from + text.substring(from, at).lastIndexOf('\\');
+        return backslash >= from && backslash + escapeLength(text, backslash) > at;
     }
 
     /**
@@ -1111,7 +1139,10 @@ public final class Failures {
      * @return The escape's length, or 0
      */
     private static int escapeLength(String text, int at) {
-        // A backslash the cut falls after is never the text's last character, as the cut leaves some out.
+        // Only escapeWithin's cut can fall after a backslash that ends the text; keptBeforeEscape's leaves some out.
+        if (at + 1 == text.length()) {
+            return 0;
+        }
         char kind = text.charAt(at + 1);
         if ("nrt".indexOf(kind) >= 0) {
             return 2;
@@ -1129,9 +1160,9 @@ public final class Failures {
     }
 
     /**
-     * Shortens text to at most {@code limit} characters, saying how many were left out: the one rule {@link #truncate}
-     * and {@link #shorten(String)} share. A surrogate pair the limit falls inside is left out whole, so the text never
-     * ends in half a character.
+     * Shortens text to at most {@code limit} characters, saying how many were left out: the plain cut of
+     * {@link #truncate}, which {@link #keptBeforeEscape} backs off from before an escape. A surrogate pair the limit
+     * falls inside is left out whole, so the text never ends in half a character.
      *
      * @param text  The text
      * @param limit How many characters to keep
@@ -1152,12 +1183,72 @@ public final class Failures {
      * @return The kept characters, then {@code ... (N more characters)}
      */
     private static String cut(String text, int kept) {
-        return text.substring(0, kept) + "... (" + (text.length() - kept) + " more characters)";
+        return text.substring(0, kept) + leftOut(text.length() - kept);
+    }
+
+    /**
+     * Says how many characters were left out of a text, after the part of it a message shows.
+     *
+     * @param count How many characters were left out
+     * @return {@code ... (N more characters)}
+     */
+    private static String leftOut(int count) {
+        return "... (" + count + " more characters)";
+    }
+
+    /**
+     * Escapes text as {@link #escape} does, shortened first, if it is longer than {@code most} characters or its
+     * escaped form is longer than {@code room} characters, to as many of its first characters as fit in {@code room}
+     * with {@code ... (N more characters)} after them, as {@link #cut} writes it. N counts the text's own characters
+     * left out, as given, not escaped ones. The text is cut between code points, and never inside an escape
+     * {@link #escape} writes or inside text that reads as one ({@code \n}, {@code \r}, {@code \t}, or a backslash,
+     * {@code u} and four lowercase hex digits), which is left out whole: text can hold escapes already, such as a
+     * message the engine built, and escaping it doesn't mend one cut in half. It shows at most the first {@code most}
+     * characters, as {@link #keptBeforeEscape} keeps them, and none for a {@code most} of 0 or less. A room too small
+     * for the count alone, a negative one included, gets the count alone; empty text is escaped as empty.
+     * {@code api.language.MessageText} publishes this.
+     *
+     * @param text The text, raw, or with escapes the engine already wrote
+     * @param most The most of its characters to show
+     * @param room The most characters the escaped text may take, the count included
+     * @return The text, shortened if it didn't fit or is longer than {@code most}, and escaped
+     */
+    public static String escapeWithin(String text, int most, int room) {
+        int last = most >= text.length() ? text.length() : most <= 0 ? 0 : keptBeforeEscape(text, most);
+        // Each code point escapes to at least its own characters, and each one kept can shorten the count by at most
+        // one digit, so the two together only grow as more is kept, and once they don't fit, nothing more will.
+        int kept = 0;
+        long shown = 0;
+        int end = 0;
+        while (end < last && shown <= room) {
+            int next = end + Character.charCount(text.codePointAt(end));
+            shown += escape(text.substring(end, next)).length();
+            if (shown + leftOut(text.length() - next).length() <= room && !insideEscape(text, next)) {
+                kept = next;
+            }
+            end = next;
+        }
+        return end == text.length() && shown <= Math.max(room, 0) ? escape(text)
+                : escape(text.substring(0, kept)) + leftOut(text.length() - kept);
+    }
+
+    /**
+     * Quotes a name as {@link #quote} does, or, if that is longer than {@code room} characters, escapes it within the
+     * room as {@link #escapeWithin} does, showing no more of it than {@link #quote} does. An empty name is quoted as
+     * empty, whatever the room. {@code api.language.MessageText} publishes this.
+     *
+     * @param name The name
+     * @param room The most characters the quoted name may take, the count of what was left out included
+     * @return The name, quoted
+     */
+    public static String quoteWithin(String name, int room) {
+        String quoted = quote(name);
+        return quoted.length() <= room ? quoted : escapeWithin(name, MAX_NAME_LENGTH, room);
     }
 
     /**
      * How many characters of text longer than {@code limit} to keep: {@code limit}, or one fewer when the last of them
-     * is a high surrogate. {@code mvel.FactNames.shownOf} keeps a copy of this, for {@code quoteWithin}.
+     * is a high surrogate.
      */
     private static int keptLength(String text, int limit) {
         return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
@@ -1459,7 +1550,9 @@ public final class Failures {
     /**
      * Makes a fact, rule or language name safe to put in a message the engine logs: shortened to
      * {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then {@link #escape escaped}; each escaped unit shows as 2
-     * or 6 characters. The name keeps one fewer where the limit falls inside a surrogate pair, which is left out whole.
+     * or 6 characters. The name keeps one fewer where the limit falls inside a surrogate pair, which is left out whole,
+     * and up to 5 fewer where it falls inside raw text that reads as an escape, which is left out whole too, as
+     * {@link #keptBeforeEscape} keeps them, so it never shows as an escape cut in half.
      * {@code api.language.MessageText} publishes this.
      *
      * @param name The name
@@ -1476,7 +1569,10 @@ public final class Failures {
      * @return The name, shortened if it was longer
      */
     static String shorten(String name) {
-        return shorten(name, MAX_NAME_LENGTH);
+        if (name.length() <= MAX_NAME_LENGTH) {
+            return name;
+        }
+        return cut(name, keptBeforeEscape(name, MAX_NAME_LENGTH));
     }
 
     /**

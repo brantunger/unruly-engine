@@ -44,21 +44,22 @@ import static org.junit.jupiter.api.Assertions.*;
  * initialize ahead of time; and those that {@code prepare()} leaves to a first use, which the test says rather than
  * checks covered (#1012). A rule's first inline list, {@code new} and {@code soundslike} each initialize one class of
  * MVEL's: {@code CollectionParser}, {@code NewObjectNode} and {@code Soundex}. #1097: a first load that fails for an
- * import with too many parts initializes MVEL's {@code ImportNode}, and one for a package import too far into the
- * text for MVEL to read, the JDK's {@code Formatter}, its {@code FormatSpecifier} and {@code Locale.Category}, which
- * MVEL's own message uses. Its first read of a property through its getter initializes none, as {@code prepare()}
- * initializes {@code GetterAccessor}, whose empty array every call of a method without arguments reads. #1115: nor does
- * its first {@code BigDecimal} literal, as {@code prepare()} initializes {@code BigDecimal} and {@code BigInteger}, nor
- * its first read of a method's generic return type, its first reflective call of a method of the JDK's with a runtime
- * annotation, or a first write to an output that overrides a generic setter, which reads the setter's generic parameter
- * type, as building the first engine reads the generic types and annotations of the JDK's methods: each could overflow
- * deep in a stack in a static initializer of the JDK's, and leave the class unusable for the life of the JVM. The steps
- * that take them come before any other step that could. With the engine logging, as an application's SLF4J provider
- * may, the first message it logs initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple.
- * The test checks that each step initializes exactly those, so it fails if one stops reaching its class, and if a step
- * initializes any other. It is checked with MVEL's JIT on, made MVEL's default again once the engines are built, as an
- * application may; with it off, as in a native image, which sets MVEL's optimizer up with other classes; with MVEL's
- * reflective optimizer the default, as the engine makes it (#1161); and with the engine logging.
+ * import with too many parts initializes MVEL's {@code ImportNode}, and one for a package import too far into the text
+ * for MVEL to read, the JDK's {@code Formatter}, its {@code FormatSpecifier} and {@code Locale.Category}, with which
+ * the JDK formats the message of the out-of-bounds exception MVEL's read of the import throws. Its first read of a
+ * property through its getter initializes none, as {@code prepare()} initializes {@code GetterAccessor}, whose empty
+ * array every call of a method without arguments reads. #1115: nor does its first {@code BigDecimal} literal, as
+ * {@code prepare()} initializes {@code BigDecimal} and {@code BigInteger}, nor its first read of a method's generic
+ * return type, its first reflective call of a method of the JDK's with a runtime annotation, or a first write to an
+ * output that overrides a generic setter, which reads the setter's generic parameter type, as building the first engine
+ * reads the generic types and annotations of the JDK's methods: each could overflow deep in a stack in a static
+ * initializer of the JDK's, and leave the class unusable for the life of the JVM. The steps that take them come before
+ * any other step that could. With the engine logging, as an application's SLF4J provider may, the first message it logs
+ * initializes SLF4J's {@code Level} and {@code FormattingTuple}, here with slf4j-simple. The test checks that each step
+ * initializes exactly those, so it fails if one stops reaching its class, and if a step initializes any other. It is
+ * checked with MVEL's JIT on, made MVEL's default again once the engines are built, as an application may; with it off,
+ * as in a native image, which sets MVEL's optimizer up with other classes; with MVEL's reflective optimizer the
+ * default, as the engine makes it (#1161); and with the engine logging.
  * </p>
  *
  * <p>
@@ -115,9 +116,9 @@ class FirstUseClassInitializationTest {
             FirstUseScenario.NEW_OBJECT + ": org/mvel2/ast/NewObjectNode",
             FirstUseScenario.SOUNDSLIKE + ": org/mvel2/util/Soundex");
     // What a load that fails for an import initializes, which prepare() leaves to it, as it does MVEL's features
-    // (#1097): MVEL's ImportNode, which reads an import, for one with too many parts; and the JDK's Formatter, which
-    // MVEL's own code formats its message with, for a package import too far into the text for MVEL to read. Each only
-    // in its own step, so no other step may initialize them.
+    // (#1097): MVEL's ImportNode, which reads an import, for one with too many parts; and the JDK's Formatter, with
+    // which the JDK formats the message of the out-of-bounds exception MVEL's read of the import throws, for a package
+    // import too far into the text for MVEL to read. Each only in its own step, so no other step may initialize them.
     private static final List<String> BY_FAILED_IMPORTS = List.of(
             FirstUseScenario.IMPORT_TOO_LARGE + ": org/mvel2/ast/ImportNode",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
