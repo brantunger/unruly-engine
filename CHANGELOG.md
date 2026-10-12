@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.1](https://github.com/brantunger/unruly-engine/compare/v2.30.0...v2.30.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* escape every space separator other than an ordinary space in messages, so a name ending in a no-break space no longer looks like a valid name followed by a space ([#1177](https://github.com/brantunger/unruly-engine/issues/1177)) ([9357edb](https://github.com/brantunger/unruly-engine/commit/9357edbeb5607dff16ccf744691589dc5c8557ef))
+
 ## [2.30.0](https://github.com/brantunger/unruly-engine/compare/v2.29.16...v2.30.0) (2026-10-12)
 
 
