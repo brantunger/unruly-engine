@@ -71,14 +71,18 @@ final class RunClasses {
     // The name of the method readMembers calls reflectively. A constant, so this class has no static initializer.
     private static final String HASH_CODE = "hashCode";
 
-    // Set once every class has been initialized, so a later engine checks no room and initializes nothing.
+    // Set once every class has been initialized, so a later engine checks no room and initializes nothing. Set last,
+    // under this class's lock, so an engine built meanwhile waits for it, and one that threw leaves it unset.
     private static volatile boolean initialized;
 
     private RunClasses() {
     }
 
     /**
-     * Initializes the classes, unless an engine built before has.
+     * Initializes the classes, unless an engine built before has. An engine built on another thread meanwhile waits
+     * for this one to finish, then initializes nothing, unless this one threw. One that throws, as it does when the
+     * stack is too shallow, leaves them to the next, which checks the room again. The lock is this class's own, so it
+     * has no static initializer.
      *
      * @throws StackOverflowError if the thread has too little stack left to initialize them, before any is touched
      */
@@ -86,31 +90,37 @@ final class RunClasses {
         if (initialized) {
             return;
         }
-        StackHeadroom.checkInitializing();
-        // The session of a language that keeps no state, and the builder's default output writer: no lookup here can
-        // reach either, as its package keeps it to itself, and naming one fails in a native image, so each is
-        // initialized by getting it. So is the builder's default clock, the JDK's, which the builder reads only now,
-        // with the instant a load records as its time.
-        Session.none();
-        OutputWriter.beansAndMaps();
-        Clock.systemUTC().instant();
-        // What a load and validate() do with the JDK's classes, which differ between JDK releases, so those are
-        // initialized by doing the same: computing a checksum, which finds the digest in the JDK's security settings,
-        // and sorting and filtering a rule list with streams, here two rules, one without a priority, and a null.
-        Checksums.ofRules(List.of());
-        Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
-        RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
-                rule.toBuilder().ruleName("b").priority(1).build())));
-        initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
-        // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
-        // reflection, which differs between JDK releases, so that is done here on the JDK's own classes (#1115).
-        readMembers(List.of(Object.class, Class.class, Math.class, String.class, Thread.class, System.class,
-                Iterable.class));
-        // A rule list's first use of a language reads whether its class is prepared before it checks any room, as it
-        // must not check on every load, so what the first read of a class does is done here: creating the flag, whose
-        // class's static initializer sets up the JDK's field access.
-        Prepared.CLASSES.get(Prepared.class);
-        initialized = true;
+        synchronized (RunClasses.class) {
+            if (initialized) {
+                return;
+            }
+            StackHeadroom.checkInitializing();
+            // The session of a language that keeps no state, and the builder's default output writer: no lookup here
+            // can reach either, as its package keeps it to itself, and naming one fails in a native image, so each is
+            // initialized by getting it. So is the builder's default clock, the JDK's, which the builder reads only
+            // now, with the instant a load records as its time.
+            Session.none();
+            OutputWriter.beansAndMaps();
+            Clock.systemUTC().instant();
+            // What a load and validate() do with the JDK's classes, which differ between JDK releases, so those are
+            // initialized by doing the same: computing a checksum, which finds the digest in the JDK's security
+            // settings, and sorting and filtering a rule list with streams, here two rules, one without a priority, and
+            // a null.
+            Checksums.ofRules(List.of());
+            Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
+            RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
+                    rule.toBuilder().ruleName("b").priority(1).build())));
+            initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
+            // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
+            // reflection, which differs between JDK releases, so that is done here on the JDK's own classes (#1115).
+            readMembers(List.of(Object.class, Class.class, Math.class, String.class, Thread.class, System.class,
+                    Iterable.class));
+            // A rule list's first use of a language reads whether its class is prepared before it checks any room, as
+            // it must not check on every load, so what the first read of a class does is done here: creating the flag,
+            // whose class's static initializer sets up the JDK's field access.
+            Prepared.CLASSES.get(Prepared.class);
+            initialized = true;
+        }
     }
 
     /**
