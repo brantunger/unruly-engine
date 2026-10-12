@@ -692,8 +692,8 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * Only the validity window uses the clock. A {@link #runTimeout(Duration) run timeout} is measured with a
      * monotonic clock whatever clock is set here, so a step of the system clock doesn't move a running deadline.
-     * Anything the clock throws fails the run unchanged, before any listener is told the run started; a {@code null}
-     * instant fails it the same way, with a {@link NullPointerException}.
+     * Anything the clock throws fails the run unchanged, before any listener is told the run started, and isn't
+     * logged; a {@code null} instant fails it the same way, with a {@link NullPointerException}.
      * </p>
      *
      * <p>

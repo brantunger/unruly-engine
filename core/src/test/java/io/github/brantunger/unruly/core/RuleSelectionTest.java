@@ -234,7 +234,7 @@ class RuleSelectionTest {
     }
 
     @Test
-    @DisplayName("a clock that throws fails the run unchanged, before any listener hears of the run")
+    @DisplayName("a clock that throws fails the run unchanged, before any listener hears of the run, and isn't logged")
     void throwingClockFailsTheRun() {
         IllegalStateException broken = new IllegalStateException("no time");
         Clock throwing = new Clock() {
@@ -263,8 +263,12 @@ class RuleSelectionTest {
         RulesEngine<Map<String, Object>> engine = allMatches().clock(throwing).listener(listener).build();
         engine.load(List.of(rule("r", "true")));
 
-        assertSame(broken, assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>())));
+        EngineLogs.Outcome<IllegalStateException> outcome = EngineLogs.capture(IllegalStateException.class,
+                () -> engine.run(new FactMap<>()));
+
+        assertSame(broken, outcome.thrown());
         assertEquals(List.of(), heard);
+        assertFalse(outcome.logs().contains(EngineLogs.ENGINE_LOGGER), outcome.logs());
     }
 
     @Test

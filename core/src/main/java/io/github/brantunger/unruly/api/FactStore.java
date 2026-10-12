@@ -26,6 +26,7 @@ public interface FactStore<T extends @Nullable Object> {
      * @param name The fact's name
      * @return The value, or {@code null} either if there is no fact with that name or if the fact's value is
      *         {@code null}. To tell the two apart, ask {@link #asMap()} whether it {@code containsKey(name)}.
+     * @throws IllegalArgumentException if the store rejects {@code name}, as {@link FactMap} does for {@code null}
      */
     @Nullable T getValue(String name);
 
@@ -53,7 +54,8 @@ public interface FactStore<T extends @Nullable Object> {
      * Returns a read-only view of the facts, keyed by name. The view follows later changes to the store. A run copies
      * its entries once, when it starts, binding each fact's value to its key.
      *
-     * @return An unmodifiable map of each name to its {@link FactReference}
+     * @return An unmodifiable map of each name to its {@link FactReference}; must not be {@code null}: a
+     *         {@code null} one fails the run with a {@link NullPointerException}
      */
     Map<String, @Nullable FactReference<T>> asMap();
 }

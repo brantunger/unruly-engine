@@ -50,6 +50,27 @@ class FactMapNameValidationTest {
     }
 
     @Test
+    @DisplayName("getValue rejects a null name (#1134)")
+    void getValueRejectsNullName() {
+        FactMap<Object> facts = new FactMap<>(new Fact<>("x", 1));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> facts.getValue(null));
+        assertEquals("fact name must not be null", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("guard: get, containsKey and remove keep the Map contract for a null key, finding nothing (#1134)")
+    void mapReadsAllowNullKey() {
+        FactMap<Object> facts = new FactMap<>(new Fact<>("x", 1));
+
+        assertNull(facts.get(null));
+        assertFalse(facts.containsKey(null));
+        assertFalse(facts.asMap().containsKey(null));
+        assertNull(facts.remove(null));
+        assertEquals(Map.of("x", new Fact<>("x", 1)), facts);
+    }
+
+    @Test
     @DisplayName("the varargs constructor rejects duplicate fact names")
     void varargsRejectsDuplicates() {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,

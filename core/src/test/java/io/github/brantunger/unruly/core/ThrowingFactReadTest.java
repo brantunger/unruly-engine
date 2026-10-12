@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactReference;
+import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("a fact whose value can't be read fails run() before the run starts (#635)")
+@DisplayName("a fact store or a fact whose value can't be read fails run() before the run starts (#635, #1134)")
 class ThrowingFactReadTest {
 
     private final List<String> events = new CopyOnWriteArrayList<>();
@@ -134,5 +135,39 @@ class ThrowingFactReadTest {
         assertSame(unreadable, thrown);
         assertEquals(1, reads.get());
         assertEquals(List.of(), events);
+    }
+
+    @Test
+    @DisplayName("a fact store whose asMap() returns null fails run() with a NullPointerException naming it, before the"
+            + " run starts, and nothing is logged (#1134)")
+    void nullFactViewFailsTheRun() {
+        FactStore<Object> facts = new FactStore<>() {
+            @Override
+            public Object getValue(String name) {
+                return null;
+            }
+
+            @Override
+            public void setValue(String name, Object obj) {
+            }
+
+            @Override
+            public FactReference<Object> put(FactReference<Object> ref) {
+                return null;
+            }
+
+            @Override
+            public Map<String, FactReference<Object>> asMap() {
+                return null;
+            }
+        };
+        StatelessRulesEngine<Map<String, Object>> engine = engine();
+
+        EngineLogs.Outcome<NullPointerException> outcome = EngineLogs.capture(NullPointerException.class,
+                () -> engine.run(facts));
+
+        assertEquals("the fact store's asMap() returned null", outcome.thrown().getMessage());
+        assertEquals(List.of(), events);
+        assertFalse(outcome.logs().contains(EngineLogs.ENGINE_LOGGER), outcome.logs());
     }
 }

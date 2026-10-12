@@ -39,6 +39,13 @@ public interface RulesEngine<O> extends AutoCloseable {
     /**
      * Compiles a rule list and swaps it in for the rules loaded before, if any.
      *
+     * <p>
+     * If closing an idle session or a compiler of the replaced rules throws with an {@link InterruptedException} in
+     * its cause chain, or suppressed on it, {@code load()} logs it at WARN, puts back the thread's interrupt status and
+     * still returns normally, unless it also carries a fatal {@link Error}, which is thrown as described below (see
+     * {@link io.github.brantunger.unruly.api.language.Session#close()}).
+     * </p>
+     *
      * @param ruleList The list of {@link Rule} objects
      * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if the list contains a {@code null}
      *         rule; two rules share a name; a condition or action is blank; a rule is written in a language the engine
@@ -49,8 +56,11 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         rather than the JVM failing; a compiler throws while telling which facts its rules read, or tells it
      *         with a set holding {@code null} (see
      *         {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()}); or a
-     *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name the rules' languages can't refer
-     *         to, or one that a language the rules use reserves only for the rule lists that use it (see
+     *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name a language the rules use can't
+     *         refer to, though a language whose compiler says which facts its rules read
+     *         ({@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()}, as MVEL's does)
+     *         checks only those, or a name that a language the rules use reserves only for the rule lists that use it,
+     *         rejected whether or not a rule reads it (see
      *         {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}). A
      *         {@code null} rule or a duplicate name is thrown at once. The other problems are collected before the
      *         exception is thrown, and {@link RuleCompilationException#failures() failures()} lists them: each broken
