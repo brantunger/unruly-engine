@@ -131,9 +131,15 @@ class FirstUseClassInitializationTest {
     // What a load that fails for an import initializes, which prepare() leaves to it, as it does MVEL's features
     // (#1097): MVEL's ImportNode, which reads an import, for one with too many parts; and the JDK's Formatter, with
     // which the JDK formats the message of the out-of-bounds exception MVEL's read of the import throws, for a package
-    // import too far into the text for MVEL to read. Each only in its own step, so no other step may initialize them.
+    // import too far into the text for MVEL to read. And for an import of a class with a null static field (#1198),
+    // what MVEL's own import of the class's fields initializes before the engine reads them: the class, which MVEL's
+    // Class.forName initializes, and the JDK's accessor for a static field, which MVEL's first read of one, of the
+    // field before the null one, makes; the same on JDK 21 and 25. Each only in its own step, so no other step may
+    // initialize them.
     private static final List<String> BY_FAILED_IMPORTS = List.of(
             FirstUseScenario.IMPORT_TOO_LARGE + ": org/mvel2/ast/ImportNode",
+            FirstUseScenario.NULL_FIELD_IMPORT + ": probe/NullFieldHolder",
+            FirstUseScenario.NULL_FIELD_IMPORT + ": java/lang/invoke/DirectMethodHandle$StaticAccessor",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Locale$Category",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter$FormatSpecifier");
@@ -182,9 +188,10 @@ class FirstUseClassInitializationTest {
     private static final String SCENARIO_LOADED = "[class,load] " + FirstUseScenario.class.getName();
     private static final List<String> FAILING = List.of(FirstUseScenario.CONDITION_FAILS,
             FirstUseScenario.ACTION_FAILS, FirstUseScenario.CONDITION_ASSIGNS, FirstUseScenario.LOAD_FAILS,
-            FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.PACKAGE_IMPORT_UNREAD,
-            FirstUseScenario.FAILING_NESTED_LOAD, FirstUseScenario.VALIDATE_FAILS, FirstUseScenario.ANALYSIS_LOOP,
-            FirstUseScenario.RUN_LOOP, FirstUseScenario.NESTED_NAME_TOO_LARGE);
+            FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.NULL_FIELD_IMPORT,
+            FirstUseScenario.PACKAGE_IMPORT_UNREAD, FirstUseScenario.FAILING_NESTED_LOAD,
+            FirstUseScenario.VALIDATE_FAILS, FirstUseScenario.ANALYSIS_LOOP, FirstUseScenario.RUN_LOOP,
+            FirstUseScenario.NESTED_NAME_TOO_LARGE);
     // The steps whose load or run is the JVM's first to ask for the class loader so many times that MVEL's loop
     // detection walks the stack, which succeed, and must load, initialize or link no more than a failing one (#1099).
     private static final List<String> WALKING = List.of(FirstUseScenario.MANY_CALLS_LOAD,

@@ -149,7 +149,9 @@ final class MvelCompileErrors {
     /**
      * Reports an {@code import} in the expression's own text of a package too long, or with too many parts, to look
      * up, with one issue at the package's name, such as {@code Can't import 'a.a.a...': it has 65 dot-separated
-     * parts, and an import may have at most 64}: the engine's own words for such an import. The line and column count
+     * parts, and an import may have at most 64}: the engine's own words for such an import. An import of a class with a
+     * public static field whose value is {@code null} is reported the same way, such as
+     * {@code Can't import 'acme.Bar.*': its public static field 'X' is null}. The line and column count
      * from 1, as MVEL's own compile errors do, and the exception's message reads as {@link #compileError}'s, such as
      * {@code failed to compile at line 1, column 8: Can't import ...}.
      *
@@ -170,7 +172,7 @@ final class MvelCompileErrors {
      * @param e    What the configuration threw
      * @return The exception to throw
      */
-    static InvalidExpressionException importTooLarge(String text, Imports.ImportTooLarge e) {
+    static InvalidExpressionException importRejected(String text, Imports.ImportRejected e) {
         // Where the scan reads code: a literal or a comment is skipped whole, as the check for assignments in a
         // condition skips it. A comment that doesn't end takes the index to the end of the text, and a literal that
         // doesn't end, past it. An array rather than a BitSet, whose first use, here in a failing load, would

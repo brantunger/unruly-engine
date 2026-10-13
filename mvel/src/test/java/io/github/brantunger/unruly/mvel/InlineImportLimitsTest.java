@@ -243,8 +243,8 @@ class InlineImportLimitsTest {
     @Test
     @DisplayName("with no import of the name in code, the position is that of the first in the text")
     void positionOfFirstImportWhenNoneInCode() {
-        InvalidExpressionException e = MvelCompileErrors.importTooLarge("x = 1; // import p\n/* import p */",
-                new Imports.ImportTooLarge("p", "'"));
+        InvalidExpressionException e = MvelCompileErrors.importRejected("x = 1; // import p\n/* import p */",
+                new Imports.ImportRejected("p", "'"));
 
         assertEquals(1, e.issues().get(0).line(), "line");
         assertEquals(18, e.issues().get(0).column(), "column");
@@ -257,27 +257,27 @@ class InlineImportLimitsTest {
     @DisplayName("the position is the first import of the name in code, past MVEL's whitespace after the keyword")
     void positionPastMvelWhitespaceAfterCommentAndString() {
         String text = "x = 'import p';\n/* import p */ y = 1; import" + (char) 1 + " \tp; importp";
-        InvalidExpressionException e = MvelCompileErrors.importTooLarge(text, new Imports.ImportTooLarge("p", "'"));
+        InvalidExpressionException e = MvelCompileErrors.importRejected(text, new Imports.ImportRejected("p", "'"));
 
         assertEquals(2, e.issues().get(0).line(), "line");
         assertEquals(32, e.issues().get(0).column(), "column");
         // A name just after the keyword, with no whitespace between, follows it too.
-        InvalidExpressionException unspaced = MvelCompileErrors.importTooLarge("importp",
-                new Imports.ImportTooLarge("p", "'"));
+        InvalidExpressionException unspaced = MvelCompileErrors.importRejected("importp",
+                new Imports.ImportRejected("p", "'"));
         assertEquals(1, unspaced.issues().get(0).line(), "line");
         assertEquals(7, unspaced.issues().get(0).column(), "column");
         // An import that ends the text has no name after it.
-        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importTooLarge("x = 1; // import",
-                new Imports.ImportTooLarge("p", "'")));
+        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importRejected("x = 1; // import",
+                new Imports.ImportRejected("p", "'")));
     }
 
     // MVEL never passes a name that isn't in the text; were it to, the scan fails as a stream's orElseThrow() did.
     @Test
     @DisplayName("with no import of the name in the text, the scan throws NoSuchElementException")
     void noImportOfTheNameThrows() {
-        Imports.ImportTooLarge rejected = new Imports.ImportTooLarge("p", "'");
+        Imports.ImportRejected rejected = new Imports.ImportRejected("p", "'");
 
-        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importTooLarge("x = 1", rejected));
+        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importRejected("x = 1", rejected));
     }
 
     @Test

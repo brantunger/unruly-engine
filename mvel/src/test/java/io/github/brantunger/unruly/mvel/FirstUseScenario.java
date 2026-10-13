@@ -96,6 +96,8 @@ final class FirstUseScenario {
     static final String CLASS_CALLED = "a load that fails, a class called like a method";
     /** The step whose load is the first to fail for an import with too many parts (#1097). */
     static final String IMPORT_TOO_LARGE = "a load that fails, an import with too many parts";
+    /** The step whose load is the first to fail for an import of a class with a null static field (#1198). */
+    static final String NULL_FIELD_IMPORT = "a load that fails, an import of a class with a null static field";
     /** The step whose load is the first to fail for a package import too far into the text for MVEL to read (#1097). */
     static final String PACKAGE_IMPORT_UNREAD = "a load that fails, a package import MVEL can't read";
     /**
@@ -377,14 +379,17 @@ final class FirstUseScenario {
 
     // Loads of a rule that fails to compile, each in a step of its own, for each way MVEL's compile errors are
     // described: a condition that assigns, which the engine rejects before MVEL compiles it; a syntax error; a class
-    // called like a method; an import with too many parts; and a package import whose last '.' is too far into the
-    // text for MVEL to read (#1097). The condition that assigns comes first, as every failed load creates what it does.
+    // called like a method; an import with too many parts; an import of a class with a null static field (#1198);
+    // and a package import whose last '.' is too far into the text for MVEL to read (#1097). The condition that
+    // assigns comes first, as every failed load creates what it does.
     private static void failsToCompile(RulesEngine<Map<String, Object>> engine,
                                        RulesEngine<Map<String, Object>> imported, List<String> unexpected) {
         failsToLoadRule(engine, CONDITION_ASSIGNS, rule("assigns", "x = 1", "1"), unexpected);
         failsToLoadRule(engine, LOAD_FAILS, rule("broken", "x >", "1"), unexpected);
         failsToLoadRule(imported, CLASS_CALLED, rule("called", "true", "x = ArrayList(y)"), unexpected);
         failsToLoadRule(engine, IMPORT_TOO_LARGE, rule("imports", "true", TOO_MANY_PARTS), unexpected);
+        failsToLoadRule(engine, NULL_FIELD_IMPORT, rule("nulls", "true", "import probe.NullFieldHolder.*; x = 1"),
+                unexpected);
         failsToLoadRule(engine, PACKAGE_IMPORT_UNREAD, rule("far", "true", IMPORT_TOO_FAR), unexpected);
     }
 

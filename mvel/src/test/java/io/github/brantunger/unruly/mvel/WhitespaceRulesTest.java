@@ -46,7 +46,7 @@ class WhitespaceRulesTest {
     }
 
     private static int importLine(String text) {
-        InvalidExpressionException e = MvelCompileErrors.importTooLarge(text, new Imports.ImportTooLarge("p", "'"));
+        InvalidExpressionException e = MvelCompileErrors.importRejected(text, new Imports.ImportRejected("p", "'"));
         return e.issues().get(0).line();
     }
 }
