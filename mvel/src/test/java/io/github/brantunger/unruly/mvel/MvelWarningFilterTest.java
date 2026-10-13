@@ -11,6 +11,7 @@ import org.mvel2.MVEL;
 import org.mvel2.asm.ClassWriter;
 import org.mvel2.asm.MethodVisitor;
 import org.mvel2.asm.Opcodes;
+import org.mvel2.util.ErrorUtil;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +33,7 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("MVEL's WARNING for a failed conversion is dropped only while a rule's expression runs")
+@DisplayName("MVEL's WARNINGs are dropped only while a rule's expression compiles or runs")
 class MvelWarningFilterTest {
 
     private static final LogRecord KEEP = new LogRecord(Level.WARNING, "keep");
@@ -95,23 +96,27 @@ class MvelWarningFilterTest {
     }
 
     /**
-     * Calls a copy's static method. The first call initializes the copy, which installs its filter on MVEL's logger,
+     * Calls a copy's static method. The first call initializes the copy, which installs its filter on MVEL's loggers,
      * over this class loader's, as a second deployment would; that's undone here.
      *
-     * @return What the method returned, and the filter the copy's initialization set on MVEL's logger, or
-     *         {@code null} if it had been initialized already
+     * @return What the method returned, and the filters the copy's initialization set on the reflective optimizer's
+     *         logger and on ErrorUtil's, each {@code null} if it had been initialized already
      */
     private static Object[] callCopy(Class<?> copy, String name, Class<?>[] types, Object... arguments)
             throws ReflectiveOperationException {
         Method method = copy.getDeclaredMethod(name, types);
         method.setAccessible(true);
         Filter engines = MvelWarningFilter.LOGGER.getFilter();
+        Filter enginesOnErrorUtil = MvelWarningFilter.ERROR_UTIL_LOGGER.getFilter();
         try {
             Object result = method.invoke(null, arguments);
             Filter onMvelsLogger = MvelWarningFilter.LOGGER.getFilter();
-            return new Object[] {result, onMvelsLogger == engines ? null : onMvelsLogger};
+            Filter onErrorUtil = MvelWarningFilter.ERROR_UTIL_LOGGER.getFilter();
+            return new Object[] {result, onMvelsLogger == engines ? null : onMvelsLogger,
+                onErrorUtil == enginesOnErrorUtil ? null : onErrorUtil};
         } finally {
             MvelWarningFilter.LOGGER.setFilter(engines);
+            MvelWarningFilter.ERROR_UTIL_LOGGER.setFilter(enginesOnErrorUtil);
         }
     }
 
@@ -197,6 +202,20 @@ class MvelWarningFilterTest {
         assertSame(Logger.getLogger(MvelWarningFilter.LOGGER_NAME), MvelWarningFilter.LOGGER);
         assertSame(MvelWarningFilter.FILTER, first);
         assertSame(first, MvelWarningFilter.LOGGER.getFilter());
+    }
+
+    @Test
+    @DisplayName("the filter is installed once on the logger of MVEL's ErrorUtil, however many engines load rules")
+    void installedOnceOnErrorUtil() {
+        engineWith("true");
+        Filter first = MvelWarningFilter.ERROR_UTIL_LOGGER.getFilter();
+        engineWith("true");
+
+        assertEquals(ErrorUtil.class.getName(), MvelWarningFilter.ERROR_UTIL_LOGGER_NAME);
+        assertSame(Logger.getLogger(MvelWarningFilter.ERROR_UTIL_LOGGER_NAME), MvelWarningFilter.ERROR_UTIL_LOGGER);
+        assertSame(MvelWarningFilter.ERROR_UTIL_FILTER, first);
+        assertSame(first, MvelWarningFilter.ERROR_UTIL_LOGGER.getFilter());
+        assertNotSame(MvelWarningFilter.FILTER, MvelWarningFilter.ERROR_UTIL_FILTER);
     }
 
     @Test
@@ -309,6 +328,7 @@ class MvelWarningFilterTest {
         Object[] installed = callCopy(copy, "install", new Class<?>[] {Logger.class}, logger);
         Filter copied = logger.getFilter();
         Filter copyOverEngines = (Filter) installed[1];
+        Filter copyOverEnginesOnErrorUtil = (Filter) installed[2];
 
         MvelWarningFilter filter = MvelWarningFilter.install(logger);
 
@@ -316,10 +336,12 @@ class MvelWarningFilterTest {
         assertSame(copied, installed[0]);
         assertSame(copy, copied.getClass());
         assertSame(original, filter.get(), "the copy is kept in place of the filter it held");
-        // Initializing the copy installed it over this class loader's filter on MVEL's logger, as a second deployment
-        // would: it asks this class loader's filter, and keeps the one before it.
+        // Initializing the copy installed it over this class loader's filter on each of MVEL's loggers, as a second
+        // deployment would: it asks this class loader's filter, and keeps the one before it.
         assertSame(copy, copyOverEngines.getClass());
         assertSame(MvelWarningFilter.FILTER.get(), ((Supplier<?>) copyOverEngines).get());
+        assertSame(copy, copyOverEnginesOnErrorUtil.getClass());
+        assertSame(MvelWarningFilter.ERROR_UTIL_FILTER.get(), ((Supplier<?>) copyOverEnginesOnErrorUtil).get());
         boolean outermost = MvelWarningFilter.enter();
         try {
             assertFalse(copyOverEngines.isLoggable(KEEP), "the copy doesn't cover this class loader's rules");
@@ -386,12 +408,14 @@ class MvelWarningFilterTest {
         Constructor<?> constructor = copy.getDeclaredConstructor(Reference.class, Filter.class);
         constructor.setAccessible(true);
         Filter engines = MvelWarningFilter.LOGGER.getFilter();
+        Filter enginesOnErrorUtil = MvelWarningFilter.ERROR_UTIL_LOGGER.getFilter();
         Filter copied;
         try {
-            // Creating it initializes the copy, which installs its own filter on MVEL's logger; that's undone.
+            // Creating it initializes the copy, which installs its own filter on MVEL's loggers; that's undone.
             copied = (Filter) constructor.newInstance(null, previous);
         } finally {
             MvelWarningFilter.LOGGER.setFilter(engines);
+            MvelWarningFilter.ERROR_UTIL_LOGGER.setFilter(enginesOnErrorUtil);
         }
         logger.setFilter(copied);
         MvelWarningFilter.install(logger);

@@ -8,36 +8,42 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 /**
- * Drops the WARNING MVEL logs through {@code java.util.logging} when a method call or an indexed read fails in its
- * reflective optimizer, most often because it can't convert a fact to the method's parameter type (a String index for
- * {@code items.get(index)}), while a rule's expression runs.
+ * Drops the WARNINGs MVEL logs through {@code java.util.logging} while the engine compiles or runs a rule's
+ * expression: the one logged when a method call or an indexed read fails in its reflective optimizer, most often
+ * because it can't convert a fact to the method's parameter type (a String index for {@code items.get(index)}), and the
+ * one logged when a typo, such as {@code x contains {1, +}}, makes MVEL fail as it places a compile error (#1126).
  *
  * <p>
  * MVEL's reflective optimizer logs that exception with its stack trace before it throws it again, and the exception's
  * message can quote a fact value as it is, so a fact value with a line break could write a line of its own into the
  * application's log. The engine reports the same failure, escaped, as the rule's failure, with MVEL's exception as its
- * cause, so nothing is lost. Records logged while no rule's expression runs on the thread, such as those of an
- * application that uses MVEL itself, go to the filter the logger had before, and are logged as they were.
+ * cause, so nothing is lost. MVEL's {@code ErrorUtil} logs, with a stack trace, the exception it threw itself as it
+ * placed the error, then reports the compile error, which the engine reports as the rule's. Records logged while no
+ * rule's expression compiles or runs on the thread, such as those of an application that uses MVEL itself, go to the
+ * filter the logger had before, and are logged as they were.
  * </p>
  *
  * <p>
  * Where several applications in one server each bring this module, each class loader has its own copy of this class,
- * and they can all share one logger. Each copy's filter asks the one installed before it, of another class loader,
- * while that class loader lives, so each application's rules are covered, and holds it only weakly, so an application
- * that is undeployed can be unloaded once a newer one has installed over it. The newest application's filter stays on
- * the logger, which the whole JVM shares, after that application is undeployed, and keeps its class loader from being
- * unloaded until another application installs over it. One case isn't covered: with three or more applications, when
- * one in the middle is undeployed while an earlier one still runs, the newest filter goes straight to the filter the
- * logger had before them all, and MVEL's WARNING is logged again for the earlier application's rules.
+ * and all the copies share MVEL's two loggers, which the whole JVM shares. What follows holds for each logger on its
+ * own. Each copy's filter asks the one installed before it, of another class loader, while that class loader lives,
+ * so each application's rules are covered, and holds it only weakly, so an application that is undeployed can be
+ * unloaded once a newer one has installed over it. The newest application's filter stays on the logger after that
+ * application is undeployed, and keeps its class loader from being unloaded until another application installs over
+ * it. One case isn't covered: with three or more applications, when one in the middle is undeployed while an earlier
+ * one still runs, the newest filter goes straight to the filter the logger had before them all, and that logger's
+ * WARNING is logged again for the earlier application's rules.
  * </p>
  */
+// Its loggers are MVEL's, held to keep the filters on them, not loggers this class logs to.
+@SuppressWarnings("PMD.MoreThanOneLogger")
 final class MvelWarningFilter implements Filter, Supplier<Filter> {
 
     /** The logger of MVEL's reflective optimizer, which logs the failed conversion. */
     static final String LOGGER_NAME = "org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer";
 
-    // Set while a rule's expression runs on this thread, and removed when the outermost one ends, so a pooled thread
-    // keeps nothing. A plain ThreadLocal, like RuleSet's count of runs on a thread.
+    // Set while a rule's expression compiles or runs on this thread, and removed when the outermost one ends, so a
+    // pooled thread keeps nothing. A plain ThreadLocal, like RuleSet's count of runs on a thread.
     private static final ThreadLocal<Boolean> RUNNING = new ThreadLocal<>();
     // Held because java.util.logging keeps a logger only weakly: once collected, the logger MVEL gets next would
     // be a new one, without the filter.
@@ -45,6 +51,14 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     // The filter installed on it, or null if it couldn't be. Held here too, because another class loader's copy of
     // this class installed later holds it only weakly: it lives as long as this class loader.
     static final MvelWarningFilter FILTER = install(LOGGER);
+    /**
+     * The logger of MVEL's ErrorUtil, which logs its own failure to place a compile error. Named as text, not from the
+     * class, so initializing this class doesn't load ErrorUtil.
+     */
+    static final String ERROR_UTIL_LOGGER_NAME = "org.mvel2.util.ErrorUtil";
+    // Held as LOGGER is, and the filter installed on it as FILTER is.
+    static final Logger ERROR_UTIL_LOGGER = Logger.getLogger(ERROR_UTIL_LOGGER_NAME);
+    static final MvelWarningFilter ERROR_UTIL_FILTER = install(ERROR_UTIL_LOGGER);
 
     // Another class loader's copy of this filter, installed before this one, or null if there was none.
     private final Reference<Filter> copy;
@@ -56,8 +70,8 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
      *
      * @param copy     Another class loader's copy of this filter, to ask while it lives, or {@code null} if there is
      *                 none
-     * @param previous The filter to ask while no rule's expression runs, when there is no copy or it is gone, or
-     *                 {@code null} to log every record then
+     * @param previous The filter to ask while no rule's expression compiles or runs, when there is no copy or it is
+     *                 gone, or {@code null} to log every record then
      */
     MvelWarningFilter(Reference<Filter> copy, Filter previous) {
         this.copy = copy;
@@ -65,15 +79,15 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     }
 
     /**
-     * Installs the filter on MVEL's logger, the first time it's called, by initializing this class.
+     * Installs the filter on MVEL's loggers, the first time it's called, by initializing this class.
      */
     static void initialize() {
         // The static initializer does the work.
     }
 
     /**
-     * Sets a filter on a logger that drops its records while a rule's expression runs on the logging thread, and
-     * passes every other record to the filter the logger had.
+     * Sets a filter on a logger that drops its records while a rule's expression compiles or runs on the logging
+     * thread, and passes every other record to the filter the logger had.
      *
      * <p>
      * When the logger's filter is this class's own, installed again, the new filter takes the one it held instead.
@@ -125,9 +139,10 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     }
 
     /**
-     * Marks a rule's expression as running on this thread, until {@link #leave(boolean)}.
+     * Marks a rule's expression as compiling or running on this thread, until {@link #leave(boolean)}.
      *
-     * @return Whether this is the outermost expression running on this thread, which is the one that removes the mark
+     * @return Whether this is the outermost expression compiling or running on this thread, which is the one that
+     *         removes the mark
      */
     static boolean enter() {
         if (RUNNING.get() != null) {
@@ -138,8 +153,8 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     }
 
     /**
-     * Removes the mark {@link #enter()} set, if it set it, so an expression run from inside another one, such as by an
-     * action that runs another engine, leaves the outer one's mark in place.
+     * Removes the mark {@link #enter()} set, if it set it, so an expression compiled or run from inside another one,
+     * such as by an action that runs another engine, leaves the outer one's mark in place.
      *
      * @param outermost What {@link #enter()} returned
      */
