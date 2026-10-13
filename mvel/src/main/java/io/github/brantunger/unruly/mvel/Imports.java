@@ -6,6 +6,7 @@ import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.util.MethodStub;
 
+import java.net.URLClassLoader;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -42,6 +43,9 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
     // The class every class loader of the JDK's own extends (see isJdkLoader).
     private static final String JDK_LOADER = "jdk.internal.loader.BuiltinClassLoader";
+
+    // The plain URLClassLoader that URLClassLoader.newInstance returns on JDK 21 to 23 (see servesEveryClassFile).
+    private static final String FACTORY_URL_LOADER = "java.net.FactoryURLClassLoader";
 
     /**
      * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader
@@ -116,7 +120,7 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         // The class loader is an ExactNameClassLoader, which asks its parent, the application's, for every class a
         // name may be.
         SharedLookupConfiguration configuration = new SharedLookupConfiguration(notClasses,
-                isJdkLoader(classLoader.getParent()), callsPerRun, callsPerSite);
+                servesEveryClassFile(classLoader.getParent()), callsPerRun, callsPerSite);
         configuration.setClassLoader(classLoader);
         if (!packages.isEmpty()) {
             // addPackageImport would first try to load each package name as a class, for every expression compiled.
@@ -149,6 +153,34 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
             }
         }
         return false;
+    }
+
+    /**
+     * Tells whether a class loader serves the class file of every class it finds itself: one of the JDK's own (see
+     * {@link #isJdkLoader}), or a plain {@link URLClassLoader}, of that class exactly, whose parents are plain ones
+     * too, up to one of the JDK's own or the boot loader. A plain {@code URLClassLoader} asks its parent first, for a
+     * class and for a class file alike, and defines a class only from a class file at one of its URLs. The one
+     * {@code URLClassLoader.newInstance} returns on JDK 21 to 23, the JDK's own {@code java.net.FactoryURLClassLoader},
+     * which only adds a security manager's check of the package, is plain too, matched by name, as it isn't public.
+     * Like the JDK's own, a plain one serves no class file for a class defined in it at run time, such as with
+     * {@code MethodHandles.Lookup.defineClass}, which it still loads by name. A subclass may load classes any way it
+     * likes, so it isn't one, nor is a chain with any other class loader in it. A {@code null} loader isn't one
+     * either, as for {@link #isJdkLoader}.
+     *
+     * @param loader The class loader, or {@code null}
+     * @return {@code true} if a name the loader serves no class file for is taken as no class
+     */
+    static boolean servesEveryClassFile(ClassLoader loader) {
+        for (ClassLoader each = loader; each != null; each = each.getParent()) {
+            if (isJdkLoader(each)) {
+                return true;
+            }
+            if (each.getClass() != URLClassLoader.class && !FACTORY_URL_LOADER.equals(each.getClass().getName())) {
+                return false;
+            }
+        }
+        // The boot loader, past a chain of plain URL class loaders, or no loader at all.
+        return loader != null;
     }
 
     /**
@@ -187,7 +219,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         // The names found not to be classes once the expression imported a package of its own, which only it has.
         // Bounded by the names the one expression uses.
         private final transient Set<String> ownNotClasses = new HashSet<>();
-        // Whether a name is looked up as a class file before MVEL loads it: only for the JDK's own class loaders.
+        // Whether a name is looked up as a class file before MVEL loads it: only for a class loader that serves every
+        // class file (see servesEveryClassFile).
         private final boolean classFileFirst;
         // How many packages are imported once the rule list's imports are registered, or -1 until then. An inline
         // `import pkg.*;` in the expression adds another, where a name that isn't a class elsewhere may be one.
@@ -307,17 +340,21 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * turned into {@code $}, as a nested class. A parallel-capable class loader, as the JDK's own loaders are,
          * keeps a lock object for every name it is asked to load, found or not, for as long as it lives, so every
          * name in a rule that isn't a class left some, for each package imported. So when the application's class
-         * loader is one of the JDK's own (see {@link #isJdkLoader}), MVEL is only asked once it has the class file for
-         * one of those names (see {@link FactNames#mayBeClass}), and a name that has none isn't a class: the JDK's
-         * loaders serve the class file of every class they load from the class path, the module path or the JDK's
-         * modules. A name the rule list's class loader refuses to look up (see {@link ExactNameClassLoader#refuses})
-         * isn't looked for at all then, as it can't be a class either, nor is one MVEL rejects outright, which doesn't
-         * start as a Java identifier does. Any other class loader, such as a framework's or an application server's,
-         * is asked as MVEL asks it, and keeps its lock objects, as it may define a class it serves no class file for.
+         * loader serves the class file of every class it finds itself (see {@link #servesEveryClassFile}), as the
+         * JDK's own do, and a plain {@code URLClassLoader} whose parents are plain ones up to one of the JDK's or the
+         * boot loader, MVEL is only asked once it has the class file for one of those names (see
+         * {@link FactNames#mayBeClass}), and a name that has none isn't a class. A name the rule list's class loader
+         * refuses to look up (see {@link ExactNameClassLoader#refuses}) isn't looked for at all then, as it can't be a
+         * class either, nor is one MVEL rejects outright, which doesn't start as a Java identifier does. Any other
+         * class loader, such as a subclass of {@code URLClassLoader}, a framework's or an application server's, may
+         * define a class it serves no class file for, so it is asked as MVEL asks it, except for a name in a
+         * {@code java.} package the JDK serves no class file for, which the rule list's class loader refuses (see
+         * {@link ExactNameClassLoader}). Each name it is asked for may leave a lock object in it, and in the JDK's
+         * application class loader, for the life of the JVM, if it asks that one first.
          * </p>
          *
          * <p>
-         * So a class defined at run time in one of the JDK's loaders, such as with
+         * So a class defined at run time in one of the loaders that serve every class file, such as with
          * {@code MethodHandles.Lookup.defineClass} by a code generator, which has no class file, isn't found through
          * an import of its package: it is imported by its class, with an import of the class itself in the engine,
          * which finds it as before. An inline import of it in the rule's text doesn't (see

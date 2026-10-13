@@ -24,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * loader, as the JDK's application class loader is, keeps a lock object for every name it is asked to load, found or
  * not, for as long as it lives, so every name that isn't a class left some behind for each package imported. With the
  * JDK's own class loaders, the class file is looked up first, as it is for a fact's name, and a name without one is
- * never loaded. Any other class loader is asked as before, as it may define a class it serves no class file for.
+ * never loaded, and so with a plain {@code URLClassLoader} (#1130). Any other class loader is asked as before, as it
+ * may define a class it serves no class file for, except for a name in a {@code java.} package the JDK serves no class
+ * file for.
  */
 @DisplayName("a name in a rule that isn't a class leaves no lock object in the JDK's class loaders (#701)")
 class PackageImportLockTest {
@@ -89,15 +91,19 @@ class PackageImportLockTest {
     }
 
     @Test
-    @DisplayName("a class loader of the application's own is still asked for a name, as before")
+    @DisplayName("a class loader of the application's own is still asked for a name, as before, but for none in a"
+            + " java. package the JDK serves no class file for (#1130)")
     void otherLoaderAskedAsBefore() {
         LockRecordingLoader loader = new LockRecordingLoader();
 
         Object output = loadAndRun(loader, rule("amountDue > 1", "output.put('k', new ArrayList(List.of(amountDue)))"),
-                "java.util");
+                "java.util", "app.util");
 
         assertEquals(Map.of("k", List.of(5)), output);
-        assertTrue(loader.locked.contains("java.util.amountDue"), loader.locked.toString());
+        assertAll(loader.locked.toString(),
+                () -> assertTrue(loader.locked.contains("app.util.amountDue")),
+                () -> assertFalse(loader.locked.contains("java.util.amountDue")),
+                () -> assertTrue(loader.locked.contains("java.util.ArrayList")));
     }
 
     @Test
