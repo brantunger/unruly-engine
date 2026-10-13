@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.4](https://github.com/brantunger/unruly-engine/compare/v2.30.3...v2.30.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* look for a class file first when load()'s context loader is a plain URLClassLoader, and check a java. name against the JDK's class files before any other loader, so MVEL's tries no longer leave lock objects in the JVM's application class loader ([#1188](https://github.com/brantunger/unruly-engine/issues/1188)) ([b522ac5](https://github.com/brantunger/unruly-engine/commit/b522ac53c998d5232c6cd8cd8bb67daaa5da08ec))
+
 ## [2.30.3](https://github.com/brantunger/unruly-engine/compare/v2.30.2...v2.30.3) (2026-10-13)
 
 
