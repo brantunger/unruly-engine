@@ -220,9 +220,14 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         // Bounded by the names the one expression uses.
         private final transient Set<String> ownNotClasses = new HashSet<>();
         // The names the expression's own inline imports brought in: a class imported by name, a static method imported
-        // with import_static, and a class MVEL found in a package the expression imports, or one nested in such a
-        // class. Bounded by the imports and names the one expression has.
+        // with import_static, a class MVEL found in a package the expression imports, or one nested in such a class,
+        // and a static field or enum constant MVEL looked up (see staticMemberNames). Bounded by the imports and names
+        // the one expression has.
         private final transient Set<String> inlineNames = new HashSet<>();
+        // The names of each public static field declared in a class the expression imports with `import a.B.*;`, or
+        // of each constant of an enum it imports so, which MVEL puts in its imports without calling addImport. Bounded
+        // by those classes' fields.
+        private final transient Set<String> staticMemberNames = new HashSet<>();
         // Whether a name is looked up as a class file before MVEL loads it: only for a class loader that serves every
         // class file (see servesEveryClassFile).
         private final boolean classFileFirst;
@@ -385,8 +390,15 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         }
 
         private boolean lookUp(String name) {
-            // A class imported inline by this expression is in its own imports, whatever other expressions found.
-            if (imports.containsKey(name) || importNested(name)) {
+            // A name imported inline by this expression is in its own imports, whatever other expressions found.
+            if (imports.containsKey(name)) {
+                // A static field or enum constant counts as the expression's only once MVEL looks it up.
+                if (staticMemberNames.contains(name)) {
+                    inlineNames.add(name);
+                }
+                return true;
+            }
+            if (importNested(name)) {
                 return true;
             }
             Set<String> misses = packageCount() == sharedPackageCount ? notClasses : ownNotClasses;
@@ -507,6 +519,15 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * An inline import of a class, or an {@code import_static}, isn't checked: MVEL looks its name up once or
          * twice, then rejects the expression if it isn't a class.
          *
+         * <p>
+         * When the name is a class, MVEL also imports each public static field declared in it, none it inherits, or
+         * each constant of an enum, by its simple name, straight into its imports, without calling
+         * {@link #addImport(String, Class)}. The names it adds are remembered (see
+         * {@link Imports#staticMemberNames}), and each counts as one the expression's own imports brought in (see
+         * {@link #inlineImportedNames}) once MVEL looks it up while it compiles the expression, as a class MVEL finds
+         * in a package does.
+         * </p>
+         *
          * @param packageName The package's name, as the expression writes it
          * @throws ImportTooLarge if the name has more than {@value Imports#MAX_IMPORT_LENGTH} characters or more than
          *                        {@value Imports#MAX_IMPORT_PARTS} dot-separated parts, before it is looked up
@@ -514,7 +535,13 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         @Override
         public void addPackageImport(String packageName) {
             checkSize(packageName);
+            Set<String> before = new HashSet<>(imports.keySet());
             super.addPackageImport(packageName);
+            for (String name : imports.keySet()) {
+                if (!before.contains(name)) {
+                    staticMemberNames.add(name);
+                }
+            }
         }
 
         /**
@@ -656,14 +683,33 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
     /**
      * Returns the names the expression compiled with a configuration imported in its own text, as MVEL brought them
      * in: the simple name of a class it imports, the name of a static method it imports with {@code import_static},
-     * and the name of each class MVEL found, while it compiled, in a package it imports, or nested in such a class.
-     * A class in one of its packages that MVEL never looked up isn't among them.
+     * the name of each class MVEL found, while it compiled, in a package it imports, or nested in such a class, and
+     * the name of each public static field declared in a class, or each constant of an enum, it imports with
+     * {@code import a.B.*;} that MVEL looked up while it compiled. A class in one of its packages, or a field or
+     * constant, that MVEL never looked up isn't among them, until {@link MvelAnalysis#inlineImportedNames} adds one
+     * the expression uses before it imports it (see {@link #staticMemberNames}).
      *
      * @param configuration A configuration {@link #newConfiguration()} created
      * @return The names, which the configuration goes on adding to if MVEL compiles with it again
      */
     static Set<String> inlineImportedNames(ParserConfiguration configuration) {
         return ((SharedLookupConfiguration) configuration).inlineNames;
+    }
+
+    /**
+     * Returns the name of each public static field declared in a class, or each constant of an enum, that the
+     * expression compiled with a configuration imports with {@code import a.B.*;}, whether MVEL looked it up or not.
+     * A name the expression uses before such an import isn't among the imports yet as MVEL compiles that use, so MVEL
+     * takes it as an input or a variable, and the expression reads the field by it as it runs, as it does by a name
+     * used after the import (see {@link MvelAnalysis#inlineImportedNames}). That holds at the expression's top level,
+     * in an if, foreach, while or with block and for a read in a for body, but not in a def or closure body, nor for
+     * an assignment in a for body, which MVEL compiles in a context of its own.
+     *
+     * @param configuration A configuration {@link #newConfiguration()} created
+     * @return The names, empty if the expression imports no class's fields or constants
+     */
+    static Set<String> staticMemberNames(ParserConfiguration configuration) {
+        return ((SharedLookupConfiguration) configuration).staticMemberNames;
     }
 
     /**

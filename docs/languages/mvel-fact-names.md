@@ -90,7 +90,7 @@ MVEL reads these as something else before the facts, so they're rejected too:
 | Primitive type names | `boolean` `byte` `char` `double` `float` `int` `long` `short` |
 | Built-in class names | The 22 in [Classes and imports](mvel.md#-classes-and-imports), such as `Math`, `String` and `Thread` |
 | Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
-| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")`. A rule's own inline import, for the condition or action holding it; see below |
+| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")`. A rule's own inline import, for the condition or action holding it, and the static fields or constants it reads; see below |
 | Package roots | `java` once `load()` or `validate()`, compiling a rule, looks up a class whose package starts with `java`, as for `java.lang.Integer.MAX_VALUE == 7`. Here MVEL would read the fact in the class's place; see below |
 | Classes with no package | `Foo` once `load()` or `validate()`, compiling a rule, looks up a class `Foo` in the default package, as for `Foo.LIMIT == 7`. Here too MVEL would read the fact in the class's place; see below |
 
@@ -109,16 +109,26 @@ imported name there, never the fact, so the expression rejects a fact named like
 
 - the class of `import acme.Bar;`: `Bar`;
 - the method of `import_static acme.Bar.limit;` in an action: `limit`;
-- each class MVEL found through `import acme.*;` as it compiled the expression: `Date` for
-  `import java.util.*; output.put('d', new Date(0))`.
+- each class MVEL found through `import acme.*;`: `Date` for `import java.util.*; output.put('d', new Date(0))`;
+- each public static field declared in `acme.Bar`, or constant of an enum, that MVEL looked up through
+  `import acme.Bar.*;`, or used before the import or assigned to, outside a `def` or closure body and a `for`
+  body's assignment: `PI` for `import java.lang.Math.*; output.put('r', PI)` or
+  `output.put('r', PI); import java.lang.Math.*;`.
 
-The import's own words hold the name, so the first two always reject the fact. A class of the package that the
+The import's words hold the name, so the first two always reject the fact. A class of the package the
 expression doesn't use stays a fact name: with `import java.util.*; output.put('n', new ArrayList().size())` in one
-rule and `Date == 1` in another, a fact `Date` is accepted, and the second rule reads it. The import's package root,
-such as `acme`, is per rule list, as below.
+rule and `Date == 1` in another, a fact `Date` is accepted, and the second rule reads it. A field the expression
+doesn't read stays one too: with `import java.lang.Math.*; output.put('r', 'E')`, a fact `E` is accepted. The import's
+package root, such as `acme`, is per rule list.
 
-Where the importing expression names the class, the run rejects the fact for every rule. Up to 2.30.5, such a fact
-was accepted, and the importing expression never saw it.
+With [strong typing](mvel.md#-strong-typing), which makes declared facts inputs of every expression, a declared fact
+named like such a field fails `load()` wherever the importing expression's text holds its name, even in a comment or
+string, and always once that text has a word [too long to scan](#when-mvel-checks-every-fact).
+
+Where the importing expression names the class, method or field, the run rejects the fact for every rule. Such a
+fact was accepted up to 2.30.5, or up to 2.30.6 for a field or constant, and the importing expression never saw it.
+MVEL loads `acme.Bar` for its fields with its own class loader, not the `load()` thread's context class
+loader, so a class only the latter reaches brings in none, though the import still compiles.
 
 **Package roots** are per rule list: the first part of each class `load()` or `validate()` looks up as it compiles
 a rule. That's a class found through a package import (`acme` for `Order` with `imports("acme.orders")`), nested in an
