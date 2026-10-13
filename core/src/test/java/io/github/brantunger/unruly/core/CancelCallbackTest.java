@@ -111,10 +111,17 @@ class CancelCallbackTest {
     private static Runnable holdTimer() {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         CountDownLatch release = new CountDownLatch(1);
-        Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(release));
-        CountDownLatch held = new CountDownLatch(1);
-        scheduled(Duration.ZERO, held::countDown);
-        await(held);
+        // Let go if it can't be held, so a failure here leaves no timer held for the next test.
+        try {
+            Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(release));
+            CountDownLatch held = new CountDownLatch(1);
+            scheduled(Duration.ZERO, held::countDown);
+            await(held);
+        } catch (Throwable t) {
+            release.countDown();
+            keeper.close();
+            throw t;
+        }
         return () -> {
             release.countDown();
             keeper.close();
@@ -403,11 +410,11 @@ class CancelCallbackTest {
     }
 
     @Test
-    @DisplayName("#1117: a fatal error an action throws at the deadline is logged at WARN, and its pooled thread lives"
-            + " on, idle in the pool, for the next action")
+    @DisplayName("#1117, #1136: a fatal error an action throws at the deadline is logged at ERROR, and its pooled"
+            + " thread lives on, idle in the pool, for the next action")
     void fatalErrorAtTheDeadlineLogged() throws InterruptedException {
         AtomicReference<Thread> ranOn = new AtomicReference<>();
-        String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+        String expected = "ERROR " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
                 + " deadline failed: java.lang.OutOfMemoryError: at the deadline";
 
         String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> {
@@ -420,6 +427,50 @@ class CancelCallbackTest {
         Thread thread = ranOn.get();
         TestSupport.await(() -> thread.getState() == Thread.State.TIMED_WAITING, 10, "its thread waits in the pool");
         assertTrue(thread.isAlive());
+    }
+
+    @Test
+    @DisplayName("#1136: an exception an action throws at the deadline that carries a fatal error, as its cause or"
+            + " suppressed, is logged at ERROR")
+    void carriedFatalErrorAtTheDeadlineLogged() throws InterruptedException {
+        String caused = "ERROR " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+                + " deadline failed: java.lang.IllegalStateException: caused";
+        String suppressed = "ERROR " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+                + " deadline failed: java.lang.IllegalStateException: suppressed";
+
+        String causedLogs = LogsUntil.logsUntil(caused, () -> scheduled(Duration.ofMillis(50), () -> {
+            throw new IllegalStateException("caused", new OutOfMemoryError("as its cause"));
+        }));
+        String suppressedLogs = LogsUntil.logsUntil(suppressed, () -> scheduled(Duration.ofMillis(50), () -> {
+            IllegalStateException failure = new IllegalStateException("suppressed");
+            failure.addSuppressed(new OutOfMemoryError("suppressed on it"));
+            throw failure;
+        }));
+
+        assertTrue(causedLogs.contains(caused), causedLogs);
+        assertTrue(suppressedLogs.contains(suppressed), suppressedLogs);
+    }
+
+    @Test
+    @DisplayName("#1136: a StackOverflowError, or an exception, an action throws at the deadline is logged at WARN, not"
+            + " at ERROR")
+    void overflowAtTheDeadlineLoggedAtWarn() throws InterruptedException {
+        String overflow = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+                + " deadline failed: java.lang.StackOverflowError: deep";
+        String failure = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+                + " deadline failed: java.lang.IllegalStateException: at the deadline";
+
+        String overflowLogs = LogsUntil.logsUntil(overflow, () -> scheduled(Duration.ofMillis(50), () -> {
+            throw new StackOverflowError("deep");
+        }));
+        String failureLogs = LogsUntil.logsUntil(failure, () -> scheduled(Duration.ofMillis(50), () -> {
+            throw new IllegalStateException("at the deadline");
+        }));
+
+        assertTrue(overflowLogs.contains(overflow), overflowLogs);
+        assertFalse(overflowLogs.contains("ERROR "), overflowLogs);
+        assertTrue(failureLogs.contains(failure), failureLogs);
+        assertFalse(failureLogs.contains("ERROR "), failureLogs);
     }
 
     @Test
@@ -448,7 +499,7 @@ class CancelCallbackTest {
     @DisplayName("the run's end closes the registrations still open, and onCancel after it throws")
     void runEndClosesLeftovers() throws InterruptedException {
         AtomicReference<EvaluationContext> kept = new AtomicReference<>();
-        AtomicReference<CancelRegistration> left = new AtomicReference<>();
+        AtomicReference<CancelRegistration> left = new AtomicReference<>(CancelTimer.NOTHING);
         AtomicReference<Thread> timer = new AtomicReference<>();
         AtomicBoolean ran = new AtomicBoolean();
         RulesEngine<Map<String, Object>> engine = engine((context, session) -> {
@@ -458,14 +509,18 @@ class CancelCallbackTest {
             return ActionResult.done();
         }, Duration.ofHours(1));
 
-        engine.run(new FactMap<>());
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            engine.run(new FactMap<>());
 
-        // An hour away, so only the run's end closing it lets the timer exit now.
-        assertNotNull(timer.get(), "no timer started for a pending action");
-        timer.get().join(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(timer.get().isAlive(), "the run's end left its action pending");
-        assertFalse(ran.get());
-        left.get().close();
+            // An hour away, so only the run's end closing it lets the timer exit now.
+            assertNotNull(timer.get(), "no timer started for a pending action");
+            timer.get().join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(timer.get().isAlive(), "the run's end left its action pending");
+            assertFalse(ran.get());
+        } finally {
+            left.get().close();
+        }
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
                 () -> kept.get().onCancel(() -> fail("registered after the run")));
         assertEquals(ENDED, thrown.getMessage());
@@ -482,13 +537,17 @@ class CancelCallbackTest {
         }, null).run(new FactMap<>());
         EvaluationContext test = context(Duration.ofHours(1));
         CancelRegistration open = test.onCancel(() -> fail("ran after its run ended"));
-        EngineEvaluationContext.endRun(test);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            EngineEvaluationContext.endRun(test);
 
-        assertEquals(ENDED, assertThrows(IllegalStateException.class, () -> kept.get().onCancel(() -> {
-        })).getMessage());
-        assertEquals(ENDED, assertThrows(IllegalStateException.class, () -> test.onCancel(() -> {
-        })).getMessage());
-        open.close();
+            assertEquals(ENDED, assertThrows(IllegalStateException.class, () -> kept.get().onCancel(() -> {
+            })).getMessage());
+            assertEquals(ENDED, assertThrows(IllegalStateException.class, () -> test.onCancel(() -> {
+            })).getMessage());
+        } finally {
+            open.close();
+        }
         assertTimerExits();
     }
 
@@ -538,13 +597,17 @@ class CancelCallbackTest {
         CancelRegistration registration = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         Thread timer = CancelTimer.runningThread();
 
-        assertNotNull(timer);
-        assertTrue(timer.isDaemon());
-        assertFalse(timer.isVirtual());
-        assertEquals(Thread.NORM_PRIORITY, timer.getPriority());
-        assertNull(timer.getContextClassLoader());
-        assertEquals(CancelTimer.THREAD_NAME, timer.getName());
-        registration.close();
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            assertNotNull(timer);
+            assertTrue(timer.isDaemon());
+            assertFalse(timer.isVirtual());
+            assertEquals(Thread.NORM_PRIORITY, timer.getPriority());
+            assertNull(timer.getContextClassLoader());
+            assertEquals(CancelTimer.THREAD_NAME, timer.getName());
+        } finally {
+            registration.close();
+        }
         timer.join(TimeUnit.SECONDS.toMillis(10));
         assertFalse(timer.isAlive(), "the timer didn't exit");
         assertNull(CancelTimer.runningThread());
@@ -556,7 +619,7 @@ class CancelCallbackTest {
     void nothingInherited() throws InterruptedException {
         assertTimerExits();
         InheritableThreadLocal<String> tenant = new InheritableThreadLocal<>();
-        AtomicReference<CancelRegistration> keeper = new AtomicReference<>();
+        AtomicReference<CancelRegistration> keeper = new AtomicReference<>(CancelTimer.NOTHING);
         AtomicReference<String> seen = new AtomicReference<>("not run");
         AtomicReference<ClassLoader> loader = new AtomicReference<>(getClass().getClassLoader());
         CountDownLatch ran = new CountDownLatch(1);
@@ -572,23 +635,27 @@ class CancelCallbackTest {
                 ran.countDown();
             });
         });
-        tenantA.start();
-        tenantA.join(TimeUnit.SECONDS.toMillis(10));
-        // A later run's action, on a timer tenant A started.
         AtomicReference<String> seenLater = new AtomicReference<>("not run");
         CountDownLatch later = new CountDownLatch(1);
-        scheduled(Duration.ofMillis(50), () -> {
-            seenLater.set(tenant.get());
-            later.countDown();
-        });
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            tenantA.start();
+            tenantA.join(TimeUnit.SECONDS.toMillis(10));
+            // A later run's action, on a timer tenant A started.
+            scheduled(Duration.ofMillis(50), () -> {
+                seenLater.set(tenant.get());
+                later.countDown();
+            });
 
-        await(ran);
-        await(later);
+            await(ran);
+            await(later);
+        } finally {
+            keeper.get().close();
+        }
 
         assertNull(seen.get());
         assertNull(loader.get());
         assertNull(seenLater.get());
-        keeper.get().close();
     }
 
     @Test
@@ -669,16 +736,21 @@ class CancelCallbackTest {
         EvaluationContext context = context(Duration.ofHours(1));
         Runnable action = () -> fail("ran early");
         int calls = 100_000;
-        for (int i = 0; i < calls; i++) {
-            context.onCancel(action).close();
-        }
+        long bytes;
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            for (int i = 0; i < calls; i++) {
+                context.onCancel(action).close();
+            }
 
-        long before = threads.getCurrentThreadAllocatedBytes();
-        for (int i = 0; i < calls; i++) {
-            context.onCancel(action).close();
+            long before = threads.getCurrentThreadAllocatedBytes();
+            for (int i = 0; i < calls; i++) {
+                context.onCancel(action).close();
+            }
+            bytes = threads.getCurrentThreadAllocatedBytes() - before;
+        } finally {
+            keeper.close();
         }
-        long bytes = threads.getCurrentThreadAllocatedBytes() - before;
-        keeper.close();
 
         System.out.println("#1047: onCancel and close(): " + (double) bytes / calls + " bytes a call");
         // The registration itself, 40 bytes with compressed references, and nothing else.

@@ -200,7 +200,7 @@ return new CompiledCondition() {
 };
 ```
 
-The engine calls `evaluateWithDetail`, once for each rule it evaluates, and never `evaluate` itself. The default
+The engine calls `evaluateWithDetail`, once per rule it evaluates, and never `evaluate` itself. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
 `evaluate` works unchanged.
 
@@ -329,7 +329,7 @@ so a language that looks only for a getter or a field reads nothing, and the con
 
 A property that exists but whose accessor throws, or can't be called, fails with `IllegalStateException` instead, so a
 getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read
-through a public supertype that declares the accessor, or else directly where its package is open to
+through a public supertype that declares the accessor, or directly where its package is open to
 `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the application `opens` it;
 see [Packaging a language](packaging.md).
 
@@ -458,30 +458,31 @@ public CompiledAction compileAction(Expression expression) {
 Returning then stops the run, whatever you return, and so does throwing, unless what you throw
 [fails the rule](../stopping-runs.md#-what-stops-a-run).
 
-Since 2.9.0, `timeLeft()` is the time left before the run's deadline, as the engine measures it, and
+Since 2.9.0, `timeLeft()` is the time to the run's deadline, as the engine measures it, and
 `Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`
 without a timeout. None is required.
 
-Since 2.28.0, a runtime that can be stopped only from another thread, such as by setting a flag, needs no timer of its
+Since 2.28.0, a runtime stopped only from another thread, such as by a flag, needs no timer of its
 own: `onCancel(action)` runs `action` once when the run passes its deadline, unless you close the `CancelRegistration`
-it returns first. It never runs for an interrupt, nor without a deadline. If the deadline has already passed,
+it returns first. It never runs for an interrupt, nor without a deadline. If the deadline has passed,
 it runs on your thread before `onCancel` returns.
 
 Otherwise it runs while your expression does, on a [reused](#-thread-safety) platform thread without the run's
 thread-locals or context class loader: keep it thread-safe and short. What it throws, or one still running after a
-second, is logged at WARN; it delays no other action. The run's end closes the registrations still open, after
-which `onCancel` throws `IllegalStateException`. One already started may still run, so give each expression a fresh
-flag, as below.
+second, is logged at WARN, a [fatal](../glossary.md#fatal-error) throw at ERROR; it delays no other action. The run's
+end closes open registrations; `onCancel` then throws `IllegalStateException`. One already started may still
+run, so give each expression a fresh flag.
 
 A runtime that clears the interrupt status when it cancels, as JEXL's `cancellable(true)` does, hides the caller's
 interrupt from the engine, which sees an interrupt only in that status or as an `InterruptedException` causing, or
 suppressed in, what an expression throws. Unless the deadline has passed too, a throw is then reported as that rule's
-failure, at ERROR, and a return lets the run go on.
+failure, at ERROR, as is a condition's non-boolean return (`evaluated to null` for `null`) or an action's
+`null`; other returns let the run go on.
 
 So record what cancelled the runtime. When an interrupt cancelled it, call `Thread.currentThread().interrupt()`
-before you throw or return, or throw with an `InterruptedException` as the cause. When your adapter cancelled it
-for the deadline, restore nothing: the engine reports the timeout. The engine checks the interrupt first, so restoring
-it reports the timeout as an interrupt and leaves the caller's thread interrupted, failing its next run:
+before you throw or return, or throw with an `InterruptedException` as the cause. When the deadline cancelled it,
+restore nothing: the engine reports the timeout. Restoring it reports the timeout as an interrupt, which the engine
+checks first, and leaves the caller's thread interrupted, failing its next run:
 
 ```java
 class CancellableContext extends MapContext implements JexlContext.CancellationHandle {
