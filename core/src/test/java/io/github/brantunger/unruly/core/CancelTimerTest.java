@@ -31,14 +31,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #1047: the cancel timer's own steps: the actions it keeps pending, due in different wakes, started in the order of
- * their deadlines, however many and in whatever order they're registered; a timer, or an action, that can't be
- * started; an action registered or closed just after the timer started another, or while it waits for a later one; a
- * slow action; a timer thread interrupted while it waits, and one that dies. #1131: every action due when the timer
- * wakes found in one scan, and started in the order it found them, not that of their deadlines, with the slow ones
- * logged in the same wake. #1117: an action the pool of action threads can't make a thread for started on a virtual
- * thread, and one no carrier is free to run there by its slow time logged as not started. #1136: what the timer logs
- * of a failure, at ERROR if it is, or carries, a fatal error, and the actions a timer that dies part way through a wake
- * never handed on started by the one that replaces it.
+ * their deadlines, however many and in whatever order they're registered; a timer, or an action, that can't be started;
+ * an action registered or closed just after the timer started another, or while it waits for a later one; a waiting
+ * timer woken only for an action due sooner than the one it waits for; a slow action; a timer thread interrupted while
+ * it waits, and one that dies. #1131: every action due when the timer wakes found in one scan, and started in the order
+ * it found them, not that of their deadlines, with the slow ones logged in the same wake. #1117: an action the pool of
+ * action threads can't make a thread for started on a virtual thread, and one no carrier is free to run there by its
+ * slow time logged as not started. #1136: what the timer logs of a failure, at ERROR if it is, or carries, a fatal
+ * error, and the actions a timer that dies part way through a wake never handed on started by the one that replaces it.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("#1047: the cancel timer runs each pending action at its deadline, those due in different wakes in their"
@@ -707,6 +707,35 @@ class CancelTimerTest {
             await(next);
         } finally {
             sooner.get().close();
+            keeper.close();
+        }
+    }
+
+    @Test
+    @DisplayName("an action registered while the timer waits for one due sooner doesn't wake it; one due before that"
+            + " does")
+    void laterRegistrationDoesNotWake() throws InterruptedException {
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        CancelRegistration later = CancelTimer.NOTHING;
+        // Counted down once the timer has woken and looked again, as it's about to wait once more.
+        CountDownLatch woke = new CountDownLatch(1);
+        CountDownLatch soonerRan = new CountDownLatch(1);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            Thread timer = CancelTimer.runningThread();
+            // Waiting for the keeper, however slowly the machine started it, so each registration below is compared
+            // with the one it waits for.
+            TestSupport.await(() -> timer.getState() == Thread.State.TIMED_WAITING, 10, "the timer waits");
+            Faults.watch(timer, Faults.Step.CANCEL_TIMER_WAITING, woke::countDown);
+
+            later = scheduled(Duration.ofHours(2), () -> fail("ran early"));
+            // A wake would be seen at once; a machine too slow to show it in this time only lets this pass.
+            assertFalse(woke.await(200, TimeUnit.MILLISECONDS), "the later action woke the timer");
+            scheduled(Duration.ofMillis(50), soonerRan::countDown);
+            await(woke);
+            await(soonerRan);
+        } finally {
+            later.close();
             keeper.close();
         }
     }
