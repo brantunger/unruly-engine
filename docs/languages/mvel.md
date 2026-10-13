@@ -109,19 +109,19 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 
 - A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with
   `IllegalArgumentException` from `build()`.
-- So is a string over 1,000 characters or 64 dot-separated parts, before any lookup.
+- So is a string over 1,000 characters or 64 parts, before any lookup.
 - So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
 - An imported class's name can't be a [fact name](mvel-fact-names.md) that a rule's text holds.
-- `build()` loads a single-class import with its thread's context class loader; a valid name it can't load is
-  imported as a package.
-- `load()` looks up classes in imported packages with its thread's context class loader, and `run()` checks fact
-  names against it, on any thread.
-- A thread without a context class loader uses this library's loader.
+- `build()` loads a single-class import with its thread's context class loader, and imports a valid name it can't
+  load as a package.
+- `load()` looks up classes in imported packages with its thread's, and `run()` checks fact names against it, on
+  any thread. A thread without one uses this library's loader.
 
 Your facts' and output object's classes must be reachable from that loader too; see
-[Class loaders](../thread-safety.md#-class-loaders).
+[Class loaders](../thread-safety.md#-class-loaders). Looking up a name's class file leaves a soft cache entry in the
+JDK's loaders, freed under memory pressure: not a leak.
 
 An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
 lookup even if unused. It fails at the name: `failed to compile at line 1, column 8: Can't import '...': it has 65
@@ -129,9 +129,9 @@ dot-separated parts, and an import may have at most 64`. One whose `.*` starts p
 characters fails too: move it earlier, or use `imports(...)`. Inline class imports and `import_static` aren't
 size-checked.
 
-In a class directory on a case-insensitive file system, MVEL's check whether `applicant` in `applicant.creditScore`
-is a class finds `Applicant.class`; `NoClassDefFoundError: applicant (wrong name: Applicant)` counts as no class,
-so `applicant` stays the fact. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the
+In a class directory on a case-insensitive file system, `applicant` in `applicant.creditScore` finds
+`Applicant.class`; `NoClassDefFoundError: applicant (wrong name: Applicant)` counts as no class, so `applicant`
+stays the fact. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the
 rule; so does this one for a name over about 1,000 bytes
 ([#1001](https://github.com/brantunger/unruly-engine/issues/1001)).
 
@@ -194,8 +194,8 @@ RulesEngineBuilder.firstMatch(LoanDecision::new)
 ```
 
 `.condition("applicant.creditScor >= 750")` then fails `load()` with
-`RuleCompilationException: unqualified type ... creditScor`. With strong typing on, `load()` fails, saying why,
-unless all of these hold, so MVEL can check everything:
+`RuleCompilationException: unqualified type ... creditScor`. Strong typing needs all of these, so MVEL can check
+everything; otherwise `load()` fails, saying why:
 
 | Needed | Why |
 | --- | --- |
@@ -292,7 +292,7 @@ Why MVEL needs [compiled copies](../compiled-copies.md), and their cost.
 
 MVEL caches an accessor in each compiled expression the first time it runs. When a later run binds the same fact name
 to a different class, as with several implementations of an interface, or a `Map` in one run and a record in another,
-MVEL replaces that accessor without synchronization. Two threads sharing the expression could fail intermittently
+MVEL replaces that accessor without synchronization. Two threads sharing it could fail
 with a `RuleExecutionException` caused by a `ClassCastException`. So concurrent runs never share one:
 each copy holds its own in its session.
 
@@ -309,8 +309,7 @@ different: `load()` compiles every condition and action into it, reached or not,
 
 An [extra copy](../glossary.md#extra-copy) pays that price and throws it away when the run ends. A rule that
 keeps making them, by starting a run of the same engine on another thread under a full
-[copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and rebuilds accessors each time, churning
-CPU and memory.
+[copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and rebuilds accessors each time.
 
 A session's expressions belong to one run at a time, so any MVEL optimizer is safe.
 

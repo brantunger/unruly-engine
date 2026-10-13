@@ -239,9 +239,9 @@ that calls `load()`**. `load()` captures that loader and gives it to every expre
 Unless rules name MVEL's classes, it needn't see MVEL, or may hold a copy: generated code uses the engine's.
 `RulesEngineBuilder` has no class-loader option; this loader is the only control.
 
-Most applications never think about it: one class loader holds the application and the fact classes. It matters when
-those classes live elsewhere: a plugin or tenant jar, a container's application class loader or a test harness that
-isolates each case. Load the rules with that loader in place, and put the old one back:
+This matters when the fact classes live apart from the application: in a plugin or tenant jar, a container's
+application class loader or a test harness that isolates each case. Load the rules with that loader in place, then
+restore the old one:
 
 ```java
 ClassLoader original = Thread.currentThread().getContextClassLoader();
@@ -265,17 +265,20 @@ try {
   [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
 - A thread with no context class loader leaves the engine using this library's own class loader.
 
-In MVEL, with one of the JDK's own loaders (application or platform) on the loading thread, the loader `load()` captured
-finds by name only classes with a `.class` file. A class generated at run time fails `load()` when a rule imports it
-(`class not found`) or, with strong typing, names it in full (`could not resolve class`); a package import skips it.
-Import the class in `imports(...)`. Without strong typing, `new com.example.Gen()` still works, found with the
-running thread's context class loader. Spring Boot's and other loaders find it anyway.
+In MVEL, the loader `load()` captured finds by name only classes with `.class` files when the loading thread's is
+one of the JDK's own (application or platform), or a `java.net.URLClassLoader` made with `new URLClassLoader(...)` or
+`URLClassLoader.newInstance(...)`, not another subclass, whose parents are too, up to a JDK or bootstrap loader.
 
-While MVEL compiles, the context class loader is the engine's wrapper of the loader `load()` captured, so a static
-initializer of a class a rule names in full sees the wrapper, which refuses a run-time class if that is a JDK loader.
+With such a loader, a run-time class fails `load()` when a rule imports it (`class not found`) or, with
+strong typing, names it in full (`could not resolve class`); a package import skips it. Import it in `imports(...)`.
+Without strong typing, `new com.example.Gen()` uses the running thread's context class loader (above).
 
-With MVEL's JIT made the default again, setting the context class loader around `run()` instead leaves the rule
-failing, and closing the engine doesn't release the loader `load()` captured: the JIT holds it; see
+While MVEL compiles, the context class loader is the engine's wrapper of that loader, so a static initializer
+can't find a run-time class through it either. Other loaders, such as Spring Boot's, are asked for every
+well-formed name but a `java.` one with no JDK class file.
+
+With MVEL's JIT made the default again, a loader set around `run()` instead fails the rule, and closing the engine
+doesn't release the one `load()` captured: the JIT holds it; see
 [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
 
 ## 🚧 Gotchas

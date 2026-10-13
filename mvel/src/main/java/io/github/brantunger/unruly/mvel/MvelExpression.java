@@ -54,10 +54,10 @@ import java.util.function.Supplier;
  * up as a class nested in {@code Object}, such as {@code java.lang.Object$p7} for {@code f.p7}, and one of the JDK's
  * class loaders kept a lock object for each such name it was asked for (#807). MVEL initialises a class a rule names
  * in full while it compiles, so the class's static initialiser sees the rule list's class loader as the context class
- * loader: one that keeps it keeps that loader, and one that asks it for a class defined at run time, with one of the
- * JDK's class loaders as the application's, is refused. The thread's own is restored when
- * MVEL returns or throws, on a run's thread too when it compiles the expression again for a new session. Running the
- * expression doesn't change it.
+ * loader: one that keeps it keeps that loader, and one that asks it for a class defined at run time, with a class
+ * loader that serves every class file as the application's (see {@link Imports#servesEveryClassFile}), is refused.
+ * The thread's own is restored when MVEL returns or throws, on a run's thread too when it compiles the expression
+ * again for a new session. Running the expression doesn't change it.
  * </p>
  */
 final class MvelExpression implements CompiledCondition, CompiledAction {
@@ -179,10 +179,11 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * and {@code java.lang.Math.abs(} nested 450 deep in a {@code foreach} over 60 values, 9,039 characters, asks
      * 202,951 times, at most 113 from one place. Without such arguments a run asked at most 6 times, with 201 packages
      * imported, however many rounds the expression's own loops went, so it never reads where it asks from. A function
-     * that calls itself, with a package imported and a class loader that isn't one of the JDK's own, asks about once
-     * more for each call still under way, as MVEL builds what reads a value in each before any is built, each at its
-     * own depth: 205 times 200 calls deep. Only a thread with a very large stack gets deep enough to pass the limit in
-     * all: a run on a thread of the JVM's default stack size ran out of stack at 500 deep.
+     * that calls itself, with a package imported and a class loader that doesn't serve every class file (see
+     * {@link Imports#servesEveryClassFile}), asks about once more for each call still under way, as MVEL builds what
+     * reads a value in each before any is built, each at its own depth: 205 times 200 calls deep. Only a thread with a
+     * very large stack gets deep enough to pass the limit in all: a run on a thread of the JVM's default stack size ran
+     * out of stack at 500 deep.
      * </p>
      *
      * <p>
@@ -306,8 +307,9 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * {@code java.lang.Object$ready}. A native image built with strict metadata throws for each such name it is asked
      * through a class loader's {@code loadClass}, which fails {@code prepare()}. A rule's expressions make those
      * lookups too, but through the rule list's {@link ExactNameClassLoader}, which refuses a name with no class file
-     * before asking its parent when that is one of the JDK's class loaders, as an image's application class loader is,
-     * and otherwise passes it on to the parent, which reports it as a {@link ClassNotFoundException}; here MVEL would
+     * before asking its parent when that serves every class file (see {@link Imports#servesEveryClassFile}), as an
+     * image's application class loader does, and otherwise refuses only a {@code java.} name the JDK has no class file
+     * for and passes the rest on to the parent, which reports one as a {@link ClassNotFoundException}; here MVEL would
      * ask the context class loader itself.
      * </p>
      */

@@ -19,8 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * property chain. A parallel-capable class loader, as the JDK's application class loader is, keeps a lock object for
  * every name it is asked for, for as long as it lives, so rules whose names or literals differ left more on every
  * load. The rule list's class loader refuses a name no class can have, and, with the JDK's own class loaders, a name
- * without a class file, before the application's class loader is asked (#752). MVEL doesn't ask the thread's context
- * class loader for it after, as that is the rule list's while MVEL compiles (#807).
+ * without a class file, before the application's class loader is asked (#752). With any other, it refuses a name in a
+ * {@code java.} package the JDK serves no class file for (#1130). MVEL doesn't ask the thread's context class loader
+ * for it after, as that is the rule list's while MVEL compiles (#807).
  */
 @DisplayName("a name MVEL tries that can't be a class leaves no lock object in the JDK's class loaders (#752)")
 class NonClassNameLockTest {
@@ -80,8 +81,26 @@ class NonClassNameLockTest {
         RecordingClassLoader parent = new RecordingClassLoader();
         ExactNameClassLoader loader = new ExactNameClassLoader(parent);
 
+        assertThrows(ClassNotFoundException.class, () -> loader.loadClass("app.util.app.util.ArrayList"));
+        assertEquals(List.of("app.util.app.util.ArrayList"), parent.loadedClasses);
+    }
+
+    @Test
+    @DisplayName("a class loader of the application's own isn't asked for a name in a java. package the JDK serves no"
+            + " class file for, which is looked up once, but is asked for a class there (#1130)")
+    void otherLoaderNotAskedForJdkNameWithoutClassFile() throws ClassNotFoundException {
+        RecordingClassLoader parent = new RecordingClassLoader();
+        ExactNameClassLoader loader = new ExactNameClassLoader(parent);
+
         assertThrows(ClassNotFoundException.class, () -> loader.loadClass("java.util.java.util.ArrayList"));
-        assertEquals(List.of("java.util.java.util.ArrayList"), parent.loadedClasses);
+        assertThrows(ClassNotFoundException.class, () -> loader.loadClass("java.util.java.util.ArrayList"));
+        assertEquals(ArrayList.class, loader.loadClass("java.util.ArrayList"));
+        assertEquals(Map.Entry.class, loader.loadClass("java.util.Map$Entry"));
+
+        assertEquals(List.of("java.util.ArrayList", "java.util.Map$Entry"), parent.loadedClasses);
+        assertEquals(List.of(), parent.resources);
+        assertEquals(1, loader.cachedMisses());
+        assertEquals(0, loader.cachedClasses());
     }
 
     @Test

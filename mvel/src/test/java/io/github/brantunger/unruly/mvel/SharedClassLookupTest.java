@@ -40,7 +40,7 @@ class SharedClassLookupTest {
         AtomicReference<RulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         List<Object> innerOutputs = new CopyOnWriteArrayList<>();
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
-                .imports("java.util")
+                .imports("java.util", "app.util")
                 .listener(new RuleListener() {
                     @Override
                     public void beforeExecute(Rule rule, Object output) {
@@ -63,7 +63,9 @@ class SharedClassLookupTest {
 
         assertEquals(Map.of("low", 5, "high", 5), output);
         assertEquals(List.of(Map.of("low", 2, "high", 2)), innerOutputs);
-        assertEquals(1, Collections.frequency(loader.loadedClasses, "java.util.amount"));
+        assertEquals(1, Collections.frequency(loader.loadedClasses, "app.util.amount"));
+        // A name in a java. package the JDK serves no class file for isn't asked at all (#1130).
+        assertEquals(0, Collections.frequency(loader.loadedClasses, "java.util.amount"));
     }
 
     @Test

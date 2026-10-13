@@ -12,6 +12,12 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("ClassNameRoots records only what an expression's compilation looked up")
 class ClassNameRootsTest {
 
+    // Classes outside the java. packages, whose names a class loader of the application's own is asked for whether
+    // they have a class file or not (#1130), with the same first part.
+    private static final String OWN = ClassNameRootsTest.class.getName();
+
+    private static final String OTHER = ClassNameRoots.class.getName();
+
     private static Imports imports() {
         return new Imports(Set.of(), Set.of(), ClassNameRootsTest.class.getClassLoader());
     }
@@ -171,11 +177,10 @@ class ClassNameRootsTest {
     void scanReadsPastAComment() {
         RecordingLoader recording = new RecordingLoader(null);
 
-        ClassNameRoots roots = scanned("// a.\njava.lang.Integer.MAX_VALUE + /* b.?*/java.lang.Long.MAX_VALUE",
-                recording);
+        ClassNameRoots roots = scanned("// a.\n" + OWN + ".MAX_VALUE + /* b.?*/" + OTHER + ".MAX_VALUE", recording);
 
-        assertTrue(roots.contains("java"));
-        assertEquals(List.of("java.lang.Integer.MAX_VALUE", "java.lang.Integer"), recording.names);
+        assertTrue(roots.contains("io"));
+        assertEquals(List.of(OWN + ".MAX_VALUE", OWN), recording.names);
     }
 
     @Test
@@ -204,9 +209,9 @@ class ClassNameRootsTest {
     void scanSkipsImportedClasses() {
         RecordingLoader recording = new RecordingLoader(null);
 
-        scanned("Outer.FIELD + Math.PI + java.lang.Integer.MAX_VALUE", recording, Set.of("Outer", "Math"));
+        scanned("Outer.FIELD + Math.PI + " + OWN + ".MAX_VALUE", recording, Set.of("Outer", "Math"));
 
-        assertEquals(List.of("java.lang.Integer.MAX_VALUE", "java.lang.Integer"), recording.names);
+        assertEquals(List.of(OWN + ".MAX_VALUE", OWN), recording.names);
     }
 
     @Test
@@ -214,12 +219,28 @@ class ClassNameRootsTest {
     void scanFindsTheClass() {
         RecordingLoader recording = new RecordingLoader(null);
 
-        ClassNameRoots roots = scanned("def f(x) { x }; f(java.lang.Integer.MAX_VALUE) + f(java.lang.Long.MAX_VALUE)",
+        ClassNameRoots roots = scanned("def f(x) { x }; f(" + OWN + ".MAX_VALUE) + f(" + OTHER + ".MAX_VALUE)",
                 recording);
 
-        assertTrue(roots.contains("java"));
+        assertTrue(roots.contains("io"));
         // The second name's first part is recorded already.
-        assertEquals(List.of("java.lang.Integer.MAX_VALUE", "java.lang.Integer"), recording.names);
+        assertEquals(List.of(OWN + ".MAX_VALUE", OWN), recording.names);
+    }
+
+    @Test
+    @DisplayName("of a name in a java. package, only what the JDK serves a class file for is looked up, found or not"
+            + " (#1130)")
+    void scanOfAJdkNameAsksOnlyForClassFiles() {
+        RecordingLoader recording = new RecordingLoader(null);
+        RecordingLoader unloadable = new RecordingLoader(new NoClassDefFoundError("a class it needs is missing"));
+
+        ClassNameRoots roots = scanned("java.lang.Integer.MAX_VALUE", recording);
+        ClassNameRoots none = scanned("java.lang.Integer.MAX_VALUE", unloadable);
+
+        assertTrue(roots.contains("java"));
+        assertEquals(List.of("java.lang.Integer"), recording.names);
+        assertFalse(none.contains("java"));
+        assertEquals(List.of("java.lang.Integer"), unloadable.names);
     }
 
     @Test
@@ -267,9 +288,9 @@ class ClassNameRootsTest {
     void scanOfAnUnloadableClassRecordsNothing() {
         RecordingLoader recording = new RecordingLoader(new NoClassDefFoundError("a class it needs is missing"));
 
-        ClassNameRoots roots = scanned("java.lang.Integer.MAX_VALUE", recording);
+        ClassNameRoots roots = scanned("app.util.Main.MAX_VALUE", recording);
 
-        assertFalse(roots.contains("java"));
-        assertEquals(List.of("java.lang.Integer.MAX_VALUE", "java.lang.Integer", "java.lang"), recording.names);
+        assertFalse(roots.contains("app"));
+        assertEquals(List.of("app.util.Main.MAX_VALUE", "app.util.Main", "app.util"), recording.names);
     }
 }
