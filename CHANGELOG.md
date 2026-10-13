@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.7](https://github.com/brantunger/unruly-engine/compare/v2.30.6...v2.30.7) (2026-10-13)
+
+
+### Bug Fixes
+
+* reject a fact named like a public static field or enum constant that a condition or action brings in with an inline import a.B.*; and uses, since MVEL reads the field there and the rule never sees the fact ([#1197](https://github.com/brantunger/unruly-engine/issues/1197)) ([a992852](https://github.com/brantunger/unruly-engine/commit/a992852a0accef99bbc9401ee18331391ed0b7ae))
+
 ## [2.30.6](https://github.com/brantunger/unruly-engine/compare/v2.30.5...v2.30.6) (2026-10-13)
 
 
