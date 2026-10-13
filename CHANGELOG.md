@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.5](https://github.com/brantunger/unruly-engine/compare/v2.30.4...v2.30.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* log at ERROR a fatal error an onCancel action or the cancel timer swallows, and have the timer that replaces one that died part way through a wake hand on the actions the dead one had found due, so they run rather than being logged as not started ([#1190](https://github.com/brantunger/unruly-engine/issues/1190)) ([c0fce39](https://github.com/brantunger/unruly-engine/commit/c0fce3987ca6684778570495fbf43c18948f1fd6))
+
 ## [2.30.4](https://github.com/brantunger/unruly-engine/compare/v2.30.3...v2.30.4) (2026-10-13)
 
 
