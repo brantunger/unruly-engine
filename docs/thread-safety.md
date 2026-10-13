@@ -198,8 +198,8 @@ For the load itself:
 
 - When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
   the last to swap in its rules, after making any copies at load.
-- Each condition and action is compiled on its own, so variables and inline `import` statements in one rule never
-  affect another rule or a later reload.
+- Each condition and action is compiled on its own, so one rule's variables and inline `import` statements never
+  change how another rule or a later reload compiles.
 
 > [!WARNING]
 > A nested run uses the engine's rules **as they are when it starts**, not the outer run's. After a reload, a nested

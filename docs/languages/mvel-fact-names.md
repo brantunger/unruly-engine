@@ -90,7 +90,7 @@ MVEL reads these as something else before the facts, so they're rejected too:
 | Primitive type names | `boolean` `byte` `char` `double` `float` `int` `long` `short` |
 | Built-in class names | The 22 in [Classes and imports](mvel.md#-classes-and-imports), such as `Math`, `String` and `Thread` |
 | Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
-| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")` |
+| Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package: `Date` for `imports("java.util")`. A rule's own inline import, for the condition or action holding it; see below |
 | Package roots | `java` once `load()` or `validate()`, compiling a rule, looks up a class whose package starts with `java`, as for `java.lang.Integer.MAX_VALUE == 7`. Here MVEL would read the fact in the class's place; see below |
 | Classes with no package | `Foo` once `load()` or `validate()`, compiling a rule, looks up a class `Foo` in the default package, as for `Foo.LIMIT == 7`. Here too MVEL would read the fact in the class's place; see below |
 
@@ -103,6 +103,22 @@ MVEL reads these as something else before the facts, so they're rejected too:
   package name.
 - A class in an imported package that can't be loaded isn't read as a class name, so the fact keeps it, as in
   MVEL's own lookup; a [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
+
+**An inline import**, written in a condition's or action's own text, counts for that expression alone. MVEL reads the
+imported name there, never the fact, so the expression rejects a fact named like:
+
+- the class of `import acme.Bar;`: `Bar`;
+- the method of `import_static acme.Bar.limit;` in an action: `limit`;
+- each class MVEL found through `import acme.*;` as it compiled the expression: `Date` for
+  `import java.util.*; output.put('d', new Date(0))`.
+
+The import's own words hold the name, so the first two always reject the fact. A class of the package that the
+expression doesn't use stays a fact name: with `import java.util.*; output.put('n', new ArrayList().size())` in one
+rule and `Date == 1` in another, a fact `Date` is accepted, and the second rule reads it. The import's package root,
+such as `acme`, is per rule list, as below.
+
+Where the importing expression names the class, the run rejects the fact for every rule. Up to 2.30.5, such a fact
+was accepted, and the importing expression never saw it.
 
 **Package roots** are per rule list: the first part of each class `load()` or `validate()` looks up as it compiles
 a rule. That's a class found through a package import (`acme` for `Order` with `imports("acme.orders")`), nested in an
@@ -190,8 +206,8 @@ gives up to 2,209 names; one with 64 minus signs gives 2,145, scanned in about 0
 
 Once one condition or action gives up, MVEL can't tell which facts the rule list reads, so it checks every fact, as
 it did up to 2.28.0: each run's facts and each declared fact. A fact such as `in` or `Math`, which no MVEL rule names,
-is then rejected for that rule list. Such a word is most often a long string literal without spaces, such as Base64
-data. To keep the narrower check, pass that value as a fact instead.
+is then rejected for that rule list, with each name its inline imports give. Such a word is most often a long string
+literal without spaces, such as Base64 data. To keep the narrower check, pass that value as a fact instead.
 
 `load()` and `validate()` log this once each time they compile such a rule list, at DEBUG on the engine's logger
 `io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule:

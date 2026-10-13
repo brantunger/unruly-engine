@@ -107,8 +107,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
         compiled.add(expression);
         // Outside the try, which covers only MVEL's compile, so nothing the scan throws, such as an SLF4J provider
         // failing in its logging, reaches the arms that classify MVEL's failures.
-        if (namesKnown) {
-            namesAdded(source);
+        Set<String> imported = analysis.inlineImportedNames();
+        if (namesKnown || !imported.isEmpty()) {
+            namesAdded(source, imported);
         }
         return expression;
     }
@@ -116,17 +117,37 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     /**
      * Adds the names an expression compiled could read a fact by to {@link #namesRead}, or, if it has a word too long
      * to scan, forgets them all, so {@link #factNamesRead()} says MVEL can't tell, and logs at DEBUG which rule and
-     * which limit, once for the rule list, as no later expression is scanned.
+     * which limit, once for the rule list, as no later expression is scanned for {@link #namesRead}.
      *
-     * @param source The expression
+     * <p>
+     * An expression that imports names of its own is scanned on its own, even once {@link #namesRead} is forgotten,
+     * and the names it imports that it also names are rejected as facts' names (see {@link FactNames#inlineImported}),
+     * as MVEL reads each of them in it as the import. If it has a word too long to scan, every name it imports counts
+     * as named.
+     * </p>
+     *
+     * @param source   The expression
+     * @param imported The names the expression's own inline imports brought in as it compiled
      */
-    private void namesAdded(Expression source) {
+    private void namesAdded(Expression source, Set<String> imported) {
         // An expression compiled after factNamesRead() adds to a new copy, as the engine keeps the set it returned.
         if (!(namesRead instanceof HashSet)) {
             namesRead = new HashSet<>(namesRead);
         }
-        String limit = RuleText.addNames(source.text(), namesRead);
-        if (limit != null) {
+        Set<String> names = imported.isEmpty() ? namesRead : new HashSet<>();
+        String limit = RuleText.addNames(source.text(), names);
+        if (!imported.isEmpty()) {
+            if (limit != null) {
+                factNames.inlineImported(imported);
+            } else {
+                if (namesKnown) {
+                    namesRead.addAll(names);
+                }
+                names.retainAll(imported);
+                factNames.inlineImported(names);
+            }
+        }
+        if (limit != null && namesKnown) {
             namesKnown = false;
             namesRead.clear();
             LoggerFactory.getLogger(LOGGER_NAME).debug("MVEL checks every fact for this rule list: the {} of rule '{}'"

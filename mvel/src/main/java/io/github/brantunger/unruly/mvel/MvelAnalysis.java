@@ -169,6 +169,16 @@ final class MvelAnalysis extends ExpressionCompiler {
     }
 
     /**
+     * Returns the names the expression's own inline imports brought in while the pass ran, as
+     * {@link Imports#inlineImportedNames} tells: MVEL looks them up in this expression only, before its facts.
+     *
+     * @return The names, empty if the expression imports nothing of its own
+     */
+    Set<String> inlineImportedNames() {
+        return Imports.inlineImportedNames(pCtx.getParserConfiguration());
+    }
+
+    /**
      * Returns the expression's source text.
      *
      * @return The text the pass reads

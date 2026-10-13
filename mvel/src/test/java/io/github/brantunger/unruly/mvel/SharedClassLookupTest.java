@@ -68,35 +68,51 @@ class SharedClassLookupTest {
         assertEquals(0, Collections.frequency(loader.loadedClasses, "java.util.amount"));
     }
 
+    /**
+     * The rule named {@code fact} reads {@code Date} as a fact, so MVEL found it not to be a class; the other two still
+     * find the class through their inline imports. They also name it, so a fact {@code Date} is rejected for the run
+     * (#1118): what is guarded happens at {@code load()}, whatever the run's facts.
+     */
     @Test
     @DisplayName("an inline import still finds a class that another rule's expressions found not to be one")
     void inlineImportsNotAnsweredFromCache() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .imports("java.io").build();
         engine.load(List.of(
-                rule("fact", "Date == 1", "output.put('fact', Date)"),
+                rule("fact", "amount == 1", "output.put('fact', Date)"),
                 rule("class", "true", "import java.util.Date; output.put('class', new Date(0))"),
                 rule("package", "true", "import java.util.*; output.put('package', new Date(0))")));
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue("Date", 1);
 
-        assertEquals(Map.of("fact", 1, "class", new Date(0), "package", new Date(0)), engine.run(facts));
+        assertEquals(Map.of("class", new Date(0), "package", new Date(0)), engine.run(amount(2)));
+        FactStore<Object> facts = amount(2);
+        facts.setValue("Date", 1);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(facts));
+        assertEquals("'Date' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would "
+                + "never see the fact", ex.getMessage());
     }
 
+    /**
+     * The rule named {@code first} reads {@code LinkedList} as a fact, so MVEL found it not to be a class; the rule
+     * named {@code second} still finds the class through its inline import, in a typed declaration. It names the
+     * class too, so a fact {@code LinkedList} is rejected for the run (#1118).
+     */
     @Test
     @DisplayName("an inline class import in a typed declaration finds a class another rule found not to be one")
     void inlineClassImportInTypedDeclaration() {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .imports("java.io").build();
         engine.load(List.of(
-                Rule.builder().ruleName("first").priority(2).condition("LinkedList == 1")
+                Rule.builder().ruleName("first").priority(2).condition("amount == 1")
                         .action("output.put('fact', LinkedList)").build(),
                 Rule.builder().ruleName("second").priority(1).condition("true")
                         .action("import java.util.LinkedList; LinkedList l = new LinkedList(); l.add(1); "
                                 + "output.put('r', l.size())").build()));
-        FactStore<Object> facts = new FactMap<>();
-        facts.setValue("LinkedList", 1);
 
-        assertEquals(Map.of("fact", 1, "r", 1), engine.run(facts));
+        assertEquals(Map.of("r", 1), engine.run(amount(2)));
+        FactStore<Object> facts = amount(2);
+        facts.setValue("LinkedList", 1);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> engine.run(facts));
+        assertEquals("'LinkedList' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules "
+                + "would never see the fact", ex.getMessage());
     }
 }
