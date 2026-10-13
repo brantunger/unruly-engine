@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.8](https://github.com/brantunger/unruly-engine/compare/v2.30.7...v2.30.8) (2026-10-13)
+
+
+### Bug Fixes
+
+* make an inline import a.B.*; of a class whose public static field is null fail load() with a message naming the import and the field, instead of "not a statement, or badly formed structure" ([#1200](https://github.com/brantunger/unruly-engine/issues/1200)) ([0314d67](https://github.com/brantunger/unruly-engine/commit/0314d676b1ddf5131f5ce33ebbe02767e87d36e1))
+
 ## [2.30.7](https://github.com/brantunger/unruly-engine/compare/v2.30.6...v2.30.7) (2026-10-13)
 
 
