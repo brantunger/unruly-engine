@@ -6,6 +6,8 @@ import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.util.MethodStub;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.net.URLClassLoader;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -189,18 +191,77 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * {@code ImportLimitCopiesTest} runs the same names through both, so the two can't drift apart.
      *
      * @param name The package's name
-     * @throws ImportTooLarge if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more than
+     * @throws ImportRejected if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more than
      *                        {@value #MAX_IMPORT_PARTS} dot-separated parts
      */
     static void checkSize(String name) {
         if (name.length() > MAX_IMPORT_LENGTH) {
-            throw new ImportTooLarge(name, "': it has " + name.length() + " characters, and an import may have at "
+            throw new ImportRejected(name, "': it has " + name.length() + " characters, and an import may have at "
                     + "most " + MAX_IMPORT_LENGTH);
         }
         long parts = RuleText.dottedParts(name);
         if (parts > MAX_IMPORT_PARTS) {
-            throw new ImportTooLarge(name, "': it has " + parts + " dot-separated parts, and an import may have at "
+            throw new ImportRejected(name, "': it has " + parts + " dot-separated parts, and an import may have at "
                     + "most " + MAX_IMPORT_PARTS);
+        }
+    }
+
+    /**
+     * Returns what to throw for a {@link NullPointerException} from MVEL's {@code addPackageImport}: for a class with
+     * a public static field whose value is {@code null}, an {@link ImportRejected} that names the import and the first
+     * such field, such as {@code Can't import 'acme.Bar.*': its public static field 'X' is null}; else the exception
+     * itself. MVEL imports each public static field declared in a class that isn't an enum, none it inherits, by
+     * putting its value in a map that can't hold {@code null}, and reports the exception that throws as an expression
+     * that is "not a statement, or badly formed structure". The class is looked up as MVEL looks it up, through the
+     * class loader of MVEL's own classes, and its fields are read as MVEL reads them, in the order it reads them.
+     *
+     * <p>
+     * The field's name, which can hold any character a class file allows, is escaped and takes at most
+     * {@value MessageText#MAX_NAME_LENGTH} characters, the note of what was left out included, so the import's own name
+     * keeps most of the room the message has.
+     * </p>
+     *
+     * @param packageName The package's name, as the expression writes it
+     * @param e           What MVEL threw
+     * @return The exception to throw
+     */
+    // MVEL's class loader, as MVEL's own lookup uses. PMD asks for the context class loader instead, which may not be
+    // the one MVEL found the class through.
+    @SuppressWarnings("PMD.UseProperClassLoader")
+    static RuntimeException nullStaticField(String packageName, NullPointerException e) {
+        Class<?> imported;
+        try {
+            imported = Class.forName(packageName, false, ParserConfiguration.class.getClassLoader());
+        } catch (ClassNotFoundException notClass) {
+            return e;
+        }
+        // MVEL imports an enum's constants, never null, rather than its fields.
+        if (imported.isEnum()) {
+            return e;
+        }
+        int publicStatic = Modifier.PUBLIC | Modifier.STATIC;
+        for (Field field : imported.getDeclaredFields()) {
+            if ((field.getModifiers() & publicStatic) == publicStatic && isNull(field)) {
+                return new ImportRejected(packageName, ".*': its public static field '"
+                        + MessageText.quoteWithin(field.getName(), MessageText.MAX_NAME_LENGTH) + "' is null");
+            }
+        }
+        return e;
+    }
+
+    /**
+     * Tells whether a static field's value is {@code null}, for {@link #nullStaticField}.
+     *
+     * @param field The field
+     * @return {@code true} if its value is {@code null}; {@code false} if it isn't, or this module can't read it, in
+     *         which case it isn't one MVEL put a {@code null} for: MVEL would have failed on reading it, with an
+     *         exception of its own
+     */
+    private static boolean isNull(Field field) {
+        try {
+            return field.get(null) == null;
+        } catch (IllegalAccessException unreadable) {
+            return false;
         }
     }
 
@@ -528,15 +589,28 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * in a package does.
          * </p>
          *
+         * <p>
+         * MVEL can't import a public static field whose value is {@code null}, and fails with a
+         * {@link NullPointerException} it reports as a malformed expression, so the import is rejected with a message
+         * that names the field instead (see {@link Imports#nullStaticField}).
+         * </p>
+         *
          * @param packageName The package's name, as the expression writes it
-         * @throws ImportTooLarge if the name has more than {@value Imports#MAX_IMPORT_LENGTH} characters or more than
-         *                        {@value Imports#MAX_IMPORT_PARTS} dot-separated parts, before it is looked up
+         * @throws ImportRejected if the name has more than {@value Imports#MAX_IMPORT_LENGTH} characters or more than
+         *                        {@value Imports#MAX_IMPORT_PARTS} dot-separated parts, before it is looked up, or
+         *                        names a class with a public static field whose value is {@code null}
          */
         @Override
         public void addPackageImport(String packageName) {
             checkSize(packageName);
             Set<String> before = new HashSet<>(imports.keySet());
-            super.addPackageImport(packageName);
+            try {
+                super.addPackageImport(packageName);
+            } catch (NullPointerException e) {
+                // The fields MVEL imported before the null one, and the package, stay: the configuration goes with
+                // the expression, which fails to compile.
+                throw nullStaticField(packageName, e);
+            }
             for (String name : imports.keySet()) {
                 if (!before.contains(name)) {
                     staticMemberNames.add(name);
@@ -760,10 +834,11 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
 
     /**
      * What the engine throws when an {@code import} in an expression's own text names a package too long, or with too
-     * many parts, to look up, which the compiler reports as a compile error at the name. MVEL lets it through as it
-     * is, as it does any {@link RuntimeException} that isn't its own.
+     * many parts, to look up, or a class with a public static field whose value is {@code null}, which MVEL can't
+     * import, which the compiler reports as a compile error at the name. MVEL lets it through as it is, as it does any
+     * {@link RuntimeException} that isn't its own.
      */
-    static final class ImportTooLarge extends IllegalArgumentException {
+    static final class ImportRejected extends IllegalArgumentException {
 
         private static final long serialVersionUID = 1L;
 
@@ -778,7 +853,7 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
          * @param name  The rejected name, as the expression writes it
          * @param after What the message says after the name, from its closing quote on
          */
-        ImportTooLarge(String name, String after) {
+        ImportRejected(String name, String after) {
             super(START + MessageText.quote(name) + after);
             this.name = name;
             this.after = after;

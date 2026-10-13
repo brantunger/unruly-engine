@@ -64,11 +64,11 @@ So does setting a property the output has no setter or public field for, such as
 that isn't a `Map`: `output.approved = true` fails with `could not access property (approved) in: java.lang.Boolean`,
 which names the value's type, not the output's.
 
-Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and its
+Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and
 later `output.put(...)` calls change the discarded object.
 
 Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates a variable local to the action:
-the fact keeps its value, and later rules still see it.
+the fact keeps its value, which later rules see.
 
 A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
 [What rules can change](../writing-rules.md#-what-rules-can-change).
@@ -124,10 +124,12 @@ Your facts' and output object's classes must be reachable from that loader too; 
 JDK's loaders, freed under memory pressure: not a leak.
 
 An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
-lookup even if unused. It fails at the name: `failed to compile at line 1, column 8: Can't import '...': it has 65
-dot-separated parts, and an import may have at most 64`. One whose `.*` starts past the text's first 32,768
-characters fails too: move it earlier, or use `imports(...)`. Inline class imports and `import_static` aren't
-size-checked.
+lookup even if unused. It fails at the name: `Can't import '...': it has 65 dot-separated parts, and an import may
+have at most 64`. One whose `.*` starts past the text's first 32,768 characters fails too: move it earlier, or use
+`imports(...)`. Inline class imports and `import_static` aren't size-checked.
+
+`import acme.Bar.*;` fails, even if unused, when `Bar` declares a `null` public static field:
+`Can't import 'acme.Bar.*': its public static field 'X' is null`.
 
 In a class directory on a case-insensitive file system, `applicant` in `applicant.creditScore` finds
 `Applicant.class`; `NoClassDefFoundError: applicant (wrong name: Applicant)` counts as no class, so `applicant`
@@ -194,8 +196,8 @@ RulesEngineBuilder.firstMatch(LoanDecision::new)
 ```
 
 `.condition("applicant.creditScor >= 750")` then fails `load()` with
-`RuleCompilationException: unqualified type ... creditScor`. Strong typing needs all of these, so MVEL can check
-everything; otherwise `load()` fails, saying why:
+`RuleCompilationException: unqualified type ... creditScor`. Strong typing needs all of these, or `load()` fails,
+saying why:
 
 | Needed | Why |
 | --- | --- |
@@ -218,7 +220,7 @@ doesn't catch a condition that isn't a boolean; the engine checks that for every
   | `def bonus(score) { score / 100 }` | Not possible: write the expression inline |
 
 - Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
-  (any MVEL rule, named or by default, or an empty list with MVEL as the default), so a typo can't leave strong
+  (any MVEL rule, or an empty list with MVEL as the default), so a typo can't leave strong
   typing silently off.
 
 ## 🚨 Errors when rules load
@@ -256,7 +258,7 @@ Condition for rule 'r' failed to compile at line 1, column 1: null (caused by ja
 `applicant.creditScore == == 750` reports column 29, the `750`. `unbalanced braces` points at the brace.
 
 **An assignment in a condition** is caught before compiling, with one issue at the operator or keyword:
-`Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23). Conditions can't change facts
+`contains an assignment ('=' at line 1, column 23). Conditions can't change facts
 or declare variables; use == to compare.`
 
 **`import_static` in a condition** is reported at the keyword: `uses import_static (at line

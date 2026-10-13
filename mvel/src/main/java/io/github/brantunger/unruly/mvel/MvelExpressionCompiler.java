@@ -82,8 +82,8 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
                 throw e;
             }
             throw MvelCompileErrors.compileError(e, analysis.rejectedType());
-        } catch (Imports.ImportTooLarge e) {
-            throw MvelCompileErrors.importTooLarge(source.text(), e);
+        } catch (Imports.ImportRejected e) {
+            throw MvelCompileErrors.importRejected(source.text(), e);
         } catch (IndexOutOfBoundsException e) {
             // MVEL's parser reads out of bounds for some malformed expressions, such as a . or ? it can't read past or
             // blank parentheses, instead of reporting them. One from other code, such as the application's class

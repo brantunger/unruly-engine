@@ -177,12 +177,12 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
                 DataConversion.class, PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class,
                 MvelCompileErrors.class));
         // This module's classes without a static initializer that a load that fails would otherwise be the first to
-        // load: a condition that assigns, a class called like a method, an import with too many parts, and the place
-        // of either in the text. A class's first load deep in a stack can overflow as initializing one can (#1066,
-        // #1097). And those that MVEL's first loop, in its analysis or in a run, and its first lookup of a name with a
-        // '$' and too many parts would be the first to initialize (#1099).
+        // load: a condition that assigns, a class called like a method, an import with too many parts or of a class
+        // with a null static field, and the place of either in the text. A class's first load deep in a stack can
+        // overflow as initializing one can (#1066, #1097). And those that MVEL's first loop, in its analysis or in a
+        // run, and its first lookup of a name with a '$' and too many parts would be the first to initialize (#1099).
         initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
-                Imports.ClassCalledLikeMethod.class, Imports.ImportTooLarge.class, Imports.AnalysisLoop.class,
+                Imports.ClassCalledLikeMethod.class, Imports.ImportRejected.class, Imports.AnalysisLoop.class,
                 Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class));
         MvelCompileErrors.warmUp();
         // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
