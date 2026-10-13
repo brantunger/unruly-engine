@@ -278,8 +278,8 @@ also walks the stack for its trace.
 ## 🔧 Logging setup
 
 The engine depends only on the **SLF4J 2.x API**. Without a provider on the classpath, SLF4J prints
-`No SLF4J providers were found` and discards every message. Spring Boot already includes Logback; other
-applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. `org.mvel2` logs through
+`No SLF4J providers were found` and discards every message. Spring Boot includes Logback; elsewhere, add Logback,
+Log4j 2's SLF4J 2 provider, or `slf4j-simple`. `org.mvel2` logs through
 `java.util.logging`; see [MVEL's own logging](languages/mvel-gotchas.md#-mvels-own-logging).
 
 | Logger | Level | Messages |
@@ -302,15 +302,15 @@ applications can add Logback, Log4j 2's SLF4J 2 provider, or `slf4j-simple`. `or
 | `io.github.brantunger.unruly.engine` | `DEBUG` | `The engine records no Flight Recorder events here, because they can't be loaded: <error>`, once, where the event classes can't be loaded, such as a native image without Flight Recorder |
 | `io.github.brantunger.unruly.engine` | `DEBUG` | [`MVEL checks every fact ...`](languages/mvel-fact-names.md#when-mvel-checks-every-fact) |
 | `io.github.brantunger.unruly.api.LoggingRuleListener` | `DEBUG` | Each rule's callbacks, if you added the listener |
-| `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` (JUL) | `WARNING` | A failed method call, often with a fact value unescaped; dropped during the engine's MVEL rules |
+| `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer`, `org.mvel2.util.ErrorUtil` (JUL) | `WARNING` | A failed method call, often with a fact value unescaped, or some malformed expressions; dropped while the engine compiles or runs MVEL rules |
 
 Each failure is logged where it happens, before it's thrown. A nested run's failure is logged once, unless wrapped with
 its own message; one on another thread may be logged twice ([Nested runs](nested-runs.md#-what-is-logged)). Misuse isn't
 logged: a `null` argument, `run()` before `load()`, or an invalid builder setting, such as an import that is neither a
 class nor a package name.
 
-The engine already logs each failure at ERROR, so if you also log the exception you catch, you'll see it twice. Lower
-the engine logger's level to handle logging yourself.
+The engine already logs each failure at ERROR, so logging the exception you catch shows it twice. Lower the engine
+logger's level to handle logging yourself.
 
 > [!CAUTION]
 > Failure messages can contain fact values, such as `For input string: "123-45-6789"`. The engine copies them into its
@@ -321,7 +321,7 @@ the engine logger's level to handle logging yourself.
 
 The engine logs under the fixed name **`io.github.brantunger.unruly.engine`**, which is part of the API. The parent
 logger **`io.github.brantunger.unruly`** covers the engine and `LoggingRuleListener`: Logback, Log4j 2 and Spring
-Boot apply a logger's level to every logger under its name, and a more specific setting still takes precedence.
+Boot apply a logger's level to every logger under its name, and a more specific setting wins.
 
 **Logback** (`logback.xml`):
 

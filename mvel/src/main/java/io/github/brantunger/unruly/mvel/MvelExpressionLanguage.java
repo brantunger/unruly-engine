@@ -324,9 +324,10 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * rule that caused it. It isn't done when the language is created: an application may create it anywhere, maybe
      * deep in a stack, before any engine has made room for it, and an engine that finds it with
      * {@link java.util.ServiceLoader} may never use it. It also installs
-     * {@link MvelWarningFilter} on MVEL's logger, once for each class loader that loads this module, before any rule
-     * runs, for the same reason: a run would otherwise initialize it first, possibly deep in the stack of a run nested
-     * in an action, where a stack overflow would leave it unusable and fail every later run. It's only initialized
+     * {@link MvelWarningFilter} on MVEL's loggers, once for each class loader that loads this module, before any rule
+     * compiles or runs, for the same reason: a compile or a run would otherwise initialize it first, possibly deep in
+     * the stack of a run nested in an action, where a stack overflow would leave it unusable and fail every later
+     * compile and run. It's only initialized
      * through {@link #initializeErrorReporting()}, which resolves ErrorUtil first, so a missing mvel2 is named on every
      * call rather than only the first.
      */

@@ -42,7 +42,9 @@ import java.util.function.Supplier;
  * <p>
  * While it runs, {@link MvelWarningFilter} drops the WARNING MVEL logs itself, with the value unescaped, when a method
  * call or an indexed read fails inside it, most often because MVEL can't convert a fact to the method's parameter
- * type. The run still fails, and the engine reports the failure.
+ * type. The run still fails, and the engine reports the failure. While MVEL compiles it, the filter drops the WARNING
+ * MVEL logs when it fails as it places a compile error, such as for {@code x contains {1, +}}; the compile still fails,
+ * and the engine reports that.
  * </p>
  *
  * <p>
@@ -203,16 +205,22 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         // compileExpression alone accepts some malformed input (e.g. `x == == 1`) and defers the error to
         // run(). The analysis pass catches more of it up front.
         Imports imports = analysis.compiledImports();
-        return imports.classNameRoots().recordWhile(() -> withClassLoader(imports.classLoader(), () -> {
-            analysis.compile();
-            MvelExpression expression = new MvelExpression(analysis.sourceText(), imports, callsPerRun,
-                    newCopy(analysis.sourceText(), imports, callsPerRun));
-            // The classes MVEL looks up only as the expression runs count as well.
-            ParserConfiguration lookups = imports.newConfiguration();
-            imports.classNameRoots().lookUpDottedNames(analysis.sourceText(), imports.classLoader(),
-                    lookups::hasImport);
-            return expression;
-        }));
+        // MVEL's WARNING for its own failure to place a compile error repeats what the engine reports.
+        boolean outermost = MvelWarningFilter.enter();
+        try {
+            return imports.classNameRoots().recordWhile(() -> withClassLoader(imports.classLoader(), () -> {
+                analysis.compile();
+                MvelExpression expression = new MvelExpression(analysis.sourceText(), imports, callsPerRun,
+                        newCopy(analysis.sourceText(), imports, callsPerRun));
+                // The classes MVEL looks up only as the expression runs count as well.
+                ParserConfiguration lookups = imports.newConfiguration();
+                imports.classNameRoots().lookUpDottedNames(analysis.sourceText(), imports.classLoader(),
+                        lookups::hasImport);
+                return expression;
+            }));
+        } finally {
+            MvelWarningFilter.leave(outermost);
+        }
     }
 
     @Override
@@ -253,8 +261,15 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      */
     Copy newCompiled() {
         Copy first = loaded.getAndSet(null);
-        return first != null ? first
-                : withClassLoader(imports.classLoader(), () -> newCopy(source, imports, callsPerRun));
+        if (first != null) {
+            return first;
+        }
+        boolean outermost = MvelWarningFilter.enter();
+        try {
+            return withClassLoader(imports.classLoader(), () -> newCopy(source, imports, callsPerRun));
+        } finally {
+            MvelWarningFilter.leave(outermost);
+        }
     }
 
     /**

@@ -163,10 +163,10 @@ exception's message often holds the fact value unescaped, so a line break in it 
 - A `null` passed to a primitive setter under strong typing, as in the `null` row above: its message
   holds no fact value.
 
-The engine's filter on that one logger drops the record while one of its MVEL rules runs on the thread. Nothing is
+The engine's filter on that logger drops the record while one of its MVEL rules runs on the thread. Nothing is
 lost: MVEL still throws, and the engine reports the failure, escaped, as a `RuleExecutionException` with the original
-exception in its cause chain. If the run was stopped at the same time, the stop's `RuleExecutionException` keeps
-MVEL's exception among its suppressed ones instead.
+exception in its cause chain. If the run was also stopped, the stop's `RuleExecutionException` keeps MVEL's
+exception among its suppressed ones.
 
 A filter you set on that logger before the engine sets its own keeps deciding every other record. The engine sets it
 when it builds an engine that names MVEL, such as with `defaultLanguage("mvel")`, or else when it first loads or
@@ -175,13 +175,15 @@ validates MVEL rules. MVEL still logs the `WARNING` when:
 - **You set a filter on that logger after that.** Yours replaces the engine's.
 - **The logging setup refuses the filter**, such as one under a `SecurityManager` or a protected JBoss log context;
   the engine runs without it.
-- **An application deployed between two others is undeployed.** Applications in one JVM that share MVEL's logger,
-  as with a JVM-wide JUL setup, are each covered while their rules run. With three or more, undeploying one deployed
-  between two others leaves the rules of an earlier one that still runs uncovered.
+- **An application deployed between two others is undeployed.** With three or more sharing MVEL's loggers, as with
+  a JVM-wide JUL setup, an earlier one still running is uncovered.
 
-The filter also drops this `WARNING` for Java code a rule calls that runs MVEL itself on the thread,
-while the rule runs. That code's failure still throws. MVEL's other JUL loggers aren't filtered. None is known
-to log fact values on the engine's path, but they may log rule text.
+The filter also drops this `WARNING` from Java code a rule calls that runs MVEL on the thread; that code's failure
+still throws.
+
+The engine's filter on `org.mvel2.util.ErrorUtil` drops the `WARNING` MVEL logs for some malformed expressions such as
+`x contains {1, +}` while the engine compiles or runs a rule. The compile error is still reported. MVEL's other JUL
+loggers aren't filtered. None is known to log fact values on the engine's path, but they may log rule text.
 
 To turn MVEL's JUL output off, set `org.mvel2.level = OFF` in the JUL configuration, or route JUL through
 your logging, as with jul-to-slf4j or log4j-jul, and turn off `org.mvel2` there. For the engine's own
