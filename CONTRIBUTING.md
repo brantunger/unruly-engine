@@ -180,11 +180,11 @@ Three things to know about the gate:
 > are exempt.
 
 On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
-and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check, except on a
-[documentation-only pull request](docs/contributing/build-and-gates.md#-ci). It also checks the PR title, broken
-links, CRLF line endings and the workflows, and warns about the changed pages' style. No branch protection
-requires a check; maintainers merge when CI and the title check are green. The reports, caches and artifacts are
-described in [Build and gates](docs/contributing/build-and-gates.md).
+and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check;
+[docs-only and release pull requests](docs/contributing/build-and-gates.md#-ci) run less. It also checks PR titles,
+broken links, CRLF line endings and the workflows, and warns about the changed pages' style. A merge needs the
+`ci-result` and `pr-title` checks green: the `main-require-green-ci` ruleset requires them. The reports, caches and
+artifacts are described in [Build and gates](docs/contributing/build-and-gates.md).
 
 ## 🩺 When the gate fails
 
