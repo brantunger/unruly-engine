@@ -21,9 +21,10 @@ import java.util.concurrent.TimeUnit;
  * thread to run one, and the threads the actions ran on end once they have had none to run for a second. The thread
  * is started, and decides to exit, in sections synchronized on one lock, as registering is, so a registration either
  * finds the thread there to wait for it or starts another. If it ever fails, it gives up its place all the same, logs
- * why at WARN, and starts another at once for the actions still pending, if it had started or logged one since it
+ * why, at ERROR if the failure is, or carries, a fatal {@link Error} (see {@link Failures#fatalError}) and at WARN
+ * otherwise, and starts another at once for the actions still pending, if it had started or logged one since it
  * started; otherwise the next registration starts another, so an error that recurs at once can't start timer after
- * timer.
+ * timer. Either way the next timer hands to a thread each action the one that failed had found due but not handed on.
  * </p>
  *
  * <p>
@@ -36,11 +37,12 @@ import java.util.concurrent.TimeUnit;
  * the run that started it, nor any context class loader, and a pooled thread's context class loader and interrupt
  * status are cleared after each action. But a pooled thread then runs the actions of other runs and engines, so an
  * action must not leave thread-locals behind, such as a logging context: the next action on its thread would see
- * them. What an action throws is logged at WARN, and its thread goes on to run others, even after a fatal
- * {@link Error}; one thrown by an action that runs on the thread that registered it, its deadline having passed, is
- * thrown there. An action still pending a second after it was handed to a thread is logged at WARN once: while it
- * runs, as an action should only tell the runtime to stop, or as not started, if no thread was free to run it by then.
- * The timer keeps it pending until it returns or that second is up.
+ * them. What an action throws is logged at WARN, or at ERROR if it is, or carries, a fatal error, as is why no thread
+ * could be started for one, and its thread goes on to run others, even after a fatal error; one thrown by an action
+ * that runs on the thread that registered it, its deadline having passed, is thrown there. An action still pending a
+ * second after it was handed to a thread is logged at WARN once: while it runs, as an action should only tell the
+ * runtime to stop, or as not started, if no thread was free to run it by then. The timer keeps it pending until it
+ * returns or that second is up.
  * </p>
  *
  * <p>
@@ -108,9 +110,10 @@ final class CancelTimer {
 
     /** An action a run registered, and where it is in the timer's list. */
     static final class Registration implements CancelRegistration {
-        // Its states, in order, set holding LOCK: made, not yet handed to the timer; waiting for its deadline; handed
-        // to a thread, and pending until it returns or is found slow; handed, and pending no more; closed before that.
-        // The last three never go back to the first two, so a read without the lock that sees one of them is right.
+        // Its states, in order, set holding LOCK: made, not yet handed to the timer; waiting for its deadline; found
+        // due, pending until it returns or is found slow once handed to a thread; handed, and pending no more; closed
+        // before that. The last three never go back to the first two, so a read without the lock that sees one of them
+        // is right.
         static final int MADE = 0;
         static final int PENDING = 1;
         static final int RUNNING = 2;
@@ -124,6 +127,11 @@ final class CancelTimer {
         // Whether its thread has begun to run it, once it's RUNNING: set on that thread, read by the timer once it's
         // found slow, to tell an action that runs from one no thread was free to run.
         private volatile boolean began;
+        // Whether the timer has handed it to a thread, once it's RUNNING: set by the timer once it has, without LOCK,
+        // and read holding LOCK, by the timer as it scans and by a registering thread through dueAt(). One a timer
+        // found due but died before it handed on is handed on by the next timer, rather than left with no thread and
+        // then logged as not started, as if none had been free.
+        private volatile boolean handed;
         // The nanoTime() value at which it's logged as slow if it hasn't returned, once it's RUNNING. Guarded by LOCK.
         private long slowAt;
         // Where it is in pending while it is pending or running.
@@ -177,9 +185,11 @@ final class CancelTimer {
             }
         }
 
-        // When the timer must look at it next: its deadline while pending, and when it's slow while running.
+        // When the timer must look at it next: its deadline while pending, or running but not yet handed to a thread,
+        // so the timer that replaces one that died before it handed it on starts it at once; and when it's slow once
+        // handed.
         private long dueAt() {
-            return state == PENDING ? nanos : slowAt;
+            return state == PENDING || !handed ? nanos : slowAt;
         }
     }
 
@@ -199,16 +209,16 @@ final class CancelTimer {
             this.registration = registration;
         }
 
-        // Any Throwable: whatever the action threw is logged, and the thread then goes on as it would have, to the next
-        // action if it's pooled; nothing is left on it to stop, and an uncaught error would only be printed a second
-        // time.
+        // Any Throwable: whatever the action threw is logged, a fatal error at ERROR, and the thread then goes on as it
+        // would have, to the next action if it's pooled; nothing is left on it to stop, and an uncaught error would
+        // only be printed a second time.
         @Override
         public void run() {
             registration.began = true;
             try {
                 Throwable failed = CancelTimer.run(registration.action);
                 if (failed != null) {
-                    warn(FAILED, failed);
+                    report(FAILED, failed);
                 }
             } finally {
                 returned(registration);
@@ -348,7 +358,7 @@ final class CancelTimer {
                 virtual.start();
             } catch (Throwable again) {
                 returned(registration);
-                warn(NOT_STARTED, again);
+                report(NOT_STARTED, again);
             }
         }
     }
@@ -424,6 +434,22 @@ final class CancelTimer {
         }
     }
 
+    // Logs what failed, described: at ERROR if it is, or carries, a fatal error (see Failures#fatalError), which is
+    // never thrown from here, and at WARN otherwise. Any Throwable, as for warn().
+    private static void report(String message, Throwable failure) {
+        try {
+            Faults.at(Faults.Step.CANCEL_FAILURE_LOGGED);
+            String described = Failures.describeWithClass(failure);
+            if (Failures.fatalError(failure) != null) {
+                log.error(message, described);
+            } else {
+                log.warn(message, described);
+            }
+        } catch (Throwable ignored) {
+            // Lost.
+        }
+    }
+
     // Holding LOCK, which PMD can't see from here. Adds one to the pending, making room first.
     @SuppressWarnings("PMD.NonThreadSafeSingleton")
     private static void add(Registration registration) {
@@ -488,7 +514,7 @@ final class CancelTimer {
                 }
             }
         }
-        warn(restarted ? "The cancel timer failed, and another has been started for the actions still pending: {}"
+        report(restarted ? "The cancel timer failed, and another has been started for the actions still pending: {}"
                 : left ? "The cancel timer failed, and the actions still pending wait for the next one registered to"
                 + " start another: {}" : "The cancel timer failed with no action pending: {}", e);
     }
@@ -536,8 +562,9 @@ final class CancelTimer {
                             // every action as it was. No more than the i + 1 not yet looked at can be due or slow.
                             dueAndSlow = new Registration[i + 1];
                         }
-                        if (it.state == Registration.PENDING) {
-                            // Pending still, until it returns or is found slow.
+                        if (it.state == Registration.PENDING || !it.handed) {
+                            // Pending still, until it returns or is found slow: one a timer that died found due, but
+                            // never handed on, is handed on now, and found slow only a slow time after that.
                             it.slowAt = now + slowFor;
                             it.state = Registration.RUNNING;
                             dueAndSlow[starts] = it;
@@ -566,6 +593,7 @@ final class CancelTimer {
             // The actions first: a slow one's WARN can wait, and logging can be slow.
             for (int i = 0; i < starts; i++) {
                 start(dueAndSlow[i]);
+                dueAndSlow[i].handed = true;
                 Faults.reached(Faults.Step.CANCEL_ACTION_HANDED_OFF);
             }
             // Each as running, or as not started if its thread hasn't begun to run it.

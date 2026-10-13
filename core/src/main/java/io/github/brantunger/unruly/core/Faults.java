@@ -76,8 +76,8 @@ final class Faults {
         /** Registering a cancel action that has to start the cancel timer, before it starts the timer's thread. */
         CANCEL_TIMER_STARTING,
         /**
-         * The cancel timer logging at WARN: what an action threw, that one is slow or couldn't be started, or why the
-         * timer failed, before it has.
+         * The cancel timer logging at WARN or ERROR: what an action threw, that one is slow or couldn't be started, or
+         * why the timer failed, before it has.
          */
         CANCEL_FAILURE_LOGGED,
         /**

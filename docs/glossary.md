@@ -53,13 +53,13 @@ carrier, which is why MVEL rules on many virtual threads can deadlock. See [MVEL
 A lowercase hex SHA-256 that identifies a loaded rule list: each rule's name, priority,
 [resolved language](#resolved-language), condition, action, whether it's enabled, its
 [validity window](#validity-window) and its [tags](#tag), in [evaluation order](#evaluation-order), but not its
-description, and not the match policy. `RuleSetInfo.checksum()` gives the engine's current one, and
+description or the match policy. `RuleSetInfo.checksum()` gives the engine's current one, and
 `RunResult.ruleSetChecksum()` the one a run used. See [Auditing a decision](run-results.md#-auditing-a-decision).
 
 ### Close
 
 `RulesEngine.close()` marks the engine closed and returns at once. Runs already going finish with the rules they
-have; their sessions are closed as each one returns, and the compilers after the last. Afterwards `run()`,
+have; their sessions are closed as each returns, and the compilers after the last. Afterwards `run()`,
 `runWithResult()`, `load()`, `validate()` and `rules()` throw `IllegalStateException`. See
 [Thread safety](thread-safety.md#closing).
 
@@ -74,7 +74,7 @@ no other run is using, or makes a new one, and gives it back when it ends; the e
 
 An `ExpressionCompiler`: what an [expression language](#expression-language) creates for each rule list that uses it,
 when `load()` compiles the list. It compiles conditions and actions, checks fact names and creates sessions. The
-engine closes it after a later `load()` or `close()` replaces the rule list, once no run still uses it. See
+engine closes it after a later `load()` or `close()` replaces the rule list, once no run uses it. See
 [Lifecycle at a glance](languages/custom.md#-lifecycle-at-a-glance).
 
 ### Condition
@@ -120,7 +120,7 @@ the fact is present and its value isn't of that type. A `null` value passes. A m
 
 ### Default language
 
-The language of a rule whose `language` is `null`: the one named with `defaultLanguage(name)`, or else the engine's only
+The language of a rule whose `language` is `null`: the one named with `defaultLanguage(name)`, or the engine's only
 language. `build()` fails when an engine has several languages and no default. See
 [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
 
@@ -158,9 +158,10 @@ request is the simplest. See [Reusing and sharing a store](facts.md#-reusing-and
 
 A `VirtualMachineError` like `OutOfMemoryError` in the cause chain or suppressed there, bar a `StackOverflowError`
 or an `InternalError` caused by one before any `LinkageError`. The engine logs it, then a
-[message your code wraps it in](nested-runs.md#-what-is-logged) once logged, and rethrows it; other `Error`s from a
-rule are its failure. One past the first 10,000 exceptions searched can be missed
-([#896](https://github.com/brantunger/unruly-engine/issues/896)). See [Exceptions by method](exceptions-by-method.md).
+[message your code wraps it in](nested-runs.md#-what-is-logged) once logged, and rethrows it; its `onCancel` threads
+only log it, at ERROR. Other `Error`s from a rule are its failure. One past the first 10,000 exceptions searched can
+be missed ([#896](https://github.com/brantunger/unruly-engine/issues/896)). See
+[Exceptions by method](exceptions-by-method.md).
 
 ### First-match engine
 
@@ -188,7 +189,7 @@ from every thread. See [Callbacks](listeners-and-logging.md#-callbacks).
 ### Load
 
 `load(rules)` compiles a whole [rule list](#rule-list), then swaps it in with one atomic write. If it fails, `load()`
-throws a `RuleCompilationException` and the old rules stay in place; runs already going finish with the rules they
+throws a `RuleCompilationException` and the old rules stay in place; runs already going keep the rules they
 started with. See [Reloading rules](engines-and-runs.md#-reloading-rules).
 
 ### Loaded rules
@@ -214,7 +215,7 @@ condition, fires the one match, and fails the run when there are more. Each cons
 
 ### Missing fact
 
-A name that isn't in the [fact store](#fact-store) at all, unlike a [null reference](#null-reference). In MVEL,
+A name that isn't in the [fact store](#fact-store), unlike a [null reference](#null-reference). In MVEL,
 referring to it fails the rule with `unresolvable property or identifier`, or `unable to resolve variable` when the
 run's [compiled copy](#compiled-copy) already ran the rule with it, so test for it with `isdef`; another language
 decides for itself. See [Null and missing facts](facts.md#-null-and-missing-facts) and
@@ -254,7 +255,7 @@ and `null` sorts after every number. See [Rule order](engines-and-runs.md#-rule-
 ### Read-only view
 
 A map of facts that throws `UnsupportedOperationException` on a write. Conditions, actions, the listener callbacks
-that receive facts, and `RunContext.facts()` all get one, and `FactStore.asMap()` returns an unmodifiable map of the
+that receive facts, and `RunContext.facts()` get one, and `FactStore.asMap()` returns an unmodifiable map of the
 store. A fact object's own methods can still change it. See
 [Who sees facts](facts.md#-who-sees-facts).
 

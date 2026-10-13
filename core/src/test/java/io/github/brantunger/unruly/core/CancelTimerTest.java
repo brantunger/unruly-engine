@@ -36,7 +36,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * slow action; a timer thread interrupted while it waits, and one that dies. #1131: every action due when the timer
  * wakes found in one scan, and started in the order it found them, not that of their deadlines, with the slow ones
  * logged in the same wake. #1117: an action the pool of action threads can't make a thread for started on a virtual
- * thread, and one no carrier is free to run there by its slow time logged as not started.
+ * thread, and one no carrier is free to run there by its slow time logged as not started. #1136: what the timer logs
+ * of a failure, at ERROR if it is, or carries, a fatal error, and the actions a timer that dies part way through a wake
+ * never handed on started by the one that replaces it.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("#1047: the cancel timer runs each pending action at its deadline, those due in different wakes in their"
@@ -286,20 +288,24 @@ class CancelTimerTest {
         Thread timer = CancelTimer.runningThread();
         CountDownLatch second = new CountDownLatch(1);
         AtomicBoolean closedRan = new AtomicBoolean();
-        // On the timer's thread, once it has started the first, before it looks for the next: it isn't waiting, so
-        // neither registering nor closing notifies it.
-        Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
-            scheduled(Duration.ofMillis(60), () -> closedRan.set(true)).close();
-            scheduled(Duration.ofMillis(80), second::countDown);
-        });
         CountDownLatch first = new CountDownLatch(1);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            // On the timer's thread, once it has started the first, before it looks for the next: it isn't waiting,
+            // so neither registering nor closing notifies it.
+            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                scheduled(Duration.ofMillis(60), () -> closedRan.set(true)).close();
+                scheduled(Duration.ofMillis(80), second::countDown);
+            });
 
-        scheduled(Duration.ofMillis(50), first::countDown);
+            scheduled(Duration.ofMillis(50), first::countDown);
 
-        await(first);
-        await(second);
+            await(first);
+            await(second);
+        } finally {
+            keeper.close();
+        }
         assertFalse(closedRan.get());
-        keeper.close();
     }
 
     @Test
@@ -331,19 +337,32 @@ class CancelTimerTest {
     }
 
     @Test
-    @DisplayName("an action that can't be started on a pooled thread nor a virtual one is logged at WARN and dropped,"
-            + " and the timer goes on")
+    @DisplayName("#1136: an action that can't be started on a pooled thread nor a virtual one, for a fatal error, is"
+            + " logged at ERROR and dropped, and the timer goes on")
     void actionFailsToStart() throws InterruptedException {
+        failsToStart(new OutOfMemoryError("no threads"), "ERROR " + EngineLogs.ENGINE_LOGGER + "An action a language"
+                + " registered for the run's deadline couldn't be started: java.lang.OutOfMemoryError: no threads");
+    }
+
+    @Test
+    @DisplayName("#1136: an action that can't be started on a pooled thread nor a virtual one, for an error that isn't"
+            + " fatal, is logged at WARN and dropped, and the timer goes on")
+    void actionFailsToStartNotFatal() throws InterruptedException {
+        failsToStart(new AssertionError("no threads"), "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language"
+                + " registered for the run's deadline couldn't be started: java.lang.AssertionError: no threads");
+    }
+
+    // Has an action fail to start on a pooled thread, for want of memory, then on a virtual thread with fallingBack,
+    // and checks it's logged as expected and dropped, and leaves the timer serving the next.
+    private static void failsToStart(Error fallingBack, String expected) throws InterruptedException {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         AtomicBoolean ran = new AtomicBoolean();
-        String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
-                + " deadline couldn't be started: java.lang.OutOfMemoryError: no threads";
         // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
         try {
             awaitNoActionThreads();
             Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
                     new OutOfMemoryError("unable to create native thread"));
-            Faults.injectThen(Faults.Step.CANCEL_ACTION_FALLING_BACK, new OutOfMemoryError("no threads"));
+            Faults.injectThen(Faults.Step.CANCEL_ACTION_FALLING_BACK, fallingBack);
 
             String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> ran.set(true)));
 
@@ -411,28 +430,72 @@ class CancelTimerTest {
         assertFalse(output.contains("is still running"), output);
     }
 
-    // Pins what happens today, which #1136 may change: the timer marks every action a scan finds due before it starts
-    // any, so one that dies part way through leaves the rest marked and never started, and the timer that replaces it
-    // drops them once they're slow, logging each as not started.
     @Test
-    @DisplayName("#1117: the actions a timer that dies part way through a wake never started are logged at WARN as not"
-            + " started once they're slow, and never run")
-    void timerDeathMidBatchLoggedAsNotStarted() throws InterruptedException {
-        CancelTimer.slowAfter(0);
+    @DisplayName("#1117: an action that no carrier is free to run, on the virtual thread it falls back to, is logged at"
+            + " WARN as not started once it's slow, in the tests' own JVM too")
+    void slowNotStartedLoggedHere() throws InterruptedException {
+        // As many virtual threads as there are carriers, each spinning without blocking, hold every carrier, so the
+        // virtual thread the action falls back to can't begin; let go whatever happens.
+        int carriers = Integer.getInteger("jdk.virtualThreadScheduler.parallelism",
+                Runtime.getRuntime().availableProcessors());
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        AtomicBoolean spin = new AtomicBoolean(true);
+        CountDownLatch spinning = new CountDownLatch(carriers);
+        List<Thread> spinners = new ArrayList<>();
+        CountDownLatch ran = new CountDownLatch(1);
+        String notStarted = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's"
+                + " deadline hasn't started after 0 ms: no thread was free";
+        try {
+            awaitNoActionThreads();
+            for (int i = 0; i < carriers; i++) {
+                spinners.add(Thread.ofVirtual().start(() -> {
+                    spinning.countDown();
+                    while (spin.get()) {
+                        Thread.onSpinWait();
+                    }
+                }));
+            }
+            await(spinning);
+            CancelTimer.slowAfter(0);
+            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+                    new OutOfMemoryError("unable to create native thread"));
+
+            String logs = LogsUntil.logsUntil(notStarted, () -> scheduled(Duration.ofMillis(50), ran::countDown),
+                    () -> spin.set(false));
+
+            assertTrue(logs.contains(notStarted), logs);
+            assertFalse(logs.contains("is still running"), logs);
+        } finally {
+            spin.set(false);
+            keeper.close();
+            for (Thread spinner : spinners) {
+                spinner.join(TimeUnit.SECONDS.toMillis(10));
+            }
+        }
+        // Once the carriers are free, the action runs after all.
+        await(ran);
+    }
+
+    @Test
+    @DisplayName("#1117, #1136: the actions a timer that dies part way through a wake never handed on are started by"
+            + " the timer that replaces it, and aren't logged as not started")
+    void timerDeathMidBatchHandsTheRestOn() throws InterruptedException {
+        // So the stranded action, once handed on, isn't found slow before its thread begins, however slow the machine.
+        // The timer's slow time is set back after each test.
+        CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         Thread dying = CancelTimer.runningThread();
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch registered = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        AtomicBoolean neverStartedRan = new AtomicBoolean();
-        String waiting = "WARN " + EngineLogs.ENGINE_LOGGER + "An action a language registered for the run's deadline"
-                + " hasn't started after 0 ms: no thread was free";
-        // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
+        CountDownLatch strandedRan = new CountDownLatch(1);
+        String replaced = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and another has been started"
+                + " for the actions still pending: java.lang.AssertionError: the timer dies";
+        // Let go whatever happens, so a failure here leaves no timer held for the next test.
         try {
             // The timer is held once it has started an action of its own until both are registered, so it wakes once
             // to find both due, and marks both started. It looks at them from the last registered down, so it starts
-            // that one first, then dies, and never starts the one registered before it, which the timer that replaces
-            // it at once finds slow, with no thread ever given it.
+            // that one first, then dies before it hands on the one registered before it, which the timer that
+            // replaces it at once must hand on.
             Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 holding.countDown();
                 await(registered);
@@ -443,23 +506,57 @@ class CancelTimerTest {
             // would move the last one registered into its place, and the timer would start the other first.
             TestSupport.await(() -> CancelTimer.pendingCount() == 1, 10, "the held action has returned");
             long passed = System.nanoTime() - 1;
-            CancelTimer.schedule(new CancelTimer.Registration(() -> neverStartedRan.set(true), passed,
+            CancelTimer.schedule(new CancelTimer.Registration(strandedRan::countDown, passed,
                     CancelTimer.Registration.MADE));
-            CancelTimer.schedule(new CancelTimer.Registration(() -> await(release), passed,
+            CancelTimer.schedule(new CancelTimer.Registration(CancelTimerTest::nothing, passed,
                     CancelTimer.Registration.MADE));
             Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 throw new AssertionError("the timer dies");
             });
 
-            String logs = LogsUntil.logsUntil(waiting, registered::countDown);
+            // Captured until the stranded action has run, so a WARN that it hadn't started would be seen.
+            String logs = LogsUntil.logsUntil(replaced, registered::countDown, () -> await(strandedRan));
 
-            assertTrue(logs.contains(waiting), logs);
+            assertTrue(logs.contains(replaced), logs);
+            assertEquals(List.of(), logs.lines().filter(line -> line.contains("hasn't started")).toList(), logs);
             dying.join(TimeUnit.SECONDS.toMillis(10));
             assertFalse(dying.isAlive());
-            assertFalse(neverStartedRan.get(), "the action the timer never started ran");
         } finally {
             registered.countDown();
-            release.countDown();
+            keeper.close();
+        }
+    }
+
+    @Test
+    @DisplayName("#1136: a timer whose death can't be logged is replaced all the same")
+    void timerDeathNotLogged() throws InterruptedException {
+        CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
+        Thread dying = CancelTimer.runningThread();
+        CountDownLatch first = new CountDownLatch(1);
+        CountDownLatch second = new CountDownLatch(1);
+        // Let go whatever happens, so a failure here leaves no timer held for the next test.
+        try {
+            Faults.inject(dying, Faults.Step.CANCEL_FAILURE_LOGGED, 1, new OutOfMemoryError("can't log"));
+            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                await(first);
+                throw new OutOfMemoryError("the timer dies");
+            });
+
+            // The second registered only once the first has run, so the timer dies before it's due, and the timer
+            // that replaces it runs it.
+            Outcome<Throwable> outcome = capture(() -> {
+                scheduled(Duration.ofMillis(50), first::countDown);
+                await(first);
+                scheduled(Duration.ofMillis(150), second::countDown);
+                await(second);
+            });
+
+            assertNull(outcome.thrown());
+            assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+            assertEquals(List.of(), outcome.lines("ERROR"), outcome.logs());
+            dying.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(dying.isAlive());
+        } finally {
             keeper.close();
         }
     }
@@ -474,27 +571,31 @@ class CancelTimerTest {
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch returned = new CountDownLatch(1);
         CountDownLatch next = new CountDownLatch(1);
-
-        Outcome<Throwable> outcome = capture(() -> {
-            scheduled(Duration.ofMillis(50), () -> {
-                await(release);
-                returned.countDown();
+        // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
+        try {
+            Outcome<Throwable> outcome = capture(() -> {
+                scheduled(Duration.ofMillis(50), () -> {
+                    await(release);
+                    returned.countDown();
+                });
+                // Only the keeper is left once the timer has found the action slow, and failed to log it.
+                TestSupport.await(() -> CancelTimer.pendingCount() == 1 && returned.getCount() == 1, 10,
+                        "the action is found slow");
+                // So the next action, which returns at once, isn't found slow too, however slow the machine.
+                CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
+                scheduled(Duration.ofMillis(50), next::countDown);
+                await(next);
+                release.countDown();
+                await(returned);
             });
-            // Only the keeper is left once the timer has found the action slow, and failed to log it.
-            TestSupport.await(() -> CancelTimer.pendingCount() == 1 && returned.getCount() == 1, 10,
-                    "the action is found slow");
-            // So the next action, which returns at once, isn't found slow too, however slow the machine.
-            CancelTimer.slowAfter(TimeUnit.HOURS.toNanos(1));
-            scheduled(Duration.ofMillis(50), next::countDown);
-            await(next);
-            release.countDown();
-            await(returned);
-        });
 
-        assertNull(outcome.thrown());
-        assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
-        assertSame(timer, CancelTimer.runningThread(), "the timer died");
-        keeper.close();
+            assertNull(outcome.thrown());
+            assertEquals(List.of(), outcome.lines("WARN"), outcome.logs());
+            assertSame(timer, CancelTimer.runningThread(), "the timer died");
+        } finally {
+            release.countDown();
+            keeper.close();
+        }
     }
 
     @Test
@@ -518,6 +619,22 @@ class CancelTimerTest {
     @DisplayName("a timer that dies once it has started an action is replaced at once, and the actions still pending"
             + " run without another registration")
     void timerDiesAndIsReplaced() throws InterruptedException {
+        diesAndIsReplaced(new AssertionError("the timer dies"), "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer"
+                + " failed, and another has been started for the actions still pending: java.lang.AssertionError: the"
+                + " timer dies");
+    }
+
+    @Test
+    @DisplayName("#1136: a timer that dies of a fatal error is logged at ERROR, and replaced at once all the same")
+    void timerDiesOfAFatalErrorAndIsReplaced() throws InterruptedException {
+        diesAndIsReplaced(new OutOfMemoryError("the timer dies"), "ERROR " + EngineLogs.ENGINE_LOGGER + "The cancel"
+                + " timer failed, and another has been started for the actions still pending:"
+                + " java.lang.OutOfMemoryError: the timer dies");
+    }
+
+    // Has the timer die of death once it has started an action, and checks it's logged as expected and replaced at
+    // once, the timer that replaces it running the action still pending.
+    private static void diesAndIsReplaced(Error death, String expected) throws InterruptedException {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         Thread dying = CancelTimer.runningThread();
         CountDownLatch registered = new CountDownLatch(1);
@@ -525,12 +642,10 @@ class CancelTimerTest {
         try {
             Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 await(registered);
-                throw new AssertionError("the timer dies");
+                throw death;
             });
             CountDownLatch first = new CountDownLatch(1);
             CountDownLatch second = new CountDownLatch(1);
-            String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and another has been"
-                    + " started for the actions still pending: java.lang.AssertionError: the timer dies";
 
             // Both registered before the timer dies, once it has started the first, however slow the machine. The
             // second only once the first has run, so the scan that found the first is over: a wake late enough to find
@@ -566,70 +681,87 @@ class CancelTimerTest {
         await(started);
         awaitTimerExit();
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
-        Thread dying = CancelTimer.runningThread();
-        TestSupport.await(() -> dying.getState() == Thread.State.TIMED_WAITING, 10, "the timer waits");
-        Faults.watch(dying, Faults.Step.CANCEL_TIMER_WAITING, () -> {
-            throw new AssertionError("the timer dies at once");
-        });
-        AtomicReference<CancelRegistration> sooner = new AtomicReference<>();
-        String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and the actions still"
-                + " pending wait for the next one registered to start another: java.lang.AssertionError: the timer"
-                + " dies at once";
+        AtomicReference<CancelRegistration> sooner = new AtomicReference<>(CancelTimer.NOTHING);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            Thread dying = CancelTimer.runningThread();
+            TestSupport.await(() -> dying.getState() == Thread.State.TIMED_WAITING, 10, "the timer waits");
+            Faults.watch(dying, Faults.Step.CANCEL_TIMER_WAITING, () -> {
+                throw new AssertionError("the timer dies at once");
+            });
+            String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and the actions still"
+                    + " pending wait for the next one registered to start another: java.lang.AssertionError: the"
+                    + " timer dies at once";
 
-        // Due sooner than the one it waits for, so it wakes, looks again, and dies before it starts anything.
-        String logs = LogsUntil.logsUntil(expected,
-                () -> sooner.set(context(Duration.ofMinutes(30)).onCancel(() -> fail("ran early"))));
+            // Due sooner than the one it waits for, so it wakes, looks again, and dies before it starts anything.
+            String logs = LogsUntil.logsUntil(expected,
+                    () -> sooner.set(context(Duration.ofMinutes(30)).onCancel(() -> fail("ran early"))));
 
-        assertTrue(logs.contains(expected), logs);
-        dying.join(TimeUnit.SECONDS.toMillis(10));
-        assertFalse(dying.isAlive());
-        assertNull(CancelTimer.runningThread(), "a timer that did nothing was replaced");
-        assertEquals(2, CancelTimer.pendingCount());
-        CountDownLatch next = new CountDownLatch(1);
-        scheduled(Duration.ofMillis(50), next::countDown);
-        await(next);
-        sooner.get().close();
-        keeper.close();
+            assertTrue(logs.contains(expected), logs);
+            dying.join(TimeUnit.SECONDS.toMillis(10));
+            assertFalse(dying.isAlive());
+            assertNull(CancelTimer.runningThread(), "a timer that did nothing was replaced");
+            assertEquals(2, CancelTimer.pendingCount());
+            CountDownLatch next = new CountDownLatch(1);
+            scheduled(Duration.ofMillis(50), next::countDown);
+            await(next);
+        } finally {
+            sooner.get().close();
+            keeper.close();
+        }
     }
 
     @Test
     @DisplayName("a timer that dies with nothing pending is logged, and one whose replacement can't be started leaves"
-            + " the actions pending to the next registration")
+            + " the actions pending to the next registration, at ERROR for what kept it from starting")
     void timerDiesLeavingNothingOrUnreplaced() throws InterruptedException {
         String nothing = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed with no action pending:"
                 + " java.lang.AssertionError: the timer dies";
         // The holder keeps the timer running until it's watched, however slow the machine, and the watch lets it go.
         CancelRegistration holder = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
-        Thread first = CancelTimer.runningThread();
-        // It dies once the action it started has returned, so nothing is pending.
-        Faults.watch(first, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            Thread first = CancelTimer.runningThread();
+            // It dies once the action it started has returned, so nothing is pending.
+            Faults.watch(first, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                holder.close();
+                awaitNothingPending();
+                throw new AssertionError("the timer dies");
+            });
+
+            String logs = LogsUntil.logsUntil(nothing,
+                    () -> scheduled(Duration.ofMillis(200), CancelTimerTest::nothing));
+
+            assertTrue(logs.contains(nothing), logs);
+            first.join(TimeUnit.SECONDS.toMillis(10));
+            assertNull(CancelTimer.runningThread());
+        } finally {
             holder.close();
-            awaitNothingPending();
-            throw new AssertionError("the timer dies");
-        });
-
-        String logs = LogsUntil.logsUntil(nothing, () -> scheduled(Duration.ofMillis(200), CancelTimerTest::nothing));
-
-        assertTrue(logs.contains(nothing), logs);
-        first.join(TimeUnit.SECONDS.toMillis(10));
-        assertNull(CancelTimer.runningThread());
+        }
 
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
-        Thread second = CancelTimer.runningThread();
-        Faults.inject(second, Faults.Step.CANCEL_TIMER_STARTING, 1, new OutOfMemoryError("no threads"));
-        Faults.watch(second, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
-            throw new AssertionError("the timer dies");
-        });
-        String unreplaced = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and the actions still"
-                + " pending wait for the next one registered to start another: java.lang.AssertionError: the timer"
-                + " dies";
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            Thread second = CancelTimer.runningThread();
+            Faults.inject(second, Faults.Step.CANCEL_TIMER_STARTING, 1, new OutOfMemoryError("no threads"));
+            Faults.watch(second, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                throw new AssertionError("the timer dies");
+            });
+            // The OutOfMemoryError that kept another from starting is suppressed on what the timer died of, so it's
+            // logged at ERROR (#1136).
+            String unreplaced = "ERROR " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and the actions still"
+                    + " pending wait for the next one registered to start another: java.lang.AssertionError: the"
+                    + " timer dies";
 
-        logs = LogsUntil.logsUntil(unreplaced, () -> scheduled(Duration.ofMillis(50), CancelTimerTest::nothing));
+            String logs = LogsUntil.logsUntil(unreplaced,
+                    () -> scheduled(Duration.ofMillis(50), CancelTimerTest::nothing));
 
-        assertTrue(logs.contains(unreplaced), logs);
-        second.join(TimeUnit.SECONDS.toMillis(10));
-        assertNull(CancelTimer.runningThread(), "a replacement was started");
-        keeper.close();
+            assertTrue(logs.contains(unreplaced), logs);
+            second.join(TimeUnit.SECONDS.toMillis(10));
+            assertNull(CancelTimer.runningThread(), "a replacement was started");
+        } finally {
+            keeper.close();
+        }
     }
 
     private static void nothing() {
@@ -661,12 +793,15 @@ class CancelTimerTest {
         CancelRegistration first = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         CancelRegistration later = context(Duration.ofHours(2)).onCancel(() -> fail("ran early"));
         CountDownLatch fence = new CountDownLatch(1);
-
-        later.close();
-        scheduled(Duration.ofMillis(50), fence::countDown);
-        await(fence);
-
-        first.close();
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            later.close();
+            scheduled(Duration.ofMillis(50), fence::countDown);
+            await(fence);
+        } finally {
+            later.close();
+            first.close();
+        }
     }
 
     @Test
@@ -674,12 +809,15 @@ class CancelTimerTest {
     void interruptedTimer() {
         CancelRegistration pending = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         CountDownLatch ran = new CountDownLatch(1);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            CancelTimer.runningThread().interrupt();
+            scheduled(Duration.ofMillis(100), ran::countDown);
 
-        CancelTimer.runningThread().interrupt();
-        scheduled(Duration.ofMillis(100), ran::countDown);
-
-        await(ran);
-        pending.close();
+            await(ran);
+        } finally {
+            pending.close();
+        }
     }
 
     @Test
@@ -688,13 +826,19 @@ class CancelTimerTest {
         EvaluationContext context = context(Duration.ofHours(1));
         CancelRegistration first = context.onCancel(() -> fail("ran early"));
         CancelRegistration second = context.onCancel(() -> fail("ran early"));
-        second.close();
+        AtomicReference<CancelRegistration> third = new AtomicReference<>(CancelTimer.NOTHING);
+        // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
+        try {
+            second.close();
 
-        CancelTimer.Registration third = (CancelTimer.Registration) context.onCancel(() -> fail("ran early"));
+            third.set(context.onCancel(() -> fail("ran early")));
 
-        // The closed one let go, the pending one kept.
-        assertSame(first, third.before());
-        third.close();
-        first.close();
+            // The closed one let go, the pending one kept.
+            assertSame(first, ((CancelTimer.Registration) third.get()).before());
+        } finally {
+            third.get().close();
+            second.close();
+            first.close();
+        }
     }
 }

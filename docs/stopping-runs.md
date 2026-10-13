@@ -155,8 +155,9 @@ can't start a thread does an action get a virtual thread of its own. Platform th
 scheduler, so an action still runs while virtual-thread runs keep every carrier busy.
 
 A pooled thread runs one action after another, so a `ThreadLocal` or MDC entry an action leaves is still there for the
-next; see [Thread safety](languages/custom.md#-thread-safety). The timer logs at WARN an action that fails, can't be
-started, or a second after it was handed over is still running or hasn't started because no thread was free.
+next; see [Thread safety](languages/custom.md#-thread-safety). The timer logs an action that fails or can't be
+started, at ERROR when the failure is [fatal](glossary.md#fatal-error) and at WARN otherwise, and at WARN one
+that a second after it was handed over is still running or hasn't started because no thread was free.
 
 A run's end closes its actions that haven't started. An engine's `close()` doesn't, so the actions of a run still going
 then still run at its deadline. Only a deadline runs an action: never an interrupt, and never in a run without a
