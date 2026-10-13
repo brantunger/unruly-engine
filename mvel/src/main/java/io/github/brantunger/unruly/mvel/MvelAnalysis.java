@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import org.mvel2.CompileException;
+import org.mvel2.ParserConfiguration;
 import org.mvel2.ast.ASTNode;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.compiler.CompiledExpression;
@@ -9,6 +10,7 @@ import org.mvel2.compiler.ExpressionCompiler;
 import java.nio.CharBuffer;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -170,12 +172,35 @@ final class MvelAnalysis extends ExpressionCompiler {
 
     /**
      * Returns the names the expression's own inline imports brought in while the pass ran, as
-     * {@link Imports#inlineImportedNames} tells: MVEL looks them up in this expression only, before its facts.
+     * {@link Imports#inlineImportedNames} tells: MVEL looks them up in this expression only, before its facts. A
+     * static field or enum constant of a class the expression imports with {@code import a.B.*;} counts too where
+     * MVEL took its name as an input or a variable, as it does for a name used before the import (see
+     * {@link Imports#staticMemberNames}): the expression reads the field by it as it runs, not the fact. Only the
+     * expression's own context is read, so a name used before the import in a def or closure body, or assigned in a
+     * for body, which MVEL compiles in a context of its own, isn't among them. With strong typing, every declared fact
+     * is an input, whether the expression uses it or not, so a declared fact named like such a field counts.
      *
      * @return The names, empty if the expression imports nothing of its own
      */
     Set<String> inlineImportedNames() {
-        return Imports.inlineImportedNames(pCtx.getParserConfiguration());
+        ParserConfiguration configuration = pCtx.getParserConfiguration();
+        Set<String> names = Imports.inlineImportedNames(configuration);
+        Set<String> members = Imports.staticMemberNames(configuration);
+        if (!members.isEmpty()) {
+            addMembers(members, pCtx.getInputs(), names);
+            addMembers(members, pCtx.getVariables(), names);
+        }
+        return names;
+    }
+
+    // Adds to names each of the members that is a key of the parser context's inputs or variables, which MVEL creates
+    // before it reads the expression, as it verifies it.
+    private static void addMembers(Set<String> members, Map<String, ?> declared, Set<String> names) {
+        for (String name : declared.keySet()) {
+            if (members.contains(name)) {
+                names.add(name);
+            }
+        }
     }
 
     /**
