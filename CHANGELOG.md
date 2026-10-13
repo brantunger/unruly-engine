@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.3](https://github.com/brantunger/unruly-engine/compare/v2.30.2...v2.30.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* drop the java.util.logging WARNING MVEL's ErrorUtil logs while the engine compiles or runs a rule, so load() and validate() of some malformed expressions, such as x contains {1, +}, no longer print a stack trace to standard error ([#1186](https://github.com/brantunger/unruly-engine/issues/1186)) ([36d934c](https://github.com/brantunger/unruly-engine/commit/36d934cecb47d23eab69d9c95fa17437bb0ab668))
+
 ## [2.30.2](https://github.com/brantunger/unruly-engine/compare/v2.30.1...v2.30.2) (2026-10-12)
 
 
