@@ -113,7 +113,7 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 - So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
-- An imported class's name can't be a [fact name](mvel-fact-names.md) that a rule's text holds.
+- Imported names, inline ones too, can't be [fact names](mvel-fact-names.md) a rule's text holds.
 - `build()` loads a single-class import with its thread's context class loader, and imports a valid name it can't
   load as a package.
 - `load()` looks up classes in imported packages with its thread's, and `run()` checks fact names against it, on

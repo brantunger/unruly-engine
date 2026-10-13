@@ -219,6 +219,10 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         // The names found not to be classes once the expression imported a package of its own, which only it has.
         // Bounded by the names the one expression uses.
         private final transient Set<String> ownNotClasses = new HashSet<>();
+        // The names the expression's own inline imports brought in: a class imported by name, a static method imported
+        // with import_static, and a class MVEL found in a package the expression imports, or one nested in such a
+        // class. Bounded by the imports and names the one expression has.
+        private final transient Set<String> inlineNames = new HashSet<>();
         // Whether a name is looked up as a class file before MVEL loads it: only for a class loader that serves every
         // class file (see servesEveryClassFile).
         private final boolean classFileFirst;
@@ -531,6 +535,41 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
             return super.getStaticImport(name);
         }
 
+        /**
+         * Imports a class as {@code name}, as MVEL does, and remembers the name as one the expression's own imports
+         * brought in (see {@link #inlineImportedNames}) when it isn't one of the rule list's: an {@code import a.B;}
+         * in the expression's text, a class MVEL found in a package it imports, or one nested in a class MVEL found in
+         * such a package. A class MVEL finds in one of the rule list's packages, while the expression imports none of
+         * its own, is the rule list's, which {@link FactNames} already rejects. With a package of its own imported
+         * too, a class found in one of the rule list's is remembered as well, which changes nothing:
+         * {@link FactNames} rejects it either way.
+         *
+         * @param name The name the class is imported as
+         * @param cls  The class
+         */
+        // MVEL's method takes a raw Class, which an override must too.
+        @SuppressWarnings("rawtypes")
+        @Override
+        public void addImport(String name, Class cls) {
+            super.addImport(name, cls);
+            if (sharedPackageCount >= 0 && !(lookingUp && packageCount() == sharedPackageCount)) {
+                inlineNames.add(name);
+            }
+        }
+
+        /**
+         * Imports a static method as {@code name}, as MVEL does for an {@code import_static} in the expression's text,
+         * and remembers the name as one the expression's own imports brought in (see {@link #inlineImportedNames}).
+         *
+         * @param name   The name the method is imported as
+         * @param method The method
+         */
+        @Override
+        public void addImport(String name, MethodStub method) {
+            super.addImport(name, method);
+            inlineNames.add(name);
+        }
+
         private int packageCount() {
             Set<String> packageImports = getPackageImports();
             return packageImports != null ? packageImports.size() : 0;
@@ -612,6 +651,19 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      */
     static @Nullable AnalysisLoop analysisLoop(ParserConfiguration configuration) {
         return ((SharedLookupConfiguration) configuration).analysisLoop;
+    }
+
+    /**
+     * Returns the names the expression compiled with a configuration imported in its own text, as MVEL brought them
+     * in: the simple name of a class it imports, the name of a static method it imports with {@code import_static},
+     * and the name of each class MVEL found, while it compiled, in a package it imports, or nested in such a class.
+     * A class in one of its packages that MVEL never looked up isn't among them.
+     *
+     * @param configuration A configuration {@link #newConfiguration()} created
+     * @return The names, which the configuration goes on adding to if MVEL compiles with it again
+     */
+    static Set<String> inlineImportedNames(ParserConfiguration configuration) {
+        return ((SharedLookupConfiguration) configuration).inlineNames;
     }
 
     /**

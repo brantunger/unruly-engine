@@ -20,6 +20,10 @@ import java.util.stream.Collectors;
  *     {@code with}</li>
  *     <li>names MVEL resolves to a class: its built-in class names such as {@code Math} or {@code String}, and
  *     classes the engine imports, on their own or in a package</li>
+ *     <li>names an expression's own inline imports bring in, which the same expression names: a class it imports with
+ *     {@code import acme.Bar;}, a class MVEL found in a package it imports with {@code import acme.*;}, and a static
+ *     method it imports with {@code import_static}, as MVEL reads that expression's name as the import (see
+ *     {@link #inlineImported})</li>
  *     <li>the first part of the name of a class the rule list's expressions use, such as {@code java} for
  *     {@code java.lang.Integer.MAX_VALUE}, as MVEL would read the fact in the class's place (see
  *     {@link ClassNameRoots})</li>
@@ -62,6 +66,10 @@ final class FactNames {
     private static final Set<String> RESERVED = reservedWords();
 
     private final Set<String> importedClassNames;
+    // The names an expression's own inline imports brought in and the same expression names, added as each compiles,
+    // all before the rule list loads and any run checks a name (see inlineImported). Concurrent, as packageClassNames
+    // is, though only the thread that loads the rule list adds to it.
+    private final Set<String> inlineImportedNames = ConcurrentHashMap.newKeySet();
     private final ClassNameRoots classNameRoots;
     private final List<String> packages;
     private final ClassLoader classLoader;
@@ -110,6 +118,19 @@ final class FactNames {
     }
 
     /**
+     * Adds names one expression's own inline imports brought in, which the same expression names, or every name it
+     * imports once its scan gives up (see {@link MvelExpressionCompiler#namesAdded}), so a fact by any of them is
+     * rejected: MVEL reads the expression's name as the import, never as the fact. Only the expression that
+     * imports a name looks it up, but each expression's names are checked for the rule list's runs, as all its other
+     * names are.
+     *
+     * @param names The names
+     */
+    void inlineImported(Set<String> names) {
+        inlineImportedNames.addAll(names);
+    }
+
+    /**
      * Rejects a fact name rules can't refer to.
      *
      * @param name The fact's name
@@ -134,7 +155,8 @@ final class FactNames {
             throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
                     + "use the class '", name, "', and MVEL would read the fact in the class's place"));
         }
-        if (RESERVED.contains(name) || importedClassNames.contains(name) || isPackageClass(name)) {
+        if (RESERVED.contains(name) || importedClassNames.contains(name) || inlineImportedNames.contains(name)
+                || isPackageClass(name)) {
             throw rejected(name, "' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules "
                     + "would never see the fact");
         }
