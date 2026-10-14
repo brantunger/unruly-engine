@@ -58,7 +58,7 @@ A rejected fact fails `run()` with `IllegalArgumentException` before any conditi
 `RuleCompilationException` for it, and `validate()` returns one. A blank name fails `fact()`.
 
 When a rule of the list fails to compile, MVEL can't say what its rules read, so `load()` and `validate()` check
-every declared fact's name with it, whatever the text holds: their failures can then include one such as
+every declared fact's name with it: their failures can include one such as
 `Declared fact 'empty' can't be used`.
 
 > [!NOTE]
@@ -182,20 +182,22 @@ A span of a word starts at any of these places:
   of an identifier either, as in `isdef#a`.
 
 From each start, a span ends at the word's end, and another just before each later character that isn't part of an
-identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. A fact `my-fact` is then
-checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact` minus 1. In the same way, `a.b--` gives
+identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. A fact `my-fact` is
+checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact` minus 1. `a.b--` gives
 `a.b`, `x^my]+=1` gives `my]`, and `isdef#a` gives `#a`.
 
 A span that holds one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ « » ¬ ~` after its first character is left
-out, unless MVEL may still read it whole:
+out, unless each is one of `, « » ¬`, in a run of characters MVEL skips that starts the span and ends just before
+part of an identifier, as `««` in `x^««b`, or MVEL may still read it whole:
 
 - it stands before `++`, `--` or an assignment operator not followed by `=`, with only MVEL's whitespace between:
   `my]--` gives `my]`. The assignment operators include MVEL's shifts `«=`, `»=` and `¬=`;
 - `isdef` reads it, glued to `isdef` or as the next word.
 
-So `(,a) == 5` gives `,a`, and the piece `(,a)`, but not `(,a` or `,a)`.
+So `(,a) == 5` gives `,a` but not `(,a` or `,a)`. From 2.29.0 to 2.30.9, `x^««b` didn't give `««b`,
+nor `x-««b` from 2.29.16.
 
-MVEL then checks only the facts named in that set. So, unless
+MVEL checks only the facts named in that set. So, unless
 [MVEL checks every fact](#when-mvel-checks-every-fact):
 
 - another language's rules in the same list can read a fact `in`, when no MVEL rule's text holds `in`;
@@ -220,26 +222,25 @@ is then rejected for that rule list, with each name its inline imports give. Suc
 literal without spaces, such as Base64 data. To keep the narrower check, pass that value as a fact instead.
 
 `load()` and `validate()` log this once each time they compile such a rule list, at DEBUG on the engine's logger
-`io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule:
+`io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule, in one of these lines:
 
 ```text
 MVEL checks every fact for this rule list: the condition of rule 'm' has a word of more than 1000 characters, too long to scan for the names it reads
+MVEL checks every fact for this rule list: the condition of rule 'm' has a word with more than 64 characters that aren't part of an identifier, each one just after isdef counted twice, too long to scan for the names it reads
 ```
 
-For the other limit, the line says
-`a word with more than 64 characters that aren't part of an identifier, each one just after isdef counted twice`. See
-[Logging setup](../listeners-and-logging.md#-logging-setup).
+See [Logging setup](../listeners-and-logging.md#-logging-setup).
 
 ### A best effort both ways
 
 The scan finds extra names, such as the words of a comment, and spans MVEL reads as several names, such as `my-fact`
 in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0. It leaves out the
-spans MVEL can't read as one name, such as `&!false` in `true&&!false` or `,a#b` in `1-,a#b`, so a fact by such a
+spans MVEL can't read as one name, such as `,a#b` in `1-,a#b` or `«»` in `x^«»`, so a fact by such a
 name is accepted, as from 2.29.0 to 2.29.4.
 
 It can miss a name with MVEL's whitespace inside it, as no word holds one. A line break is such a character, and
 `isdef` reads a name up to a comment, even one on a later line. The condition `isdef ,a//c`, a line break, then
-`/**/` reads a fact named by that whole text, from `,a` to `/**/`. Unless
+`/**/` reads a fact named by that whole text. Unless
 [MVEL checks every fact](#when-mvel-checks-every-fact), a fact by such a name isn't checked, so the rule reads it.
 
 > [!WARNING]

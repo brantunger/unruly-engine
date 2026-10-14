@@ -265,6 +265,67 @@ class RuleTextNamesTest {
     }
 
     @Test
+    @DisplayName("MVEL skips a character into the token that follows it only where it has no case of its own (#1172)")
+    void charactersMvelSkips() {
+        for (char c : ",\u00ab\u00bb\u00ac\\`\u00a0\u00a7".toCharArray()) {
+            assertTrue(RuleText.isMvelSkipped(c), c + " is skipped");
+        }
+        for (char c : ".@=-+*;?#/:^%()[]{}<>'\"&|~! \u0001a1_$".toCharArray()) {
+            assertFalse(RuleText.isMvelSkipped(c), c + " isn't skipped");
+        }
+    }
+
+    @Test
+    @DisplayName("a span that starts with a run of characters MVEL skips is kept once part of an identifier follows the"
+            + " run, after a glued ^ # ~ or -, as MVEL lexes that run into the name (#1172)")
+    void spansAfterASkippedRunKept() {
+        for (String operator : List.of("^", "#", "~")) {
+            assertEquals(Set.of("x", "b", "x" + operator + "\u00ab\u00abb", "\u00ab", "\u00ab\u00abb", "\u00abb"),
+                    names("x" + operator + "\u00ab\u00abb"), operator);
+        }
+        assertEquals(Set.of("x", "x-", "b", "x-\u00ab\u00abb", "\u00ab", "\u00ab\u00abb", "\u00abb"),
+                names("x-\u00ab\u00abb"));
+        assertEquals(Set.of("x", "x^", "a", "x^,,a", ",", ",,a", ",a"), names("x^,,a"));
+        assertEquals(Set.of("x", "b", "x^\u00a7\u00abb", "\u00a7", "\u00a7\u00abb", "\u00abb"),
+                names("x^\u00a7\u00abb"));
+        assertTrue(names("x^\u00ab\u00abb\u00abc").contains("\u00ab\u00abb"),
+                names("x^\u00ab\u00abb\u00abc").toString());
+    }
+
+    @Test
+    @DisplayName("a span with a stop after the run of characters MVEL skips that starts it, or of nothing but them, is"
+            + " still left out (#1172)")
+    void spansPastASkippedRunLeftOut() {
+        assertFalse(names("x^\u00ab\u00abb\u00abc").contains("\u00ab\u00abb\u00abc"),
+                names("x^\u00ab\u00abb\u00abc").toString());
+        assertFalse(names("x^\u00ab\u00abb#c").contains("\u00ab\u00abb#c"), names("x^\u00ab\u00abb#c").toString());
+        assertFalse(names("x^\u00ab\u00bb-b").contains("\u00ab\u00bb-b"), names("x^\u00ab\u00bb-b").toString());
+        assertFalse(names("b\u00ab\u00abc").contains("\u00ab\u00abc"), names("b\u00ab\u00abc").toString());
+        assertEquals(Set.of("x", "x^\u00ab\u00bb", "\u00ab", "\u00bb"), names("x^\u00ab\u00bb"));
+        assertEquals(Set.of("x", "x^\u00ab\u00ab", "\u00ab"), names("x^\u00ab\u00ab"));
+        assertTrue(names("x^\u00ab\u00bb=1").contains("\u00ab\u00bb"), names("x^\u00ab\u00bb=1").toString());
+    }
+
+    @Test
+    @DisplayName("a word dense with characters MVEL skips adds about as many spans as it has of them (#1172)")
+    void denseSkippedRunLinear() {
+        String pattern = "\u00ab\u00a7\u00bb\\\u00ac`,\u00a0";
+        StringBuilder run = new StringBuilder();
+        for (int at = 0; at < 63; at++) {
+            run.append(pattern.charAt(at % pattern.length()));
+        }
+        String word = run + "b";
+        Set<String> names = names(word);
+
+        int toTheEnd = 0;
+        for (String name : names) {
+            toTheEnd += word.endsWith(name) ? 1 : 0;
+        }
+        assertEquals(64, toTheEnd, "each span from inside the run reaches b, and b alone: " + names);
+        assertTrue(names.size() <= 2 * 63 + 16, "63 of them, under the limit, add " + names.size() + " names");
+    }
+
+    @Test
     @DisplayName("a span with an end inside it is kept before ++, -- or an assignment, as MVEL reads the name there"
             + " (#1129)")
     void spansBeforeAnAssignmentKept() {
