@@ -11,16 +11,20 @@ import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.FactProperties;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -84,6 +88,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * be the JVM's first, and the test checks that the wait loads or initializes no class of the JDK's locks. On JDK 21,
  * only the first load of {@code SharedNode}, which has no static initializer, can fail it.
  * </p>
+ *
+ * <p>
+ * #1210: a class's first load reads it from a file, the engine's jar or class directory, and the JVM's first run
+ * loaded the engine's classes it uses after {@code run()}'s own check of the room, and its first load those a load
+ * uses, which deep in a stack could overflow, and on JDK 21 on a virtual thread could leave every later run failing.
+ * So the scenario's first loads and its first run, which writes to a bean output, may load no class from a file,
+ * whoever's it is, the JDK's and a library's included, but the application's and its languages': the scenario's own
+ * and the test fixtures', which stand for a language of the application's.
+ * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
         + "(#911, #945)")
@@ -107,6 +120,15 @@ class FirstRunClassInitializationTest {
     // What -Xlog:class+load begins a class's name with, any class's.
     private static final String LOADED = "[class,load] ";
     private static final String LAMBDA = "$$Lambda";
+    // A class -Xlog:class+load shows read from a file, by the URL of the jar or the class directory it was read from,
+    // as in "[class,load] io.github.brantunger.unruly.core.RunFacts source: file:/C:/.../unruly-engine-core.jar" or
+    // "source: file:/C:/.../classes/java/test/", or "source: jar:file:/C:/...jar!/" from a class loader that reads a
+    // jar by a jar URL; the URL's file is the second group. Not a class the JDK reads from its own image, as in
+    // "source: jrt:/java.base", or from the archive of classes it shares between JVMs, "source: shared objects file",
+    // nor a class it makes, a lambda's or a method handle's, whose source is the class it makes it for, as in
+    // "source: io.github.brantunger.unruly.core.AbstractRulesEngine", or "source: __JVM_LookupDefineClass__" (#1210).
+    private static final Pattern FROM_FILE = Pattern.compile(Pattern.quote(LOADED)
+            + "(\\S+) source: (?:jar:)?(file:[^!\\s]+)");
     // The package of the JDK's locks, whose classes the JVM's first wait in one may be the first to load (#1112).
     private static final String LOCKS = "java.util.concurrent.locks.";
     private static final String FAILURE_CODE = INITIALIZING + Failures.class.getName().replace('.', '/') + LAMBDA;
@@ -142,6 +164,9 @@ class FirstRunClassInitializationTest {
 
     // One of the JDK's classes that only reading the JDK's methods initializes, which a native image doesn't (#1115).
     private static final String VOID_DESCRIPTOR = "sun.reflect.generics.tree.VoidDescriptor";
+    // The class of JDK 21's and 22's that the JVM's first blocking file read on a virtual thread initializes, which
+    // JDK 23 and later don't have (#1210).
+    private static final String BLOCKER = "jdk.internal.misc.Blocker$ForkJoinPools";
 
     // The JDK's that RunClasses names, then those it reaches as it reads the generic types and annotations of the JDK's
     // methods (#1115): those that parse and stand for a generic type and read annotations, measured initialized by the
@@ -149,7 +174,8 @@ class FirstRunClassInitializationTest {
     // and the accessor of native methods on JDK 21, nor the proxy classes of annotation types, whose names depend on
     // the order they were made in. Those the JDK running the test doesn't have are left out, as RunClasses skips them,
     // but only those MISSING_BY_RELEASE says it lacks (#1154). JDK 21 initializes all the lock classes RunClasses
-    // names but SharedNode as it starts (#1112).
+    // names but SharedNode as it starts (#1112). Only JDK 21 and 22 have Blocker$ForkJoinPools, which nothing in the
+    // scenario initializes but the first build (#1210).
     private static final List<String> JDK_CLASSES = List.of("java.util.stream.MatchOps$MatchKind",
             "java.util.stream.Collectors", "java.util.stream.Collector$Characteristics",
             "java.lang.ClassValue$ClassValueMap", "java.lang.invoke.MethodHandleImpl$BindCaller",
@@ -162,7 +188,7 @@ class FirstRunClassInitializationTest {
             "java.lang.invoke.WrongMethodTypeException", "java.util.concurrent.locks.AbstractQueuedSynchronizer$Node",
             "java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",
             "java.util.concurrent.locks.AbstractQueuedSynchronizer$SharedNode",
-            "java.util.concurrent.locks.LockSupport", VOID_DESCRIPTOR,
+            "java.util.concurrent.locks.LockSupport", BLOCKER, VOID_DESCRIPTOR,
             "sun.reflect.generics.tree.BottomSignature", "sun.reflect.generics.tree.BooleanSignature",
             "sun.reflect.generics.tree.Wildcard", "sun.reflect.generics.reflectiveObjects.TypeVariableImpl",
             "sun.reflect.generics.reflectiveObjects.WildcardTypeImpl",
@@ -179,9 +205,10 @@ class FirstRunClassInitializationTest {
     private static final Map<Integer, List<String>> MISSING_BY_RELEASE = Map.of(
             21, List.of("java.lang.ClassValue$RemovalToken", "java.lang.invoke.ClassSpecializer$Factory$1$1Var",
                     "java.lang.invoke.ClassSpecializer$Factory$1$5$1"),
-            24, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken"),
-            25, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var"),
-            26, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var"));
+            24, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var", "java.lang.ClassValue$RemovalToken",
+                    BLOCKER),
+            25, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var", BLOCKER),
+            26, List.of("java.lang.invoke.ClassSpecializer$Factory$1Var", BLOCKER));
 
     @Test
     @DisplayName("the scenario's first loads and runs initialize no class with a static initializer but the JDK's "
@@ -276,6 +303,28 @@ class FirstRunClassInitializationTest {
         assertEquals(List.of(), initializedBy(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
                 lines.indexOf(FirstRunScenario.RAN))), "initialized once the first engine was built");
         assertEquals(List.of(), locksUsedIn(lines, FirstRunScenario.SLOT_WAIT), "used by the JVM's first wait");
+    }
+
+    @Test
+    @DisplayName("the scenario's first loads and its first run, the JVM's, load no class from a file but the "
+            + "application's and its languages' (#1210)")
+    void firstLoadsAndRunReadNoFile(@TempDir Path dir) throws IOException, InterruptedException, URISyntaxException {
+        List<String> lines = scenario(dir, "-Xlog:class+load=info:stdout");
+        int built = lines.indexOf(FirstRunScenario.BUILT);
+        int run = lines.indexOf(FirstRunScenario.STEP + FirstRunScenario.FIRST_RUN);
+        assertTrue(run > built, "step missing:\n" + String.join("\n", lines));
+        // The step after the first run's.
+        int next = IntStream.range(run + 1, lines.size()).filter(i -> lines.get(i).startsWith(FirstRunScenario.STEP))
+                .findFirst().orElse(lines.size());
+        Set<Path> application = Set.of(location(FirstRunScenario.class), location(ToyExpressionLanguage.class));
+
+        // The engine's classes are read from a file as the scenario starts, so a criterion that matched no line the
+        // JVM prints, or no class path's shape, would fail here rather than pass below.
+        assertTrue(readFromFile(lines.subList(0, built), application).stream()
+                .anyMatch(line -> line.contains(LOADED + AbstractRulesEngine.class.getName() + " ")),
+                "the engine's classes not shown read from a file:\n" + String.join("\n", lines));
+        assertEquals(List.of(), readFromFile(lines.subList(built, next), application),
+                "read from a file by the first loads and the first run");
     }
 
     @Test
@@ -387,6 +436,26 @@ class FirstRunClassInitializationTest {
             }
         }
         return used;
+    }
+
+    // Each class the lines show read from a file but from one of the application's, with the step it was read in.
+    private static List<String> readFromFile(List<String> lines, Set<Path> application) {
+        List<String> read = new ArrayList<>();
+        String step = "before the first step";
+        for (String line : lines) {
+            Matcher loaded = FROM_FILE.matcher(line);
+            if (line.startsWith(FirstRunScenario.STEP)) {
+                step = line.substring(FirstRunScenario.STEP.length());
+            } else if (loaded.find() && !application.contains(Path.of(URI.create(loaded.group(2))))) {
+                read.add("\n" + step + ": " + line.substring(loaded.start()));
+            }
+        }
+        return read;
+    }
+
+    // The jar or the class directory a class was read from.
+    private static Path location(Class<?> type) throws URISyntaxException {
+        return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
     }
 
     private static List<String> notInitializedBy(List<String> lines, List<String> classNames) {

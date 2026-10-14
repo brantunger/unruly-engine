@@ -41,7 +41,8 @@ import java.util.function.Supplier;
 
 /**
  * Run by {@link FirstRunClassInitializationTest} in a JVM that logs every class it initializes. It creates what an
- * application gives the JVM's first builder, without a lambda, so the JDK has linked none before it, and prints
+ * application gives the JVM's first builder, and the facts of two of its runs, without a lambda, so the JDK has linked
+ * none before it, and prints
  * {@link #BUILDING}, then builds that engine, with a language option, imports of the language's own and declared facts
  * given to its builder, then creates what it gives the other builders, then builds every other
  * engine and prints {@link #BUILT}. It then loads their rules and prints {@link #LOADED}, and gives each
@@ -71,6 +72,8 @@ final class FirstRunScenario {
     static final String RAN = "SCENARIO ran";
     /** What the line that comes before each step of the runs begins with; the step's description follows. */
     static final String STEP = "SCENARIO step: ";
+    /** The step of the JVM's first run, which writes to a bean output. */
+    static final String FIRST_RUN = "a bean output, with setters taking an int and a String";
     static final String ACTION_THROWS = "an action that throws a RuntimeException";
     static final String ACTION_ERRS = "an action that throws an Error";
     static final String SETTER_THROWS = "a setter that throws";
@@ -232,7 +235,9 @@ final class FirstRunScenario {
                     @Override
                     public void run() {
                         // A class loaded from a file: on JDK 21 the first virtual thread to do so initializes the
-                        // JDK's Blocker$ForkJoinPools, which the run holding the slot would otherwise be first to.
+                        // JDK's Blocker$ForkJoinPools, which the run holding the slot would otherwise be first to, as
+                        // its thread creates the facts it runs with, of the API's FactMap, which no engine loads. The
+                        // engine's own classes that a run uses are loaded by the first build (#1210).
                         new Output().setCount(1);
                         // A park with a timeout: on JDK 25 and later the first initializes the timer of the virtual
                         // threads' scheduler, DelayScheduler, on the carrier thread once the virtual thread has given
@@ -482,6 +487,11 @@ final class FirstRunScenario {
                 // Not in this JDK release.
             }
         }
+        // The application's facts, created before it builds or runs anything, as FactMap and Fact are classes of the
+        // API it uses: a step that created the first of them would be the first to read their classes from a file
+        // (#1210).
+        FactMap<Object> noFacts = new FactMap<>();
+        FactMap<Integer> declaredFacts = new FactMap<>(new Fact<>("n", 1));
         mark(BUILDING);
         RulesEngine<Map<String, Object>> map = RulesEngineBuilder.allMatches(maps).language(toy).listener(listener)
                 .option("toy", "some", "value").languageImports("toy", "some.Name").facts(facts).build();
@@ -635,8 +645,8 @@ final class FirstRunScenario {
         }
         mark(LOADED);
 
-        mark(STEP + "a bean output, with setters taking an int and a String");
-        Output written = bean.run(new FactMap<>());
+        mark(STEP + FIRST_RUN);
+        Output written = bean.run(noFacts);
         asExpected &= written.getCount() == 1 && "bob".equals(written.getName());
         mark(STEP + "a map output, with every listener callback");
         asExpected &= Map.of("k", 1).equals(map.run(new FactMap<>()));
@@ -651,7 +661,7 @@ final class FirstRunScenario {
         mark(STEP + DEADLINE);
         asExpected &= throwsOnRun(overrun, new FactMap<>(), RuleExecutionException.class);
         mark(STEP + "a fact declared with a primitive type, loaded and widened");
-        asExpected &= loadsAndRunsDeclared(declared);
+        asExpected &= loadsAndRunsDeclared(declared, declaredFacts);
         mark(STEP + "a fact of the wrong type, and a declared fact left out, with requireDeclaredFacts()");
         asExpected &= rejectsFacts(strict);
         if (!failuresFirst) {
@@ -812,9 +822,10 @@ final class FirstRunScenario {
     // Loaded only after the bean run: loading rules for a fact declared with a primitive type uses the class that
     // widens primitives, which the bean run, with no fact declared, must be the first to use, as in an application
     // that declares none. Its own first run then widens an Integer to a long.
-    private static boolean loadsAndRunsDeclared(RulesEngine<Map<String, Object>> declared) {
+    private static boolean loadsAndRunsDeclared(RulesEngine<Map<String, Object>> declared,
+                                                FactMap<Integer> facts) {
         declared.load(List.of(Rule.builder().ruleName("positive").condition("n > 0").action("put n n").build()));
-        return Map.of("n", 1L).equals(declared.run(new FactMap<>(new Fact<>("n", 1))));
+        return Map.of("n", 1L).equals(declared.run(facts));
     }
 
     // Loaded, as declared is, after the bean run. A fact of the wrong type is rejected, and so is a run that leaves a
