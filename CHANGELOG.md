@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.9](https://github.com/brantunger/unruly-engine/compare/v2.30.8...v2.30.9) (2026-10-14)
+
+
+### Bug Fixes
+
+* lower-case a getter's first letter with Character.toLowerCase, so getİsim() is read as isim, and choose between two getters read as one property by a fixed rule: a getX beats an isX, then the greater name wins ([#1202](https://github.com/brantunger/unruly-engine/issues/1202)) ([73563a8](https://github.com/brantunger/unruly-engine/commit/73563a8a0ed0ac1046ce1adfd98dd3e3c0204b56))
+
 ## [2.30.8](https://github.com/brantunger/unruly-engine/compare/v2.30.7...v2.30.8) (2026-10-13)
 
 
