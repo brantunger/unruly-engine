@@ -79,8 +79,8 @@ above names.
 
 > [!TIP]
 > To check the room at `build()`, not at a deep first `load()`, name the language
-> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()` can need
-> more stack than its check: load your rules once near the top too; see
+> (`.defaultLanguage("mvel")`) and build the JVM's first engine near the top of a stack. MVEL's first `load()`
+> [can need more stack than its check](#an-mvel-forms-first-compile-or-run): load your rules once near the top too; see
 > [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack). That doesn't help a rule
 > whose language looks a dotted name up as a class on every `load()` or `validate()`, as MVEL does: give each such
 > call [more room](exceptions-by-method.md).
@@ -171,3 +171,42 @@ and `java.locale.providers`: set any you need before making them, as a value set
 
 Or load and run your rules, or same-shaped ones, near the top first. An application that loads rules from its users
 can't know which APIs they'll call: give their deep loads and runs [more room](exceptions-by-method.md).
+
+### An MVEL form's first compile or run
+
+**The first time MVEL compiles or runs a form, it does work a later use skips,** such as loading, verifying and
+linking classes. A form is a kind of expression: a `def` function, a projection or filter, `foreach`, a `for` loop, a
+unary minus, a ternary, a regex match or a method call.
+[MVEL's warm-up](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) runs only a few. A form whose first
+use initializes an MVEL class, such as an inline list or map, `new` or `soundslike`, can instead leave that class
+unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
+
+Deep in a stack, a form's first use can need up to about 30 KB more than the about 8 KB that `load()` and `run()`
+[check for](exceptions-by-method.md). The rule then fails just past the check, where the same rule passes once
+warmed:
+
+- A load throws a `RuleCompilationException` reading `the stack ran out`.
+- A run fails the rule, reading `the stack overflowed`.
+
+Measured on JDK 21 and 25, on Windows x64, a first use needed this much more than the check leaves. A second needed
+about none: at most about 1 KB, for a load.
+
+| Form | Deep first | About |
+| --- | --- | --- |
+| A `def` function, a projection, a filter or `foreach` | `run()` | 22-25 KB |
+| A unary minus in a condition, such as `-x < 0` | `load()` | 19 KB |
+| A static method call, such as `java.lang.Math.abs(x)` | `run()` | 18-19 KB |
+| A `for` loop | `load()` | 17 KB |
+| A regex match, such as `s ~= 'a.*'` | `load()` | 15 KB |
+| A ternary | `run()` | 30 KB on JDK 21, 4 KB on JDK 25 |
+| A property write, an instance method call or `if`/`else` | `run()` | 1-8 KB |
+
+**A language's first-run check doesn't close the gap.** A run checks about 13 KB while a language class its rules use
+hasn't [finished a run](exceptions-by-method.md) in the JVM. That's JVM-wide: once it has, in any engine, every
+other rule list's first run gets only the 8 KB check. No load gets that larger check. Even while it applies, a first
+`def`, projection, filter or `foreach` still failed past it, needing at least about 2-5 KB more.
+
+**Load and run your rules, or rules of the same forms, near the top first.** Measured on JDK 21, a form's deep use
+then needed about none, even when the rule used near the top was a different one. Trivial rules aren't enough: a form
+warms another only when they share classes, as a projection and a filter do; a unary minus doesn't warm a `for` loop.
+For rules from your users, give deep loads and runs [more room](exceptions-by-method.md).
