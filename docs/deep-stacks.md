@@ -37,7 +37,7 @@ engine.load(rules);                // MVEL's first load of each feature your rul
 ## 🧭 What the first build prepares
 
 **The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest and streams, that an engine's calls use. A `build()` on another
+the JDK's, such as the clock, the SHA-256 digest, streams and locks, that an engine's calls use. A `build()` on another
 thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it touches any of them or
 checks any setting, even a wrong one. The next `build()` checks again.
 
@@ -96,6 +96,7 @@ The warm-up narrows the risk of a deep first use; it doesn't close it. Not cover
 - Listeners' or your code's classes and javac-default concatenations: the JVM's first, or on JDK 25 and later one of
   several values, fails for good if linked too deep.
 - The JDK's reflection beyond what the warm-up reaches, listed below.
+- [The JDK classes rules use](#the-jdk-classes-a-rule-names-or-calls).
 
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
@@ -126,3 +127,47 @@ A path they don't take may initialize one, as may a JDK other than 21, 25 and 26
 skipping missing ones; a native image names none. Nothing prepares
 [what MVEL leaves to first use](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), or the logging
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
+
+### The JDK classes a rule names or calls
+
+**Beyond what the sections above prepare, the engine leaves the JDK classes a rule names or calls to their first
+load or run.** It can't know them in advance: they're whatever JDK API the rules use. If the JVM's first use of one
+is deep in a stack, its static initializer can overflow, leaving the class unusable as
+[above](#-build-the-first-engine-near-the-top).
+
+There are two ways in:
+
+- **A load or `validate()`.** MVEL's analysis looks up a class a rule names by its full name, such as
+  `java.time.LocalDate`, with `Class.forName`, which initializes it. So a rule only has to name the class.
+- **A run.** A run's first use of a JDK feature initializes the classes behind it, which the rule doesn't name:
+  `LocalDate.now()` reaches `java.time.zone.ZoneRulesProvider`.
+
+Some examples, measured on JDK 25, where a deep first load or run left a class unusable:
+
+| Rule | Deep first | Class left unusable |
+| --- | --- | --- |
+| `java.util.Currency.getInstance('USD').getCurrencyCode() == 'USD'` | `load()` | `java.util.Currency` |
+| `java.time.LocalDate.now().getYear() > 2000` | `load()` | `java.time.LocalDate` |
+| `java.time.LocalDate.now().getYear() > 2000` | `run()` | `java.time.zone.ZoneRulesProvider` |
+| `java.text.NumberFormat.getInstance() != null` | `run()` | `sun.util.locale.provider.LocaleProviderAdapter` |
+
+**The class then stays unusable for the JVM's life,** at any depth and from any engine: every later load or run of a
+rule that needs it fails with `Could not initialize class ...`, and so does your code's use of it. `String.format` of
+a number needs `LocaleProviderAdapter` too.
+
+Only the JVM's first use of that JDK feature can do this. An application that has already called `LocalDate.now()`,
+or formatted a number, isn't exposed for those classes.
+
+**Use those JDK APIs once at startup, near the top of a stack,** before any load or run can be nested deep:
+
+```java
+java.time.LocalDate.now();                 // LocalDate and the time-zone rules
+java.util.Currency.getInstance("USD");     // Currency
+String.format("%d", 1);                    // LocaleProviderAdapter, which NumberFormat needs too
+```
+
+Those calls read JDK system properties, such as `java.time.zone.DefaultZoneRulesProvider`, `java.util.currency.data`
+and `java.locale.providers`: set any you need before making them, as a value set later is ignored.
+
+Or load and run your rules, or same-shaped ones, near the top first. An application that loads rules from its users
+can't know which APIs they'll call: give their deep loads and runs [more room](exceptions-by-method.md).

@@ -75,6 +75,15 @@ import static org.junit.jupiter.api.Assertions.*;
  * checks by the JDK's classes it initializes; and in a native image, where it reads nothing, by one of them it leaves
  * alone.
  * </p>
+ *
+ * <p>
+ * #1112: on JDK 25 and later, unlike 21, which does it as it starts, the JVM's first wait in a lock of the JDK's loads
+ * the nodes of the lock's queue and initializes {@code AbstractQueuedSynchronizer$Node} and {@code LockSupport}, so the
+ * first build does. The scenario waits in a lock before its steps, so a scenario of its own,
+ * {@link FirstRunScenario.WaitsFirst}, has a run's wait for a copy, and in another JVM a run's wait for a build slot,
+ * be the JVM's first, and the test checks that the wait loads or initializes no class of the JDK's locks. On JDK 21,
+ * only the first load of {@code SharedNode}, which has no static initializer, can fail it.
+ * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
         + "(#911, #945)")
@@ -98,6 +107,8 @@ class FirstRunClassInitializationTest {
     // What -Xlog:class+load begins a class's name with, any class's.
     private static final String LOADED = "[class,load] ";
     private static final String LAMBDA = "$$Lambda";
+    // The package of the JDK's locks, whose classes the JVM's first wait in one may be the first to load (#1112).
+    private static final String LOCKS = "java.util.concurrent.locks.";
     private static final String FAILURE_CODE = INITIALIZING + Failures.class.getName().replace('.', '/') + LAMBDA;
     private static final String NOTIFIER_CODE = INITIALIZING + ListenerNotifier.class.getName().replace('.', '/')
             + LAMBDA;
@@ -116,12 +127,12 @@ class FirstRunClassInitializationTest {
                     Cancellation.Reason.class, Deadline.class, RuleSet.Kind.class, RuleSet.Held.class, Closing.class,
                     Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                     ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
-                    RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
-                    LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
-                    AbstractRulesEngine.BeforeRun.class, Failures.Below.class, Failures.Reach.class,
-                    Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class,
-                    RuleCompilationException.class, InvalidExpressionException.class,
-                    InvalidExpressionException.Issue.class, MessageText.class)
+                    CancelTimer.class, RuleExecutionException.class, ReportedFailure.class,
+                    LoggedFailures.Logged.class, LoggedFailures.Outermost.class, ListenerNotifier.OnError.class,
+                    ListenerNotifier.OnRunError.class, AbstractRulesEngine.BeforeRun.class, Failures.Below.class,
+                    Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class,
+                    IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
+                    InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class)
                     .map(Class::getName),
             Stream.of(RuleSet.class.getName() + "$Source", RuleSet.class.getName() + "$Warning",
                     "io.github.brantunger.unruly.api.language.NoSession",
@@ -137,7 +148,8 @@ class FirstRunClassInitializationTest {
     // first build on JDK 21, 25 and 26. Not those it reaches on some of them only, such as SwitchBootstraps on JDK 26
     // and the accessor of native methods on JDK 21, nor the proxy classes of annotation types, whose names depend on
     // the order they were made in. Those the JDK running the test doesn't have are left out, as RunClasses skips them,
-    // but only those MISSING_BY_RELEASE says it lacks (#1154).
+    // but only those MISSING_BY_RELEASE says it lacks (#1154). JDK 21 initializes all the lock classes RunClasses
+    // names but SharedNode as it starts (#1112).
     private static final List<String> JDK_CLASSES = List.of("java.util.stream.MatchOps$MatchKind",
             "java.util.stream.Collectors", "java.util.stream.Collector$Characteristics",
             "java.lang.ClassValue$ClassValueMap", "java.lang.invoke.MethodHandleImpl$BindCaller",
@@ -147,7 +159,10 @@ class FirstRunClassInitializationTest {
             "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
             "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
             "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError",
-            "java.lang.invoke.WrongMethodTypeException", VOID_DESCRIPTOR,
+            "java.lang.invoke.WrongMethodTypeException", "java.util.concurrent.locks.AbstractQueuedSynchronizer$Node",
+            "java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",
+            "java.util.concurrent.locks.AbstractQueuedSynchronizer$SharedNode",
+            "java.util.concurrent.locks.LockSupport", VOID_DESCRIPTOR,
             "sun.reflect.generics.tree.BottomSignature", "sun.reflect.generics.tree.BooleanSignature",
             "sun.reflect.generics.tree.Wildcard", "sun.reflect.generics.reflectiveObjects.TypeVariableImpl",
             "sun.reflect.generics.reflectiveObjects.WildcardTypeImpl",
@@ -239,6 +254,31 @@ class FirstRunClassInitializationTest {
     }
 
     @Test
+    @DisplayName("a run that waits for the only copy, the JVM's first wait in a lock of the JDK's, loads or "
+            + "initializes no class of the JDK's locks, and initializes no class with a static initializer (#1112)")
+    void firstWaitForACopyInitializesNothing(@TempDir Path dir) throws IOException, InterruptedException {
+        List<String> lines = waitsFirst(dir);
+
+        assertEquals(List.of(), initializedBy(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
+                lines.indexOf(FirstRunScenario.RAN))), "initialized once the first engine was built");
+        assertEquals(List.of(), locksUsedIn(lines, FirstRunScenario.PERMIT_WAIT), "used by the JVM's first wait");
+    }
+
+    @Test
+    @DisplayName("a run on a virtual thread that waits for the only build slot, the JVM's first wait in a lock of the "
+            + "JDK's, loads or initializes no class of the JDK's locks, and initializes no class with a static "
+            + "initializer (#1112)")
+    void firstWaitForASlotInitializesNothing(@TempDir Path dir) throws IOException, InterruptedException {
+        // One processor, so the engine has one build slot, and two carrier threads, as the scenario's SLOT_FIRST says.
+        List<String> lines = waitsFirst(dir, "-D" + FirstRunScenario.WaitsFirst.SLOT_FIRST + "=true",
+                "-XX:ActiveProcessorCount=1", "-Djdk.virtualThreadScheduler.parallelism=2");
+
+        assertEquals(List.of(), initializedBy(lines.subList(lines.indexOf(FirstRunScenario.BUILT),
+                lines.indexOf(FirstRunScenario.RAN))), "initialized once the first engine was built");
+        assertEquals(List.of(), locksUsedIn(lines, FirstRunScenario.SLOT_WAIT), "used by the JVM's first wait");
+    }
+
+    @Test
     @DisplayName("in a native image, which names no class, building the first engine initializes the engine's, and "
             + "reads no method of the JDK's (#1115)")
     void initializedWhenBuiltInImage(@TempDir Path dir) throws IOException, InterruptedException {
@@ -264,6 +304,37 @@ class FirstRunClassInitializationTest {
         assertTrue(building >= 0 && built > building && loaded > built && ran > loaded,
                 "markers missing:\n" + String.join("\n", lines));
         return lines;
+    }
+
+    // Runs FirstRunScenario.WaitsFirst in a new JVM with the options given, and returns what it printed, loads and
+    // initializations both, once it has printed its markers in order.
+    private static List<String> waitsFirst(Path dir, String... options) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>(List.of(options));
+        command.addAll(List.of("-Xlog:class+init=info:stdout", "-Xlog:class+load=info:stdout"));
+        List<String> lines = ChildJvm.run(dir, FirstRunScenario.WaitsFirst.class, command.toArray(String[]::new))
+                .lines().toList();
+        int built = lines.indexOf(FirstRunScenario.BUILT);
+        int ran = lines.indexOf(FirstRunScenario.RAN);
+        assertTrue(built >= 0 && ran > built, "markers missing:\n" + String.join("\n", lines));
+        return lines;
+    }
+
+    // Each class of the JDK's locks, java.util.concurrent.locks, that the lines show loaded or initialized, with a
+    // static initializer or without, in the step given: a class's first load deep in a stack can overflow, as its
+    // initialization can (#1066).
+    private static List<String> locksUsedIn(List<String> lines, String step) {
+        int start = lines.indexOf(FirstRunScenario.STEP + step);
+        assertTrue(start >= 0, "step missing:\n" + String.join("\n", lines));
+        List<String> used = new ArrayList<>();
+        for (String line : lines.subList(start + 1, lines.size())) {
+            if (line.startsWith(FirstRunScenario.STEP)) {
+                break;
+            }
+            if (line.contains(INITIALIZING + LOCKS.replace('.', '/')) || line.contains(LOADED + LOCKS)) {
+                used.add("\n" + line);
+            }
+        }
+        return used;
     }
 
     // Each class with a static initializer that the lines show initialized, but the scenario's own and the JDK's hidden

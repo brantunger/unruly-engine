@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 
 /**
@@ -193,6 +194,92 @@ final class FirstRunScenario {
         }
     }
 
+    /**
+     * Run by {@link FirstRunClassInitializationTest} as a scenario of its own (#1112): it builds the JVM's first
+     * engine, whose run holds its only copy, prints {@link #BUILT}, loads its rule, and starts a run on another thread
+     * that holds the copy. Then a run waits for the copy, {@link #PERMIT_WAIT}, or, with {@link #SLOT_FIRST} set, a run
+     * on a virtual thread waits for the only build slot, {@link #SLOT_WAIT}, as the JVM's first wait in a lock of the
+     * JDK's, and it prints {@link #RAN} if the runs ended as they should. Nothing before that wait waits in one:
+     * where the scenario waits for another thread, it spins. On JDK 25 and later, unlike 21, the JVM's first such wait
+     * is what initializes the JDK's classes that waiting in one uses. JDK 21 initializes all of them but SharedNode as
+     * it starts.
+     */
+    public static final class WaitsFirst {
+        /**
+         * The system property that, set to {@code true}, has the scenario's first wait be for a build slot rather than
+         * for a copy. The JVM is to have one processor, so the engine has one slot, and two carrier threads for virtual
+         * threads, so the run that holds the slot, which spins on its carrier, leaves one for the run that waits.
+         */
+        static final String SLOT_FIRST = "unruly.scenario.slotWaitFirst";
+
+        private WaitsFirst() {
+        }
+
+        public static void main(String[] args) {
+            Supplier<Map<String, Object>> maps = new Supplier<>() {
+                @Override
+                public Map<String, Object> get() {
+                    return new HashMap<>();
+                }
+            };
+            boolean slotFirst = Boolean.getBoolean(SLOT_FIRST);
+            // The holder reads a thread's state, which is the application's use of the JDK.
+            Thread.currentThread().getState();
+            if (slotFirst) {
+                // A virtual thread of the application's, as the JDK initializes classes of its own for the first. Its
+                // end is spun for, not joined, as a join may wait in a lock.
+                Thread application = Thread.ofVirtual().start(new Runnable() {
+                    @Override
+                    public void run() {
+                        // A class loaded from a file: on JDK 21 the first virtual thread to do so initializes the
+                        // JDK's Blocker$ForkJoinPools, which the run holding the slot would otherwise be first to.
+                        new Output().setCount(1);
+                        // A park with a timeout: on JDK 25 and later the first initializes the timer of the virtual
+                        // threads' scheduler, DelayScheduler, on the carrier thread once the virtual thread has given
+                        // it up, so not in the virtual thread's stack, but in the step that waits for the slot.
+                        LockSupport.parkNanos(1_000_000);
+                    }
+                });
+                while (application.getState() != Thread.State.TERMINATED) {
+                    Thread.onSpinWait();
+                }
+            }
+            Holder holder = new Holder();
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(maps)
+                    .language(holding(holder, new Sessions()));
+            RulesEngine<Map<String, Object>> engine = (slotFirst ? builder.unlimitedCopies() : builder.maxCopies(1))
+                    .build();
+            mark(BUILT);
+            engine.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
+            boolean asExpected;
+            if (slotFirst) {
+                mark(STEP + "a run on a virtual thread that holds the only copy, and the only build slot");
+                holder.startSpinning(Thread.ofVirtual().unstarted(new Borrower(engine)));
+                Borrower waiting = new Borrower(engine);
+                Thread thread = Thread.ofVirtual().unstarted(waiting);
+                holder.releaseWhenWaiting(thread);
+                mark(STEP + SLOT_WAIT);
+                thread.start();
+                while (thread.getState() != Thread.State.TERMINATED) {
+                    Thread.onSpinWait();
+                }
+                asExpected = waiting.thrown == null;
+            } else {
+                mark(STEP + "a run on another thread that holds the only copy");
+                holder.startSpinning(new Thread(new Borrower(engine), "holder"));
+                holder.releaseWhenWaiting(Thread.currentThread());
+                mark(STEP + PERMIT_WAIT);
+                asExpected = engine.run(new FactMap<>()).isEmpty();
+            }
+            mark(STEP + "the other thread's run ends");
+            holder.release();
+            if (asExpected) {
+                mark(RAN);
+            }
+            engine.close();
+        }
+    }
+
     /** Throws an {@link OutOfMemoryError} from a callback, which the run rethrows once every listener has had it. */
     private static final class FatalListener implements RuleListener {
         @Override
@@ -285,6 +372,16 @@ final class FirstRunScenario {
             }, "holder");
             thread.start();
             await(inside);
+        }
+
+        // Starts the run on the thread given, unstarted, and returns once it holds its copy, spinning rather than
+        // waiting, so that a run that waits for the copy can be the JVM's first wait in a lock of the JDK's (#1112).
+        void startSpinning(Thread unstarted) {
+            thread = unstarted;
+            thread.start();
+            while (inside.getCount() > 0) {
+                Thread.onSpinWait();
+            }
         }
 
         // Lets the run give its copy back once the thread given waits, as a run waiting for the copy does.
@@ -488,7 +585,8 @@ final class FirstRunScenario {
         // the join always waits, whichever thread runs first: on JDK 25 and 26 the first wait in a CountDownLatch or a
         // lock initializes the JDK's AbstractQueuedSynchronizer$Node and LockSupport, and a step's wait would otherwise
         // be the first to initialize Node, when the thread had ended before the join; LockSupport is initialized before
-        // then either way, by the virtual thread's carrier thread when this thread doesn't.
+        // then either way, by the virtual thread's carrier thread when this thread doesn't. Since #1112 the first build
+        // initializes both, so WaitsFirst checks the engine's own waits as the JVM's first.
         Thread joining = Thread.currentThread();
         Thread application = Thread.ofVirtual().unstarted(new Runnable() {
             @Override
