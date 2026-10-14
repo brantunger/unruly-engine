@@ -32,16 +32,28 @@ final class RuleText {
     // (#1119, #1143). A span keeps a minus sign or a dot inside it, so an author's word glued to one is kept whole
     // too, and still checked, such as my-fact in my-fact-1 and in my-fact*2, which MVEL reads as my minus fact
     // (#1089). A span stops before any character that isn't part of an identifier too, such as # or a no-break space,
-    // as MVEL stops ,a there in ,a#b.
-    // The characters below are those no name MVEL lexes holds after its first character, but for one isdef reads: a
-    // span that holds one there is added only before ++, -- or an assignment, as below, or where it starts just after
-    // isdef, or starts the word that follows isdef and MVEL's whitespace, as isdef reads a name up to MVEL's
-    // whitespace, ( { or a comment. So (,a) == 5 adds ,a but not (,a or ,a), and a dense word of them adds about as
-    // many spans as it has of them, not the square of them (#1129). A word with many other characters that aren't
-    // part of an identifier, such as minus signs, dots, backslashes or no-break spaces, which MVEL may read inside a
-    // name, or with many ++, -- or assignments, or several isdefs, can still add the square of them, within the
-    // limits below.
+    // as MVEL stops ,a there in ,a#b. A span doesn't start just after part of an identifier, so ,,c in b,,c, which MVEL
+    // lexes as a name after b, isn't added, though it is in b ,,c; no rule reads it (where MVEL reads such a token, as
+    // after an operator, it reads , and then its property ,c).
+    // The characters below are those no name MVEL lexes holds after its first character, but for one isdef reads, or
+    // one that starts with a run of characters MVEL skips, as isMvelSkipped tells: a span that holds one there is added
+    // only before ++, -- or an assignment, as below, or where it starts just after isdef, or starts the word that
+    // follows isdef and MVEL's whitespace, as isdef reads a name up to MVEL's whitespace, ( { or a comment, or where
+    // each one it holds is in the run of characters MVEL skips that starts the span, and part of an identifier follows
+    // that run, as MVEL lexes ,,a whole in x^,,a (#1172). So (,a) == 5 adds ,a but not (,a or ,a), and x^,,a adds ,,a
+    // but not ,,a,b nor ,,-a, nor ,, in x^,, as a span of nothing but characters MVEL skips. A dense word of them adds
+    // about as many spans as it has of them, not the square of them (#1129): a span that starts inside such a run gets
+    // past it only up to the next of them. A word with many other characters that aren't part of an identifier, such as
+    // minus signs, dots, backslashes or no-break spaces, which MVEL may read inside a name, or with many ++, -- or
+    // assignments, or several isdefs, can still add the square of them, within the limits below.
     private static final String INSIDE_STOPS = "()[]{},;'\"=<>!&|?:*/+%#^\u00ab\u00bb\u00ac~";
+    // The characters that aren't part of an identifier but have a case of their own where MVEL's lexer starts a token
+    // that isn't an identifier, in mvel2 2.5.4.Final's AbstractParser.nextToken (AbstractParser.java:893-1266). Every
+    // other character above MVEL's whitespace that isn't part of an identifier falls to its default: cursor++
+    // (:1267-1268), which skips it and keeps the token's start, so the token MVEL lexes next starts with it, such as
+    // a comma, U+00AB, U+00BB, U+00AC, a backslash, a backquote, U+00A7 or a no-break space; of INSIDE_STOPS, only the
+    // comma, U+00AB, U+00BB and U+00AC.
+    private static final String TOKEN_CASES = ".@=-+*;?#/:^%()[]{}<>'\"&|~!";
     // The assignment operators: MVEL reads the name before one from where its token starts, whatever it holds, as my]
     // in my]=1, and so before ++ or --, as my] in my]--; U+00AB=, U+00BB= and U+00AC= are MVEL's own short forms of
     // <<=, >>= and >>>=. Each counts only when no = follows it, so == is none.
@@ -94,6 +106,23 @@ final class RuleText {
      */
     static boolean isWhitespace(char c) {
         return isMvelWhitespace(c) || Character.isWhitespace(c);
+    }
+
+    /**
+     * Tells whether MVEL's lexer skips a character where it starts a token, keeping the token's start before it: a
+     * character that isn't part of an identifier, as {@link ParseTools#isIdentifierPart(int)} tells, nor MVEL's
+     * whitespace, and that MVEL's lexer has no case of its own for, such as a comma, U+00AB, U+00BB, U+00AC, a
+     * backslash, a backquote or a no-break space. So the token MVEL lexes next starts with it, such as {@code ,,a} in
+     * {@code x^,,a} (#1172). MVEL skips a {@code ?} so too where an expression or a substatement starts, though it has
+     * a case of its own (AbstractParser.java:989-993), and this doesn't take it: for {@code ?} then U+00AB and
+     * {@code b} in parentheses, MVEL reads the name U+00AB and {@code b}, which is added anyway, as a span starts just
+     * after the {@code ?}.
+     *
+     * @param c The character
+     * @return {@code true} if MVEL skips it into the token that follows it
+     */
+    static boolean isMvelSkipped(char c) {
+        return !ParseTools.isIdentifierPart(c) && !isMvelWhitespace(c) && TOKEN_CASES.indexOf(c) < 0;
     }
 
     /**
@@ -183,20 +212,27 @@ final class RuleText {
      * just after {@code isdef} that starts the word or follows such a character and isn't followed by part of an
      * identifier, and stops at its end or just before a character that isn't part of an identifier. A span that holds
      * one of {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ ~}, U+00AB, U+00BB or U+00AC after its first
-     * character, which no name MVEL lexes holds, is added only where it stops just before {@code ++}, {@code --} or
-     * an assignment operator not followed by {@code =}, past MVEL's whitespace, as MVEL reads the name before one from
-     * where its token starts, such as {@code my]} in {@code my]--} and in {@code x^my]+=1}; but every span is added
-     * that starts just after {@code isdef}, or starts the word that follows it and MVEL's whitespace, as
-     * {@code isdef} reads a name up to MVEL's whitespace, {@code (}, <code>{</code> or a comment. So each part between
-     * dots, and each name MVEL lexes whole, such as {@code ,a} in {@code (,a) == 5} and in {@code ,a#b}, {@code \a} in
-     * {@code max(1+\a,2)}, {@code a!b} in {@code isdef a!b} with a comment glued to it, {@code #a} in
-     * {@code isdef#a} and in {@code x#isdef#a}, {@code a.b} in {@code a.b--} and {@code my]} in {@code my]--}, but not
-     * {@code (,a} or {@code ,a)} in {@code (,a) == 5}; and for {@code my-fact-1}, {@code my}, {@code fact},
-     * {@code 1}, {@code my-fact}, {@code fact-1} and {@code my-fact-1}. So a word dense with those characters adds
-     * about as many spans as it has of them; but in a word with many other characters that aren't part of an
-     * identifier, such as minus signs, dots, backslashes or no-break spaces, or with many {@code ++}, {@code --} or
-     * assignments, or with several {@code isdef}s, the spans can grow as the square of the characters that aren't
-     * part of an identifier (#1129).
+     * character, which no name MVEL lexes holds there but for one {@code isdef} reads, one before an assignment, or one
+     * that starts with a run of characters MVEL skips, is added only where it stops just before {@code ++}, {@code --}
+     * or an assignment operator not followed by {@code =}, past MVEL's whitespace, as MVEL reads the name before one
+     * from where its token starts, such as {@code my]} in {@code my]--} and in {@code x^my]+=1}; or where each of them
+     * it holds is in the run of characters {@link #isMvelSkipped(char)} takes that starts it, and part of an identifier
+     * follows that run, as MVEL lexes {@code ,,a} whole in {@code x^,,a}, but not {@code ,,a,b}, {@code ,,-a} or
+     * {@code ,,} in {@code x^,,} (#1172); but every span is added that starts just after {@code isdef}, or starts the
+     * word that follows it and MVEL's whitespace, as {@code isdef} reads a name up to MVEL's whitespace, {@code (},
+     * <code>{</code> or a comment. So each part between dots, and each name MVEL lexes whole, such as {@code ,a} in
+     * {@code (,a) == 5} and in {@code ,a#b}, {@code ,,a} in {@code x^,,a}, {@code \a} in {@code max(1+\a,2)},
+     * {@code a!b} in {@code isdef a!b} with a comment glued to it, {@code #a} in {@code isdef#a} and in
+     * {@code x#isdef#a}, {@code a.b} in {@code a.b--} and {@code my]} in {@code my]--}, but not {@code (,a} or
+     * {@code ,a)} in {@code (,a) == 5}; and for {@code my-fact-1}, {@code my}, {@code fact}, {@code 1},
+     * {@code my-fact}, {@code fact-1} and {@code my-fact-1}. So a word dense with those characters adds about as many
+     * spans as it has of them, as a span that starts in a run of them MVEL skips gets past it only up to the next of
+     * them; but in a word with many other characters that aren't part of an identifier, such as minus signs, dots,
+     * backslashes or no-break spaces, or with many {@code ++}, {@code --} or assignments, or with several
+     * {@code isdef}s, the spans can grow as the square of the characters that aren't part of an identifier (#1129). A
+     * span doesn't start just after part of an identifier, so {@code ,,c} in {@code b,,c}, which MVEL lexes as a name
+     * after {@code b}, isn't added, though it is in {@code b ,,c}; no rule reads it (where MVEL reads such a token, as
+     * after an operator, it reads {@code ,} and then its property {@code ,c}).
      * Adds a backslash alone for each in the word, as MVEL reads {@code \\a} as the name {@code \} and then
      * {@code \a} of it, and a high surrogate alone for each, as MVEL reads a letter beyond U+FFFF as its high surrogate
      * and then its low one of it, even for a word with too many characters that aren't part of an identifier, which
@@ -235,8 +271,20 @@ final class RuleText {
                 // isdef reads a name up to MVEL's whitespace, ( { or a comment, so a span it may read keeps every stop.
                 boolean whole = afterIsdef || from == start && wordFollowsIsdef(text, start);
                 boolean stopInside = false;
+                // Whether every character of the span so far is one MVEL skips into the name that follows: a stop in
+                // that run counts no more once part of an identifier follows it, as MVEL lexes ,,a whole in x^,,a. So
+                // only a stop after the run leaves the span out, every span added before #1172 still is, and a span
+                // of nothing but such characters, such as ,, in x^,, still isn't.
+                boolean skippedRun = true;
                 for (int to = from + 1; to <= end; to++) {
-                    stopInside |= !whole && to - 1 > from && INSIDE_STOPS.indexOf(text.charAt(to - 1)) >= 0;
+                    char last = text.charAt(to - 1);
+                    if (skippedRun && !isMvelSkipped(last)) {
+                        skippedRun = false;
+                        if (ParseTools.isIdentifierPart(last)) {
+                            stopInside = false;
+                        }
+                    }
+                    stopInside |= !whole && to - 1 > from && INSIDE_STOPS.indexOf(last) >= 0;
                     if ((to == end || !ParseTools.isIdentifierPart(text.charAt(to)))
                             && (!stopInside || beforeAssignment(text, to))) {
                         names.add(text.substring(from, to));

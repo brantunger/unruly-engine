@@ -465,7 +465,12 @@ class ScopedFactNamesMvelTest {
                 Arguments.of("a == 1", "output.put('r', a\u00abb.c)", "b.c"),
                 Arguments.of("a == 1", "output.put('r', a\u00acb.c)", "b.c"),
                 Arguments.of("a == 1", "output.put('r', a^`b)", "`b"),
-                Arguments.of("a == 1", "output.put('r', a\u00a0+\u00a0b.c)", "b.c"));
+                Arguments.of("a == 1", "output.put('r', a\u00a0+\u00a0b.c)", "b.c"),
+                Arguments.of("a == 1", "output.put('r', a^\u00ab\u00abb)", "\u00ab\u00abb"),
+                Arguments.of("a == 1", "output.put('r', a#\u00ab\u00abb)", "\u00ab\u00abb"),
+                Arguments.of("a == 1", "output.put('r', a-\u00ab\u00abb)", "\u00ab\u00abb"),
+                Arguments.of("a == 1", "output.put('r', a^\u00bb\u00bbb)", "\u00bb\u00bbb"),
+                Arguments.of("a == 1", "output.put('r', a^\u00a7\u00abb)", "\u00a7\u00abb"));
     }
 
     /**
@@ -517,6 +522,24 @@ class ScopedFactNamesMvelTest {
             assertEquals(Map.of("r", 1), run(engine, "&!false"));
             assertEquals("'&' is not a valid fact name: rules can only refer to a fact named with a Java identifier",
                     run(engine, "&"));
+        }
+    }
+
+    /**
+     * A span of nothing but characters MVEL skips, such as U+00AB then U+00BB glued after {@code x^}, isn't among the
+     * names the rules read, though MVEL lexes it as a token, and a fact by it isn't checked: no rule can read it, as
+     * MVEL reads the fact U+00AB and then its property U+00BB (#1172).
+     */
+    @Test
+    @DisplayName("a fact named by a span of nothing but characters MVEL skips isn't checked (#1172)")
+    void spanOfSkippedCharactersNotChecked() {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            engine.load(List.of(Rule.builder().ruleName("m").condition("true")
+                    .action("output.put('r', 1 == 1 ? 1 : x^\u00ab\u00bb)").build()));
+            assertEquals(Map.of("r", 1), run(engine, "\u00ab\u00bb"));
+            assertEquals("'\u00ab' is not a valid fact name: rules can only refer to a fact named with a Java"
+                    + " identifier", run(engine, "\u00ab"));
         }
     }
 

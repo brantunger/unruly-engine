@@ -189,17 +189,22 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      * span of it that starts at the word's start, just after a character that isn't part of an identifier, or just
      * after {@code isdef} glued to the name that follows it, and stops at the word's end or just before a character
      * that isn't part of an identifier, and each backslash and high surrogate alone. A span that holds one of
-     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ ~}, U+00AB, U+00BB or U+00AC after its first character
-     * is left out, unless {@code isdef} may read it or it stands before {@code ++}, {@code --} or an assignment
-     * operator not followed by {@code =}, as no other name MVEL lexes holds one. So {@code \a} in {@code 1-\a},
-     * {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in {@code isdef#a},
-     * {@code ,a} in {@code ,a#b}, {@code b.c} in {@code a^b.c} and {@code my]} in {@code my]--} and in
-     * {@code x^my]+=1} are among them, and {@code (,a} in {@code (,a) == 5} isn't. It holds more
-     * names than they read, such as the words of a string literal, a comment or a class's name, and spans MVEL reads
-     * as several names, which are only a best guess at the names a rule's author meant, such as {@code my-fact} in
-     * {@code my-fact == 1}, which MVEL reads as {@code my} minus {@code fact}. So a fact no MVEL rule names, such as
-     * one named {@code in} that only another language's rules read, isn't checked by MVEL. It can still miss a name
-     * MVEL reads with whitespace in it, such as one {@code isdef} reads up to a comment on a later line (#1089).
+     * {@code ( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ ~}, U+00AB, U+00BB or U+00AC after its first character,
+     * which no name MVEL lexes holds there but for one {@code isdef} reads, one before an assignment, or one that
+     * starts with a run of characters MVEL skips, such as {@code ,,} in {@code x^,,} or {@code ,,-5} in {@code x^,,-5},
+     * which no rule reads, is left out, unless {@code isdef} may read it, it stands before {@code ++}, {@code --} or an
+     * assignment operator not followed by {@code =}, or each one it holds is in a run of characters MVEL skips, such as
+     * {@code ,} or U+00AB, that starts the span and that part of an identifier follows, as MVEL lexes that run into the
+     * name that follows it (#1172).
+     * So {@code \a} in {@code 1-\a}, {@code a.b} in {@code a.b--}, {@code my-fact} in {@code my-fact-1}, {@code #a} in
+     * {@code isdef#a}, {@code ,a} in {@code ,a#b}, {@code ,,a} in {@code x^,,a}, {@code b.c} in {@code a^b.c} and
+     * {@code my]} in {@code my]--} and in {@code x^my]+=1} are among them, and {@code (,a} in {@code (,a) == 5} and
+     * {@code ,,} in {@code x^,,} aren't. It holds more names than they read, such as the words of a string literal, a
+     * comment or a class's name, and spans MVEL reads as several names, which are only a best guess at the names a
+     * rule's author meant, such as {@code my-fact} in {@code my-fact == 1}, which MVEL reads as {@code my} minus
+     * {@code fact}. So a fact no MVEL rule names, such as one named {@code in} that only another language's rules read,
+     * isn't checked by MVEL. It can still miss a name MVEL reads with whitespace in it, such as one {@code isdef} reads
+     * up to a comment on a later line (#1089).
      *
      * <p>
      * Returns {@code null}, so MVEL checks every fact, once a condition or action has a word of more than 1,000
