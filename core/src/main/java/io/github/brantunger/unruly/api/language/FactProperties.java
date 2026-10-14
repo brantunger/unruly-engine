@@ -87,8 +87,14 @@ public final class FactProperties {
      *     though {@link #toData} gives those keys a string form.</li>
      *     <li>A record: the component of that name, or one of its own getters when no component matches.</li>
      *     <li>Anything else: the public no-argument {@code getProperty()}, or {@code isProperty()} when it returns a
-     *     {@code boolean} or a {@link Boolean}. A class declaring both resolves to {@code getProperty()}, so the choice
-     *     never depends on the order reflection reports methods in. Public fields aren't read.</li>
+     *     {@code boolean} or a {@link Boolean}. The getter's first letter is lower-cased by
+     *     {@link Character#toLowerCase(char)}, unless its second letter is upper case: {@code getURL()} is read as
+     *     {@code URL}, and {@code get\u0130sim()} as {@code isim}. Where two getters are read as one property, a
+     *     {@code getProperty()} beats an {@code isProperty()}, and between two of the same kind the one whose name is
+     *     greatest in {@link String#compareTo} order wins, so {@code get\u0130sim()} beats {@code getIsim()}. Only
+     *     the tie between two {@code getProperty()} is broken as {@code java.beans} breaks it; the other two rules
+     *     are this class's own. The choice never depends on the order reflection reports methods in. Public fields
+     *     aren't read.</li>
      * </ul>
      *
      * <p>
@@ -568,18 +574,40 @@ public final class FactProperties {
         // the same program would be a poor thing to hand a language. A record's components keep their declared
         // order, and its other getters follow: a record may compute a property its components don't hold.
         Map<String, Method> getters = new TreeMap<>();
-        // By name, so that a class declaring both isActive() and getActive() always resolves to the same one:
-        // keeping whichever reflection listed first would let the same rule read a different value on another JVM.
+        // Two getters can read one property: isActive() and getActive(), or getIsim() and get\u0130sim(), whose first
+        // letters both lower-case to i. Which one wins is decided by their names, never by the order reflection
+        // listed them in, which would let the same rule read a different value on another JVM. Only two methods of
+        // one name, such as a bridge and the method it calls, keep that order, and both read the same value. Two
+        // ASCII getters can tie as well: of getFoo() and getfoo(), both read as foo, getfoo() wins.
         List<Method> methods = new ArrayList<>(List.of(type.getMethods()));
         methods.sort(Comparator.comparing(Method::getName));
         for (Method method : methods) {
             String property = Accessors.property(method);
             if (property != null) {
-                getters.putIfAbsent(property, method);
+                getters.merge(property, method, FactProperties::preferred);
             }
         }
         getters.forEach((property, method) -> accessors.putIfAbsent(property, Accessors.callable(type, method)));
         return Collections.unmodifiableMap(accessors);
+    }
+
+    /**
+     * Which of two getters read as the same property it's read with: a {@code getX} rather than an {@code isX}, and
+     * between two of the same kind, the one whose name is greatest. For two {@code getX} that is the one
+     * {@code java.beans} keeps; for two {@code isX} it keeps the least, and it prefers a {@code boolean} {@code isX}
+     * to a {@code getX}, so those two rules are the engine's own. Of two methods with the same name, such as a
+     * bridge method and the one it calls, the first is kept.
+     *
+     * @param kept  The getter found first
+     * @param other The getter found since
+     * @return The one to keep
+     */
+    private static Method preferred(Method kept, Method other) {
+        String keptName = kept.getName();
+        String otherName = other.getName();
+        boolean otherIsGet = otherName.startsWith("get");
+        boolean otherWins = otherIsGet == keptName.startsWith("get") ? otherName.compareTo(keptName) > 0 : otherIsGet;
+        return otherWins ? other : kept;
     }
 
     private static @Nullable Object invoke(Method accessor, Object target, String property) {
