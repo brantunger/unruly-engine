@@ -112,9 +112,9 @@ Some steps still need more stack than the engine checks for.
 `Condition for rule 'r' failed to compile: the stack ran out: ...`.
 
 A retry at the same depth fails the same way, until one with more room succeeds anywhere, unless a static initializer
-overflowed (see below). Load and run your rules, or same-shaped ones, near the top first: trivial ones aren't enough.
-That doesn't help a dotted name, such as `m.k`: every `load()` or `validate()` looks it up as a class, needing
-[more room](../exceptions-by-method.md).
+overflowed (see below). Load and run your rules, or same-shaped ones, near the top first:
+[trivial ones aren't enough](../deep-stacks.md#an-mvel-forms-first-compile-or-run). That doesn't help a dotted name,
+such as `m.k`: every `load()` or `validate()` looks it up as a class, needing [more room](../exceptions-by-method.md).
 
 **If those expressions overflow**, they're skipped, and the JVM's first load or run loads their classes: deep, a load
 can fail as above, and a run its rule, reading `the stack overflowed`, until one with more room succeeds. A class an
