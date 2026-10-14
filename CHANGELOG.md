@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.11](https://github.com/brantunger/unruly-engine/compare/v2.30.10...v2.30.11) (2026-10-14)
+
+
+### Bug Fixes
+
+* initialize the JDK's lock classes at the first build, and document the JDK classes a rule names or calls ([#1206](https://github.com/brantunger/unruly-engine/issues/1206)) ([fb66f0a](https://github.com/brantunger/unruly-engine/commit/fb66f0aa808f53817beeb30ab856510d24813cb2))
+
 ## [2.30.10](https://github.com/brantunger/unruly-engine/compare/v2.30.9...v2.30.10) (2026-10-14)
 
 
