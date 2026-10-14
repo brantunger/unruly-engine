@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -29,8 +28,21 @@ public final class Accessors {
      * The property a public method reads, or {@code null} if the method isn't a getter. A getter isn't static, takes
      * no argument, returns something, and isn't declared by {@link Object} or {@link Enum}, so {@code getClass()} and
      * an enum's {@code getDeclaringClass()} are never properties. It's named {@code getX}, or {@code isX} where it
-     * returns a {@code boolean} or a {@link Boolean}, and its property is {@code X} decapitalized as
-     * {@code java.beans} does it: {@code getName()} reads {@code name}, but {@code getURL()} reads {@code URL}.
+     * returns a {@code boolean} or a {@link Boolean}, and its property is {@code X} with its first character
+     * lower-cased by {@link Character#toLowerCase(char)}, as {@code java.beans} does it, unless the second character
+     * is upper case: {@code getName()} reads {@code name}, {@code get\u0130sim()} reads {@code isim}, but
+     * {@code getURL()} reads {@code URL}. Only the second character decides that, where {@code java.beans} also asks
+     * the first to be upper case, so a getter whose first character is title case and second is upper case, such as
+     * {@code get\u01C5Z()}, reads {@code \u01C5Z} here and {@code \u01C6Z} there.
+     *
+     * <p>
+     * Two getters can read the same property, as {@code getIsim()} and {@code get\u0130sim()} do. Which one a fact's
+     * property is read with is decided by {@link io.github.brantunger.unruly.api.language.FactProperties}: a
+     * {@code getX} beats an {@code isX}, and between two of the same kind, the one whose {@code X} is greatest in
+     * {@link String#compareTo} order, so {@code get\u0130sim()} beats {@code getIsim()}. Between two {@code getX},
+     * that is how {@code java.beans} breaks the tie too; the rest is the engine's own, because {@code java.beans}
+     * keeps the least of two {@code isX}, and prefers a {@code boolean} {@code isX} to a {@code getX}.
+     * </p>
      *
      * @param method A public method of the object's class
      * @return The property's name, or {@code null}
@@ -62,7 +74,9 @@ public final class Accessors {
             // As java.beans does: URL stays URL, so getURL() is the property URL.
             return name;
         }
-        return name.substring(0, 1).toLowerCase(Locale.ROOT) + name.substring(1);
+        // Character's rule, not String's: String lower-cases \u0130 to two characters, i and a combining dot above,
+        // so get\u0130sim() would read a property no rule can name, and not java.beans' isim.
+        return Character.toLowerCase(name.charAt(0)) + name.substring(1);
     }
 
     /**
@@ -79,7 +93,9 @@ public final class Accessors {
     /**
      * The name of the setter that writes a property: {@code set} and the property with its first letter upper-cased,
      * so both {@code xValue} and {@code XValue} are written with {@code setXValue}. It isn't the inverse of
-     * {@link #property}, which reads {@code getXValue()} as {@code XValue}, as {@code java.beans} does.
+     * {@link #property}, which reads {@code getXValue()} as {@code XValue}, as {@code java.beans} does. Nor where
+     * upper-casing a letter doesn't give back the one {@link #property} lower-cased: {@code get\u0130sim()} reads
+     * {@code isim}, but {@code isim} is written with {@code setIsim}, not {@code set\u0130sim}.
      *
      * @param property The property's name, not empty
      * @return The setter's name
