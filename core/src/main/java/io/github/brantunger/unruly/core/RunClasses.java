@@ -334,7 +334,13 @@ final class RunClasses {
     // of a hidden class overflowed deep in a stack overflowed in its static initializer too, which left it unusable for
     // the life of the JVM, so that every class's static initializer that throws, anywhere in the JVM, was reported as
     // NoClassDefFoundError: Could not initialize class java.lang.ExceptionInInitializerError, without its cause
-    // (#1010). And WrongMethodTypeException, which an output's setter that throws is the first to load (#1093).
+    // (#1010). And WrongMethodTypeException, which an output's setter that throws is the first to load (#1093). And
+    // the JDK's lock classes that a run's wait for a copy or for a build slot uses, in a semaphore: on JDK 25 and
+    // later, the JVM's first wait in a lock is the first to load the nodes of its queue, Node and the two kinds a wait
+    // makes, and to initialize Node and LockSupport, which have static initializers. JDK 21 initializes Node,
+    // ExclusiveNode and LockSupport as it starts, but no release loads SharedNode before a wait that shares. So a run
+    // that was the JVM's first to wait, deep in a stack, could leave every wait in a lock, anywhere in the JVM,
+    // failing (#1112).
     private static List<String> namedClasses() {
         return List.of("java.util.stream.MatchOps$MatchKind", "java.util.stream.Collectors",
                 "java.util.stream.Collector$Characteristics", "java.lang.ClassValue$ClassValueMap",
@@ -344,7 +350,11 @@ final class RunClasses {
                 "java.lang.ClassValue$RemovalToken", "java.lang.ClassValue$Entry", "java.lang.invoke.MethodHandles$1",
                 "java.lang.invoke.ClassSpecializer$Factory$1$1Var", "java.lang.invoke.ClassSpecializer$Factory$1$5$1",
                 "java.lang.invoke.DirectMethodHandle$Interface", "java.lang.ExceptionInInitializerError",
-                "java.lang.invoke.WrongMethodTypeException");
+                "java.lang.invoke.WrongMethodTypeException",
+                "java.util.concurrent.locks.AbstractQueuedSynchronizer$Node",
+                "java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",
+                "java.util.concurrent.locks.AbstractQueuedSynchronizer$SharedNode",
+                "java.util.concurrent.locks.LockSupport");
     }
 
     /**

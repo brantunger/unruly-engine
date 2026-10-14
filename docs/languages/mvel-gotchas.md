@@ -143,7 +143,8 @@ within 100 ms, and its first compile initializes ASM's classes and some of the J
 before it compiles it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor
 stays on MVEL's reflective path, still correct.
 
-An overflow in a class's static initializer, MVEL's, ASM's or the JDK's, leaves that class unusable for the JVM's life,
+An overflow in a class's static initializer, MVEL's, ASM's or
+[the JDK's](../deep-stacks.md#the-jdk-classes-a-rule-names-or-calls), leaves that class unusable for the JVM's life,
 in your code too: every later use fails, and after the JIT's, every other accessor's first compile fails one run the
 same way.
 

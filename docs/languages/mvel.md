@@ -36,7 +36,7 @@ Every example below was checked against the engine. For the full language, see t
 | Concatenate | `'Hello ' + applicant.name` |
 | Write an inline list or map | `[1, 2, 3]`, `['a': 1, 'b': 2]` |
 | Check that a fact was supplied | `isdef coapplicant` |
-| Use a class without importing it | `java.time.LocalDate.now().getYear() >= 2026` |
+| Use a class without importing it | `java.time.LocalDate.now().getYear() >= 2026` ([deep in a stack](../deep-stacks.md#the-jdk-classes-a-rule-names-or-calls)) |
 
 > [!IMPORTANT]
 > `in` isn't a membership test: `780 in [700, 780]` fails `load()`; `score in [700, 780]` is just `score`. Write
@@ -57,7 +57,7 @@ or assigning a property. An assignment isn't always the same as calling the
 setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
 each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
-The action's value is ignored, so `output.approved = true; 42` is fine. Assigning to `output` itself,
+The action's value is ignored: `output.approved = true; 42` is fine. Assigning to `output` itself,
 as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
 
 So does setting a property the output has no setter or public field for, such as a record's component, on an output
@@ -172,7 +172,7 @@ Check with `isdef` for a fact that may be missing, and for `null` before reading
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
-A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelled rule.
+A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelling.
 
 | Condition, for an `order` map with no `missing` key | Result |
 | --- | --- |
@@ -300,7 +300,7 @@ each copy holds its own in its session.
 
 A copy is built lazily:
 
-- A session compiles an expression again the **first time that copy runs it**, so a copy pays only for the rules it
+- A session compiles an expression again the **first time that copy runs it**: a copy pays only for the rules it
   reaches.
 - The first session to run an expression takes the form `load()` compiled.
 - As it runs, MVEL builds accessors for that session alone.
@@ -313,7 +313,7 @@ An [extra copy](../glossary.md#extra-copy) pays that price and throws it away wh
 keeps making them, by starting a run of the same engine on another thread under a full
 [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and rebuilds accessors each time.
 
-A session's expressions belong to one run at a time, so any MVEL optimizer is safe.
+A session's expressions belong to one run at a time: any MVEL optimizer is safe.
 
 ### MVEL's optimizer
 
