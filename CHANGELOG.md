@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.10](https://github.com/brantunger/unruly-engine/compare/v2.30.9...v2.30.10) (2026-10-14)
+
+
+### Bug Fixes
+
+* make MVEL's fact-name scan check a name that starts with a run of characters MVEL skips, such as ««b glued after ^, #, ~ or -, which MVEL lexes as one name ([#1204](https://github.com/brantunger/unruly-engine/issues/1204)) ([bad9a2c](https://github.com/brantunger/unruly-engine/commit/bad9a2c3ad7d652bcf676cf102e883332f144547))
+
 ## [2.30.9](https://github.com/brantunger/unruly-engine/compare/v2.30.8...v2.30.9) (2026-10-14)
 
 
