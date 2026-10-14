@@ -41,6 +41,14 @@ the JDK's, such as the clock, the SHA-256 digest, streams and locks, that an eng
 thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it touches any of them or
 checks any setting, even a wrong one. The next `build()` checks again.
 
+It also loads the engine's classes a load or run uses, so a first load or run reads none of them from a file; a
+language's own are its `prepare()`'s to load.
+
+**On JDK 21 and 22, outside a native image, it also initializes the JDK's
+`jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep
+in a stack, that read could leave every later one failing for the life of the JVM. It initializes `ForkJoinPool` too,
+with [the common-pool cost](#-what-a-language-prepares).
+
 The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
 where 256 KB can be too small.
 
@@ -70,12 +78,15 @@ rules loaded; for what `prepare()` throws, see
 [its contract](languages/custom.md#preparing-the-languages-classes).
 
 **MVEL's `prepare()` also initializes the JDK's `BigDecimal` and `BigInteger`,** so a deep first `BigDecimal` literal,
-such as `1.5B`, can't leave them unusable, nor, on JDK 25 and 26, `ForkJoinTask` with them.
+such as `1.5B`, can't leave them unusable, nor, on JDK 25 and 26, `ForkJoinTask` with them. It also loads the classes
+that creating a compiler, compiling a rule and a first run of an assignment would otherwise read from a file; a form's
+own are left to its first use, [below](#an-mvel-forms-first-compile-or-run).
 
-**On JDK 25 and later, that initializes `ForkJoinPool` too,** as `BigDecimal`'s static initializer uses it. The common
-pool reads its system properties, `java.util.concurrent.ForkJoinPool.common.*`, then: one set later is ignored. Set
-them on the command line, or before MVEL is prepared, at the `build()`, or first `load()` or `validate()`, the table
-above names.
+**On JDK 25 and later, that initializes `ForkJoinPool` too,** as `BigDecimal`'s static initializer uses it. On JDK 21
+and 22, the JVM's first `build()` does, with `Blocker$ForkJoinPools`. The common pool reads its system properties,
+`java.util.concurrent.ForkJoinPool.common.*`, then: one set later is ignored. Set them on the command line, or before
+MVEL is prepared, at the `build()`, or first `load()` or `validate()`, the table above names; on JDK 21 and 22, before
+the JVM's first `build()`.
 
 > [!TIP]
 > To check the room at `build()`, not at a deep first `load()`, name the language
@@ -122,9 +133,11 @@ and `Class.forName`, and a write through a bridged generic setter.
 They fail if a first load or run, or a first build before its check, initializes a class with a static initializer,
 other than the application's, the JDK's hidden method-handle classes, and the documented ones below. HotSpot records an
 overflow initializing one with an `ExceptionInInitializerError`, which the first build initializes, keeping it usable.
+They also fail if a first load or run reads a class from a jar or class directory, other than the application's or a
+language of its own.
 
-A path they don't take may initialize one, as may a JDK other than 21, 25 and 26, whose classes the engine names,
-skipping missing ones; a native image names none. Nothing prepares
+A path they don't take may initialize or load one, as may a JDK other than 21, 25 and 26, whose classes the engine
+names, skipping missing ones; a native image names none. Nothing prepares
 [what MVEL leaves to first use](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), or the logging
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
 
@@ -181,25 +194,26 @@ unary minus, a ternary, a regex match or a method call.
 use initializes an MVEL class, such as an inline list or map, `new` or `soundslike`, can instead leave that class
 unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
 
-Deep in a stack, a form's first use can need up to about 30 KB more than the about 8 KB that `load()` and `run()`
+Deep in a stack, a form's first use can need up to about 16 KB more than the about 8 KB that `load()` and `run()`
 [check for](exceptions-by-method.md). The rule then fails just past the check, where the same rule passes once
 warmed:
 
 - A load throws a `RuleCompilationException` reading `the stack ran out`.
 - A run fails the rule, reading `the stack overflowed`.
 
-Measured on JDK 21 and 25, on Windows x64, a first use needed this much more than the check leaves. A second needed
-about none: at most about 1 KB, for a load.
+Measured on JDK 21 and 25, on Windows x64, a single first use in a new JVM needed this much more than the check
+leaves. Hundreds of failed attempts at one, measured for a ternary on JDK 21, raised what a later one needed. A second
+use needed about none: at most about 1 KB, for a load.
 
 | Form | Deep first | About |
 | --- | --- | --- |
-| A `def` function, a projection, a filter or `foreach` | `run()` | 22-25 KB |
-| A unary minus in a condition, such as `-x < 0` | `load()` | 19 KB |
-| A static method call, such as `java.lang.Math.abs(x)` | `run()` | 18-19 KB |
-| A `for` loop | `load()` | 17 KB |
-| A regex match, such as `s ~= 'a.*'` | `load()` | 15 KB |
-| A ternary | `run()` | 30 KB on JDK 21, 4 KB on JDK 25 |
-| A property write, an instance method call or `if`/`else` | `run()` | 1-8 KB |
+| A `def` function, a projection, a filter or `foreach` | `run()` | 7-12 KB |
+| A unary minus in a condition, such as `-x < 0` | `load()` | 14-16 KB |
+| A static method call, such as `java.lang.Math.abs(x)` | `run()` | 5-7 KB |
+| A `for` loop | `load()` | 9-13 KB |
+| A regex match, such as `s ~= 'a.*'` | `load()` | 11-13 KB |
+| A ternary | `run()` | 2.5-6 KB |
+| A property write, an instance method call or `if`/`else` | `run()` | 0.5-6 KB |
 
 **A language's first-run check doesn't close the gap.** A run checks about 13 KB while a language class its rules use
 hasn't [finished a run](exceptions-by-method.md) in the JVM. That's JVM-wide: once it has, in any engine, every

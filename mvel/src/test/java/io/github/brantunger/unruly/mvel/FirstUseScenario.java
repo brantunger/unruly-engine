@@ -51,7 +51,7 @@ final class FirstUseScenario {
     static final String UNFOUND_CALL = "a load of an action that calls a method MVEL can't find on the output's type";
     /** The step whose load is the first to compile an assignment (#1103). */
     static final String ASSIGNMENT_LOAD = "a load of an action that assigns";
-    /** The step whose run is the first to run an assignment (#1103). */
+    /** The step whose run is the first to run an assignment (#1103), and the JVM's first run (#1210). */
     static final String ASSIGNMENT_RUN = "a first run of an action that assigns";
     /**
      * The step whose load is the first to compile a {@code BigDecimal} literal, which MVEL's analysis makes a
@@ -264,6 +264,9 @@ final class FirstUseScenario {
         if (Boolean.getBoolean(JIT_ON)) {
             OptimizerFactory.setDefaultOptimizer(OptimizerFactory.DYNAMIC);
         }
+        // The facts of the first run, created before the steps, as FactMap is a class of the API the application uses:
+        // the step would otherwise be the first to read its class from a file (#1210).
+        FactMap<Object> noFacts = new FactMap<>();
         mark(BUILT);
 
         List<String> unexpected = new ArrayList<>();
@@ -276,7 +279,7 @@ final class FirstUseScenario {
         mark(STEP + ASSIGNMENT_LOAD);
         engine.load(List.of(rule("assigns", "true", "x = 1;")));
         mark(STEP + ASSIGNMENT_RUN);
-        if (!engine.run(new FactMap<>()).isEmpty()) {
+        if (!engine.run(noFacts).isEmpty()) {
             unexpected.add(ASSIGNMENT_RUN);
         }
         // Before any other step, so none of them reads a generic type, calls a method of the JDK's with a runtime

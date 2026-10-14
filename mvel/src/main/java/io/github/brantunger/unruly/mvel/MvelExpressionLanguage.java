@@ -6,14 +6,18 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import org.mvel2.DataConversion;
 import org.mvel2.MVEL;
+import org.mvel2.MVELRuntime;
 import org.mvel2.Operator;
 import org.mvel2.ast.OperatorNode;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.integration.PropertyHandlerFactory;
+import org.mvel2.integration.impl.StackResetResolverFactory;
 import org.mvel2.math.MathProcessor;
 import org.mvel2.optimizers.impl.refl.nodes.GetterAccessor;
+import org.mvel2.util.ASTBinaryTree;
 import org.mvel2.util.ErrorUtil;
 import org.mvel2.util.ParseTools;
+import org.mvel2.util.StackElement;
 
 import java.lang.invoke.MethodHandles;
 import java.math.BigDecimal;
@@ -116,10 +120,12 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      * which MVEL makes a rule's first {@code BigDecimal} literal, such as {@code 1.5B}, with. On JDK 25 and later,
      * {@code BigDecimal}'s static initializer initializes the JDK's {@link java.util.concurrent.ForkJoinPool} and
      * {@link java.util.concurrent.ForkJoinTask} too, without starting a thread, so a setting of the common pool made
-     * after this has no effect (#1115). The JDK's classes that MVEL's first read of a method's generic return type and
-     * its first reflective call of a method with a runtime annotation initialize are the engine's to initialize, as it
-     * builds the JVM's first engine. A load or a run may be nested deep in another run's stack, where a
-     * {@link StackOverflowError} inside one of them would leave the class unusable for the life of the JVM, and so
+     * after this has no effect (#1115). So are this module's and MVEL's classes without one that a first load and a
+     * first run would otherwise be the first to read from a file: those that create the compiler and compile a rule,
+     * the session and an action's variables (#1210). The JDK's classes that MVEL's first read of a method's generic
+     * return type and its first reflective call of a method with a runtime annotation initialize are the engine's to
+     * initialize, as it builds the JVM's first engine. A load or a run may be nested deep in another run's stack, where
+     * a {@link StackOverflowError} inside one of them would leave the class unusable for the life of the JVM, and so
      * every later MVEL load or run, or every later report of a compile error. The engine calls this once it has made
      * room for it: when it builds an engine whose builder names MVEL, as its default language or otherwise, or else
      * when a rule list first uses MVEL. They're initialized in the order a first load and run initialize them, so
@@ -184,6 +190,16 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
                 Imports.ClassCalledLikeMethod.class, Imports.ImportRejected.class, Imports.AnalysisLoop.class,
                 Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class));
+        // The classes without a static initializer that the JVM's first load of an MVEL rule and its first run would
+        // otherwise be the first to read from this module's jar or class directory, or MVEL's: those that create the
+        // compiler and compile a rule, then the session and an action's variables, and MVEL's that a first run of an
+        // action such as x = 1; loads, which the warm-up's assignment below doesn't. Deep in a stack a class's first
+        // load can overflow, and on JDK 21 a first file read on a virtual thread there can leave every later file read
+        // on one failing for the life of the JVM (#1210).
+        initialize(MethodHandles.lookup(), List.of(MvelExpressionCompiler.class, Imports.class,
+                Imports.SharedLookupConfiguration.class, DeclaredTypes.class, ClassNameRoots.class,
+                MvelExpression.Copy.class, ASTBinaryTree.class, MvelSession.class, ActionVariables.class,
+                StackResetResolverFactory.class, MVELRuntime.class, StackElement.class));
         MvelCompileErrors.warmUp();
         // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
         // first initializes the JDK's classes that walk one, so this walks it once each way (#1099).

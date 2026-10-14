@@ -3,13 +3,18 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleEvaluation;
+import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunOptions;
+import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ConditionResult;
+import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
 import io.github.brantunger.unruly.api.language.MessageText;
@@ -36,8 +41,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@link NoClassDefFoundError}. Initializing them here, once {@link StackHeadroom#checkInitializing()} has made room
  * for it, leaves those calls nothing to initialize. So are the few of the engine's classes without one that a rule's
  * or a run's first failure would otherwise be the first to load, as a class's first load deep in a stack can overflow
- * too (#1066, #1093). So are the JDK's classes that a first read of a generic type or of a method's annotations, or a
- * first reflective call of a native method, initializes, in a language's load or run or a write through a generic
+ * too (#1066, #1093), and those that the JVM's first load and first run would otherwise read from the engine's jar or
+ * class directory (#1210). So are the JDK's classes that a first read of a generic type or of a method's annotations,
+ * or a first reflective call of a native method, initializes, in a language's load or run or a write through a generic
  * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). In a native
  * image, the classes it can only name are left to the image, which can't look a name up that it has no metadata for,
  * and no method is read. A language's own classes are its to initialize, in
@@ -55,7 +61,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@code validate()} and {@code close()}. It fails if those
  * initialize any class with a static initializer, the engine's, the JDK's or a library's, other than the hidden classes
  * the JDK makes for method handles, and if the first build initializes one before this class does, other than the
- * application's own. A path the scenario doesn't take may still initialize one,
+ * application's own, and if its first loads and its first run, a bean output's, load any class from a file but the
+ * application's and its languages'. A path the scenario doesn't take may still initialize or load one,
  * and so does the first message the engine logs, with a provider that logs: with slf4j-simple, it initializes SLF4J's
  * {@code Level} and {@code FormattingTuple}, which aren't initialized here. This class has no static initializer of its
  * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
@@ -111,6 +118,7 @@ final class RunClasses {
             RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                     rule.toBuilder().ruleName("b").priority(1).build())));
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
+            initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
             // reflection, which differs between JDK releases, so that is done here on the JDK's own classes (#1115).
             readMembers(List.of(Object.class, Class.class, Math.class, String.class, Thread.class, System.class,
@@ -319,6 +327,35 @@ final class RunClasses {
                 InvalidExpressionException.Issue.class, MessageText.class);
     }
 
+    // Loaded through the same lookup: the engine's classes, none with a static initializer, that the JVM's first load
+    // and first run would otherwise be the first to load, from the engine's jar or class directory. The first seven,
+    // the load's, may come after load()'s own check of the room: CompiledCondition and CompiledAction with the first
+    // class of a language's that implements one, unless the language's prepare() or the application loaded it before.
+    // No test catches those two, as no scenario's first load is the first to read them. Of the run's,
+    // RunBody, RuleSet's Copy, RunFacts and RunResult are loaded when the run links the lambda it runs its rules in,
+    // after run()'s own check of the room and before the check for a language's first run, and the rest after that;
+    // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
+    // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
+    // the JVM's first to read a file could leave every later run of every engine, and every file read on a virtual
+    // thread, failing for the life of the JVM (#1210). Initializing a class doesn't load its nested or outer classes,
+    // so RuleSet's and RuleEvaluation.Outcome's, in the list above, don't load these.
+    private static List<Class<?>> loadAndRunClasses() {
+        return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
+                LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
+                AbstractRulesEngine.RunBody.class, RuleSet.Copy.class,
+                RunFacts.class, RunResult.class, RuleSelection.class, ReadOnlyFacts.class,
+                EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
+                RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class);
+    }
+
+    // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a
+    // bean would otherwise be the first to load, as loadAndRunClasses says (#1210). In a native image, which loads no
+    // class from a file, none is named.
+    private static List<String> loadAndRunNamedClasses() {
+        return List.of("io.github.brantunger.unruly.api.BeansAndMapsWriter$Lookup",
+                "io.github.brantunger.unruly.api.BeansAndMapsWriter$Setter");
+    }
+
     // Initialized by name, as this package can't name them: the JDK's that a load or a run may be the first to use.
     // Those are the streams' that a load uses, to sort its rules and to read their tags for its checksum (a failure's
     // description uses none, #1093, nor does saying which rules failed to compile, #1097), and MatchOps' kinds, which a
@@ -340,7 +377,13 @@ final class RunClasses {
     // makes, and to initialize Node and LockSupport, which have static initializers. JDK 21 initializes Node,
     // ExclusiveNode and LockSupport as it starts, but no release loads SharedNode before a wait that shares. So a run
     // that was the JVM's first to wait, deep in a stack, could leave every wait in a lock, anywhere in the JVM,
-    // failing (#1112).
+    // failing (#1112). Last, Blocker$ForkJoinPools, which JDK 21 and 22 have and JDK 23 and later don't: on JDK 21 the
+    // JVM's first blocking file read on a virtual thread initializes it, and the engine's lookup of a fact's name as a
+    // class's, which looks for its class file, or a language's first load of a class of its own, such as MVEL's, can be
+    // that read, deep in a stack. Its static initializer overflowing there left every later file read on a virtual
+    // thread, anywhere in the JVM, and so every later run, failing (#1210). Initializing it here initializes the JDK's
+    // ForkJoinPool too, and about 12 other classes of the JDK's, when the first engine is built, so a
+    // java.util.concurrent.ForkJoinPool.common property the application sets after that has no effect.
     private static List<String> namedClasses() {
         return List.of("java.util.stream.MatchOps$MatchKind", "java.util.stream.Collectors",
                 "java.util.stream.Collector$Characteristics", "java.lang.ClassValue$ClassValueMap",
@@ -354,7 +397,7 @@ final class RunClasses {
                 "java.util.concurrent.locks.AbstractQueuedSynchronizer$Node",
                 "java.util.concurrent.locks.AbstractQueuedSynchronizer$ExclusiveNode",
                 "java.util.concurrent.locks.AbstractQueuedSynchronizer$SharedNode",
-                "java.util.concurrent.locks.LockSupport");
+                "java.util.concurrent.locks.LockSupport", "jdk.internal.misc.Blocker$ForkJoinPools");
     }
 
     /**

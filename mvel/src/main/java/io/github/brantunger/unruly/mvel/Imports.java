@@ -272,7 +272,8 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
      * rule can't change how another compiles. Without sharing, a name was looked up again for every expression that
      * used it, and again for the compiled copy of every session that runs it.
      */
-    private static final class SharedLookupConfiguration extends ParserConfiguration {
+    // Package-private, not private, so MvelExpressionLanguage.prepare() can name it to load it (#1210).
+    static final class SharedLookupConfiguration extends ParserConfiguration {
 
         private static final long serialVersionUID = 1L;
 

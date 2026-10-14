@@ -1,16 +1,22 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.ChildJvm;
+import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -94,6 +100,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * name with a {@code $} and too many parts, which walks it too. Building the engine walks it once each way, so with
  * the failures last, none of them initializes the JDK's classes that walk it either, and the walks read the stack with
  * loops, so none of those steps, nor any failing one, may load a class of the JDK's streams.
+ * </p>
+ *
+ * <p>
+ * #1210: a class's first load reads it from a file, a jar or a class directory, which deep in a stack could overflow,
+ * and on JDK 21 on a virtual thread could leave every later file read on one failing. So MVEL's first loads and its
+ * first run, the JVM's, may load no class from a file, this module's, MVEL's, the engine's or anyone's, but the
+ * application's and its languages': the scenario's own and the test fixtures'.
  * </p>
  */
 @DisplayName("building an engine with MVEL initializes the classes MVEL's first load and run use, but those of the "
@@ -208,6 +221,14 @@ class FirstUseClassInitializationTest {
     // the walks read the stack with loops, not a stream's limit, count or anyMatch, whose first use loads classes
     // without a static initializer or a lambda, such as ReduceOps$CountingSink, deep in a stack (#1099).
     private static final String STREAM_LOADED = LOADED + "java.util.stream.";
+    // A class -Xlog:class+load shows read from a file, by the URL of the jar or the class directory it was read from,
+    // as in "source: file:/C:/.../unruly-engine-core.jar" or "source: file:/C:/.../classes/java/main/", or "source:
+    // jar:file:/C:/...jar!/" from a class loader that reads a jar by a jar URL; the URL's file is the second group. Not
+    // a class the JDK reads from its own image, "source: jrt:/java.base", or from the archive of classes it shares
+    // between JVMs, "source: shared objects file", nor a class it makes, whose source is the class it makes it for or
+    // "__JVM_LookupDefineClass__" (#1210).
+    private static final Pattern FROM_FILE = Pattern.compile(Pattern.quote(LOADED)
+            + "(\\S+) source: (?:jar:)?(file:[^!\\s]+)");
     // Set by Unreachable's static initializer, and read here, as reading a field of Unreachable would initialize it.
     private static final AtomicBoolean UNREACHABLE_INITIALIZED = new AtomicBoolean();
 
@@ -316,6 +337,31 @@ class FirstUseClassInitializationTest {
     }
 
     @Test
+    @DisplayName("MVEL's first loads and its first run, the JVM's, load no class from a file but the application's "
+            + "and its languages' (#1210)")
+    void firstLoadsAndRunReadNoFile(@TempDir Path dir) throws IOException, InterruptedException, URISyntaxException {
+        List<String> lines = ChildJvm.run(dir, FirstUseScenario.class, "-Xlog:class+load=info:stdout").lines()
+                .toList();
+        int built = lines.indexOf(FirstUseScenario.BUILT);
+        int run = lines.indexOf(FirstUseScenario.STEP + FirstUseScenario.ASSIGNMENT_RUN);
+        assertTrue(built >= 0 && run > built && lines.contains(FirstUseScenario.RAN),
+                "markers missing:\n" + String.join("\n", lines));
+        // The step after the first run's.
+        int next = lines.indexOf(FirstUseScenario.STEP + FirstUseScenario.BIG_DECIMAL_LOAD);
+        Set<Path> application = Set.of(location(FirstUseScenario.class), location(ToyExpressionLanguage.class));
+        List<String> whenBuilt = readFromFile(lines.subList(0, built), application);
+
+        // The engine's classes are read from its jar, and this module's from its jar or class directory, as the
+        // scenario starts, so a criterion that matched no line the JVM prints would fail here rather than pass below.
+        for (Class<?> type : List.of(RulesEngineBuilder.class, MvelExpressionLanguage.class)) {
+            assertTrue(whenBuilt.stream().anyMatch(line -> line.contains(LOADED + type.getName() + " ")),
+                    type.getName() + " not shown read from a file:\n" + String.join("\n", lines));
+        }
+        assertEquals(List.of(), readFromFile(lines.subList(built, next), application),
+                "read from a file by the first loads and the first run");
+    }
+
+    @Test
     @DisplayName("a class the lookup can't reach is skipped, and left to its first use")
     void unreachableClassSkipped() {
         // A lookup with public access only can't reach this module's package-private classes.
@@ -417,6 +463,26 @@ class FirstUseClassInitializationTest {
             }
         }
         return initialized;
+    }
+
+    // Each class the lines show read from a file but from one of the application's, with the step it was read in.
+    private static List<String> readFromFile(List<String> lines, Set<Path> application) {
+        List<String> read = new ArrayList<>();
+        String step = "before the first step";
+        for (String line : lines) {
+            Matcher loaded = FROM_FILE.matcher(line);
+            if (line.startsWith(FirstUseScenario.STEP)) {
+                step = line.substring(FirstUseScenario.STEP.length());
+            } else if (loaded.find() && !application.contains(Path.of(URI.create(loaded.group(2))))) {
+                read.add("\n" + step + ": " + line.substring(loaded.start()));
+            }
+        }
+        return read;
+    }
+
+    // The jar or the class directory a class was read from.
+    private static Path location(Class<?> type) throws URISyntaxException {
+        return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
     }
 
     /** A class no lookup but this package's can reach, whose static initializer records that it ran. */
