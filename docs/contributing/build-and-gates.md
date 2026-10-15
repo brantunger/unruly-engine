@@ -133,7 +133,7 @@ lines and branches.
 Both are on by default (`org.gradle.caching=true` and `org.gradle.configuration-cache=true` in `gradle.properties`),
 so a second build reuses task outputs, including those of another branch, and the configured task graph.
 
-- `--rerun` on a task, such as `./gradlew :mvel:test --rerun`, runs it again even though its inputs haven't changed.
+- `--rerun` on a task, such as `./gradlew :mvel:test --rerun`, runs it again though its inputs haven't changed.
 - `--no-build-cache --no-configuration-cache` rebuilds everything from scratch, when a result looks stale.
 - The release workflow builds with `--no-build-cache`, so the published artifacts are built from scratch.
 - Locally, the API baseline lookup is cached 24 hours for configuration cache reuse; `"-PapiCheck.refresh"`, which CI
@@ -148,7 +148,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
-| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and in the shell of their `run` blocks, which actionlint checks with the runner's shellcheck |
+| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Passes only when `build` and `native-image` succeeded, or skipped as allowed below, and `docs-and-hygiene` succeeded. Any other result fails, such as a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
@@ -203,7 +203,7 @@ with `main`.
 Compilation always uses the Java 21 toolchain. `-PtestJdk=N` runs the test task on a JDK N launcher instead, so
 the JDK must be installed: Gradle doesn't download toolchains (`org.gradle.java.installations.auto-download=false`),
 and a missing one fails the build naming the version. The build passes `unruly.test.jdk` to the tests, and
-`TestJdkTest` fails if the JVM running them doesn't match.
+`TestJdkTest` fails if the JVM running them differs.
 
 ```bash
 ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26
@@ -213,7 +213,7 @@ and a missing one fails the build naming the version. The build passes `unruly.t
 
 PMD runs on the main sources of every project, and never on tests ([why](#-what-build-runs)). A finding is fixed,
 unless the code is right and the rule is wrong for it; then the suppression is as narrow as PMD allows, and a comment
-on the line above says why. That is the shape every existing suppression has. For example,
+on the line above says why. Every existing suppression has that shape. For example,
 `core/src/main/java/io/github/brantunger/unruly/core/RuleSet.java`:
 
 ```java
@@ -237,8 +237,7 @@ broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in 
   packages at publish time.
 - The root project's `javadoc` task builds one site for all the modules in `build/docs/javadoc`. It hands the
   javadoc tool the modules rather than source files, so it documents only the packages they export, and passes
-  `-notimestamp`, so no page carries the date it was generated and a rebuild of the same sources gives the same
-  files.
+  `-notimestamp`, so no page carries its generation date and a rebuild of the same sources gives the same files.
 
 `./gradlew javadoc` runs every project's `javadoc` task, `benchmarks` included, and the site: an unqualified task
 name runs the task of that name in every project. `./gradlew :javadoc` builds the site alone. The site is

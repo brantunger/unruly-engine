@@ -1,8 +1,7 @@
 # 🚧 MVEL gotchas
 
 Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can
-start failing after about 50 runs, what compiles slowly, what a load deep in a stack needs, and what MVEL logs
-itself.
+fail after about 50 runs, what compiles slowly or needs stack, and what MVEL logs itself.
 
 **Who it's for:** rule authors, and application developers who configure logging or deploy rules.
 **You'll be able to:** spot a condition that matches, or doesn't, only because of how MVEL compares, write an
@@ -23,7 +22,7 @@ action that stores exactly the value you meant, and turn off what MVEL logs itse
 
 ## 🚧 Comparison gotchas
 
-MVEL compares and computes values more loosely than Java, so a condition can match, or not, unexpectedly.
+MVEL compares and computes more loosely than Java, so a condition can match, or not, unexpectedly.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
@@ -34,33 +33,34 @@ MVEL compares and computes values more loosely than Java, so a condition can mat
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](mvel.md#null-and-missing-facts) | `isdef x && x > 1` |
 | 🔑 **A key missing from a `Map` fact** | `order.missing == null` fails the run with `could not access: missing`, not `true` | `order['missing'] == null`, or `order.containsKey('missing')` |
+| 🌍 **`soundslike`** | `'lil' soundslike 'lull'` is `true` under `en`, `false` under `tr`: MVEL upper-cases both with the JVM's default locale | `a.toUpperCase(java.util.Locale.ROOT) soundslike b.toUpperCase(java.util.Locale.ROOT)` |
 
 ## 🚧 Assignment gotchas
 
-An assignment such as `output.rate = r` doesn't always do what the call `output.setRate(r)` does. MVEL first looks
+An assignment such as `output.rate = r` doesn't always do what `output.setRate(r)` does. MVEL first looks
 for a public field named `rate` that can take the value, and writes it. Only without one does it look for a setter,
-taking the first one-argument `setRate` it finds that can take the value. A call chooses by the value's
+taking the first one-argument `setRate` that can take the value. A call chooses by the value's
 type instead: `output.setX(n)` with a `long` calls `setX(long)`.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
 | 🧱 **A public field beside its setter** | `output.rate = -5` writes the public field `rate` and never calls `setRate`, so the setter's checks don't run | `output.setRate(-5)`, or make the field private |
 | 🎲 **Overloaded setters** | With `setX(int)`, `setX(long)` and `setX(double)`, `output.x = n` calls the first one that can take the value, and which is first can change each time the JVM starts, so the same rule may store `n`, round it, or fail with `cannot coerce Long to Integer` | `output.setX(n)`, which picks the overload that matches the value's type |
-| 0️⃣ **`null` for a primitive** | With `n` null, even when declared `fact("n", int.class)`, `output.x = n` stores `0` through an `int` setter. Into a public `int` field it stores `0` on the first run; later runs fail the rule with `unable to access field` (root cause a `NullPointerException` from MVEL's conversion). `output.setX(n)` fails the rule: the cause is a `PropertyAccessException` (`unable to resolve method`) or, with strong typing, a `CompileException` whose root cause is a `NullPointerException`. MVEL's JUL `WARNING` for it is dropped while the engine runs the rule; see [MVEL's own logging](#-mvels-own-logging) | Test it first: `if (n != null) { output.setX(n) }`, or give the field a setter |
+| 0️⃣ **`null` for a primitive** | With `n` null, even when declared `fact("n", int.class)`, `output.x = n` stores `0` through an `int` setter. Into a public `int` field it stores `0` on the first run; later runs fail the rule with `unable to access field` (root cause a `NullPointerException` from MVEL's conversion). `output.setX(n)` fails the rule: the cause is a `PropertyAccessException` (`unable to resolve method`) or, with strong typing, a `CompileException` whose root cause is a `NullPointerException`. The JUL `WARNING` is dropped; see [MVEL's own logging](#-mvels-own-logging) | Test it first: `if (n != null) { output.setX(n) }`, or give the field a setter |
 | 💥 **A public field of another type than the value** | With MVEL's JIT, a `long`, `float` or `double` field, even given its own box, or another field given another type, such as `int` given `Long` or `BigDecimal` given `Integer`: once the JIT compiles an assignment such as `output.big = n`, it can fail with a `VerifyError` (`Bad type on operand stack`, and MVEL prints `**** COMPILER BUG!` to standard output), an `IllegalArgumentException` or a `ClassCastException`, for one run or every later one, depending on the field's type and the values assigned. An `Object` field, or another field given its own type, is safe | A setter |
 
-MVEL's JIT, if made the default again, compiles an accessor once it has run about 50 times quickly, and can again,
-such as in each compiled copy. See [MVEL's optimizer](mvel.md#mvels-optimizer).
+MVEL's JIT, if made the default again, compiles an accessor after about 50 quick runs, and can again, such as in
+each compiled copy; see [MVEL's optimizer](mvel.md#mvels-optimizer).
 
 ## ☕ Calling Java code
 
-MVEL reaches a fact's methods and getters through reflection, which fails in some cases where a Java call works.
+MVEL reaches a fact's methods and getters through reflection, which can fail where a Java call works.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
 | 🔒 **Facts whose class isn't public** | `applicant.score` on a package-private record fails with `could not access field`, even on the class path. So does `color.label` on an enum constant with a body that overrides `getLabel()`, such as `RED { ... }`: the constant's class is a non-public subclass | Make the record public, or have it implement a public interface that declares `score()`. For the enum constant, call the getter: `color.getLabel()` |
 | 🧭 **A static field by its full class name, then a member** | `java.time.DayOfWeek.MONDAY.getValue()` fails every run with `unresolvable property or identifier: java`, even with the class imported | `(java.time.DayOfWeek.MONDAY).getValue()`, or import the class and write `DayOfWeek.MONDAY.getValue()` |
-| 🫥 **An exception whose `getMessage()` throws** | When a method or getter a rule calls throws such an exception, MVEL loses it: the rule fails with what `getMessage()` threw as the cause, such as `Failed to execute action for rule 'r': nope`, and the original exception and its causes are gone. This lasts until one evaluation of the expression succeeds in that [compiled copy](../glossary.md#compiled-copy); later failures keep the original, with a `(message unavailable: ...)` note | Give the exception a `getMessage()` that doesn't throw |
+| 🫥 **An exception whose `getMessage()` throws** | When a method or getter a rule calls throws such an exception, MVEL loses it: the rule fails with what `getMessage()` threw as the cause, such as `Failed to execute action for rule 'r': nope`, and the original and its causes are gone. This lasts until one evaluation of the expression succeeds in that [compiled copy](../glossary.md#compiled-copy); later failures keep the original, with a `(message unavailable: ...)` note | Give the exception a `getMessage()` that doesn't throw |
 
 ## 🔥 A rule failing for ever after about 50 quick runs
 
@@ -126,12 +126,12 @@ chain of 57 parts or more, two calls a part. A walk with no room is skipped, the
 unusable class throws a fatal `InternalError`; a loop stops [after more calls](mvel.md#-errors-when-rules-load).
 
 **The JVM's first call of a method**, a getter a rule reads included, makes the JDK build the method's reflective
-accessor, which generates classes for a signature of a shape no call has had yet. So until a run that fired an MVEL
+accessor, which generates classes for a signature shape no call has had yet. So until a run that fired an MVEL
 rule's action returns normally, runs of rule lists with an MVEL rule check for
 [more room](../exceptions-by-method.md).
 
 **That larger check** removed every failure of a deep first run, for the shapes measured on x64 with JDK 21, 25 and
-26 and the check compiled by the JVM's JIT: a rule calling one method, also with a `new` or one call among its
+26, the check compiled by the JVM's JIT: a rule calling one method, also with a `new` or one call among its
 arguments. Deeper nesting, such as calls three levels deep, can still fail its rule with `the stack overflowed`.
 
 **A rule's first inline list or map, `new` or `soundslike`** initializes an MVEL class `prepare()` doesn't, so it can
@@ -150,16 +150,17 @@ same way.
 
 ## 🪵 MVEL's own logging
 
-The MVEL library logs through `java.util.logging` (JUL), not SLF4J, under loggers named `org.mvel2` and below. With
+MVEL logs through `java.util.logging` (JUL), not SLF4J, under loggers named `org.mvel2` and below. With
 the JDK's default JUL configuration, a record goes to standard error, whatever the application's SLF4J provider does.
 The engine's MVEL module logs through SLF4J.
 
 One of those loggers can carry a fact value. When a method call or an indexed read fails inside MVEL, most often
-as MVEL can't convert a fact to the method's parameter type, its
+as MVEL can't convert a fact to the parameter's type, its
 `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` logger logs a `WARNING` with a stack trace. The
 exception's message often holds the fact value unescaped, so a line break in it can forge a log line. Examples:
 
-- `items.get(index)` or `s.substring(index)`, with `index` a `String`.
+- `items.get(index)` or `s.substring(index)`, with `index` a `String` that `Integer.parseInt` rejects, such as `"x"`,
+  `"1.0"` or `" 1"`.
 - `m[k]`, where the `Map`'s own `get` throws: the message is that exception's.
 - A `null` passed to a primitive setter under strong typing, as in the `null` row above: its message
   holds no fact value.
@@ -170,7 +171,7 @@ exception in its cause chain. If the run was also stopped, the stop's `RuleExecu
 exception among its suppressed ones.
 
 A filter you set on that logger before the engine sets its own keeps deciding every other record. The engine sets it
-when it builds an engine that names MVEL, such as with `defaultLanguage("mvel")`, or else when it first loads or
+when building an engine that names MVEL, such as with `defaultLanguage("mvel")`, or else when it first loads or
 validates MVEL rules. MVEL still logs the `WARNING` when:
 
 - **You set a filter on that logger after that.** Yours replaces the engine's.
@@ -183,7 +184,7 @@ The filter also drops this `WARNING` from Java code a rule calls that runs MVEL 
 still throws.
 
 The engine's filter on `org.mvel2.util.ErrorUtil` drops the `WARNING` MVEL logs for some malformed expressions such as
-`x contains {1, +}` while the engine compiles or runs a rule. The compile error is still reported. MVEL's other JUL
+`x contains {1, +}` while it compiles or runs a rule. The compile error is still reported. MVEL's other JUL
 loggers aren't filtered. None is known to log fact values on the engine's path, but they may log rule text.
 
 To turn MVEL's JUL output off, set `org.mvel2.level = OFF` in the JUL configuration, or route JUL through
