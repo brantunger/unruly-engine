@@ -986,6 +986,93 @@ class RuleSetTest {
     }
 
     @Test
+    @DisplayName("#1213 a run counted while another run counts itself: both are counted, so the retired rule set closes"
+            + " its compilers only once both have left")
+    void runsCountedTogetherAreBothCounted() throws InterruptedException, TimeoutException {
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(new AtomicInteger(), closed)))
+                .build();
+        AtomicReference<Holder> other = new AtomicReference<>();
+        // This run has read the count when the other run, on a thread of its own, counts itself, so this run's
+        // compare-and-set fails, and it reads the count again.
+        Faults.watch(Faults.Step.USERS_READ, () -> {
+            try {
+                other.set(holdOneCopy(rules));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        RuleSet.Copy copy;
+        try {
+            copy = rules.borrow(deadline());
+        } finally {
+            Faults.clear();
+        }
+        assertNotNull(other.get(), "the other run never got its copy");
+        assertNull(rules.retire(), "no fatal error retiring");
+
+        assertNull(rules.release(copy), "no fatal error leaving");
+        assertEquals(List.of(2), closed, "this run's copy closed as it came back, and the compilers still open");
+        other.get().giveBack();
+        assertEquals(List.of(2, 1, 0), closed, "the other run's copy closed, then the compilers, once it left last");
+    }
+
+    @Test
+    @DisplayName("#1213 the last run leaving a retired rule set while another run leaves: it reads the count again,"
+            + " and closes the compilers")
+    void lastRunLeavingAfterAnotherClosesTheCompilers() throws InterruptedException, TimeoutException {
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(new AtomicInteger(), closed)))
+                .build();
+        RuleSet.Copy copy = rules.borrow(deadline());
+        Holder other = holdOneCopy(rules);
+        assertNull(rules.retire(), "no fatal error retiring");
+        AtomicReference<Throwable> otherLeaving = new AtomicReference<>();
+        // This run has read the count when the other run leaves, so this run's compare-and-set fails, and it reads
+        // the count again: then it is the last, with the rule set retired.
+        Faults.watch(Faults.Step.USERS_READ, () -> {
+            try {
+                other.giveBack();
+            } catch (InterruptedException | AssertionError e) {
+                otherLeaving.set(e);
+            }
+        });
+        Error fatal;
+        try {
+            fatal = rules.release(copy);
+        } finally {
+            Faults.clear();
+        }
+
+        assertNull(otherLeaving.get(), "the other run failed to leave");
+        assertNull(fatal, "no fatal error leaving");
+        assertEquals(List.of(1, 2, 0), closed, "each copy closed as it came back, then the compilers, by this run");
+    }
+
+    @Test
+    @DisplayName("#1213 the last run leaving while retire() marks the rule set retired: retire() reads the count"
+            + " again, and closes the rule set itself")
+    void retireAfterTheLastRunLeftClosesTheRuleSet() throws InterruptedException, TimeoutException {
+        List<Integer> closed = new CopyOnWriteArrayList<>();
+        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(new AtomicInteger(), closed)))
+                .build();
+        RuleSet.Copy copy = rules.borrow(deadline());
+        AtomicReference<Error> leaving = new AtomicReference<>();
+        // retire() has read that a run uses the rule set when it leaves, the last to, before the rule set is marked,
+        // so retire()'s compare-and-set fails, and it reads that no run uses it.
+        Faults.watch(Faults.Step.USERS_READ, () -> leaving.set(rules.release(copy)));
+        try {
+            assertNull(rules.retire(), "no fatal error retiring");
+        } finally {
+            Faults.clear();
+        }
+
+        assertNull(leaving.get(), "no fatal error leaving");
+        assertTrue(rules.retiredForGood(), "the rule set is retired");
+        assertEquals(List.of(1, 0), closed, "the copy left idle closed, then the compilers, by retire()");
+    }
+
+    @Test
     @DisplayName("runs waiting for a permit when the rule set is retired take the copies given back, so they make none,"
             + " and each copy is closed once, before the compilers, when the last run leaves")
     void waitingRunsShareTheCopiesOfARetiredRuleSet() throws InterruptedException {
