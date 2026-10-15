@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.13](https://github.com/brantunger/unruly-engine/compare/v2.30.12...v2.30.13) (2026-10-15)
+
+
+### Bug Fixes
+
+* catch an overflow inside the engine's ERROR and WARN log calls, so a deep first logged failure reaches the caller as its RuleCompilationException or the rule's failure, not a bare StackOverflowError ([#1214](https://github.com/brantunger/unruly-engine/issues/1214)) ([5442362](https://github.com/brantunger/unruly-engine/commit/544236219c38780ed341897495cbf95fe676c365))
+
 ## [2.30.12](https://github.com/brantunger/unruly-engine/compare/v2.30.11...v2.30.12) (2026-10-14)
 
 
