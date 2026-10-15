@@ -539,6 +539,30 @@ class CleanupStepFailureTest {
     }
 
     @Test
+    @DisplayName("#1217 load: a load whose making of copies throws a fatal error, whose retiring then fails, and whose"
+            + " warning about the rules left to retire overflows as it's logged, throws its own fatal error, carrying"
+            + " the retire failure, without the line")
+    void anOverflowLoggingThatRulesAreLeftToRetireLosesOnlyTheLine() {
+        Counting language = new Counting();
+        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        });
+        OutOfMemoryError failure = new OutOfMemoryError("making a session");
+        language.sessionFailure = failure;
+        StackOverflowError retiring = new StackOverflowError("marking the failed rules retired");
+        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+        Faults.injectThen(Faults.Step.FAILURE_LOGGED, new StackOverflowError("logging the warning"));
+
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
+
+        assertSame(failure, thrown.get(), "the load's own fatal error isn't what load() threw");
+        assertArrayEquals(new Throwable[] {retiring}, failure.getSuppressed(), "the retire failure isn't kept");
+        assertEquals(0, retireAgainLines(logs), "the line is lost: " + logs);
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
     @DisplayName("#893 load: a load whose making of copies throws a fatal error, and whose retiring then fails, throws"
             + " its own fatal error, carrying the retire failure")
     void aLoadsOwnFatalErrorComesBeforeARetireFailure() {

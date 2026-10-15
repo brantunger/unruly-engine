@@ -82,6 +82,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * #695: a copy given back to retired rules while a run of them waits for one is kept for it, and if no run takes it,
  * the last run to leave closes it, and gets the fatal {@code Error} from that, even a run that stopped waiting.
  * </p>
+ *
+ * <p>
+ * #1217: an overflow in the call that logs why a copy couldn't be kept loses the line, not the copy's closing or the
+ * queue's fatal {@code Error}.
+ * </p>
  */
 @DisplayName("closing a rule list closes every session and then the compilers, and throws the first fatal Error")
 class CloseEverySessionTest {
@@ -1196,6 +1201,31 @@ class CloseEverySessionTest {
         assertEquals(List.of("session 1"), compiler.closed);
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later"
                 + " run, so its sessions were closed: queue full"), outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a copy given back that the idle queue can't take, whose warning then overflows as it's logged, is"
+            + " closed, and the queue's fatal Error still returned, without the line (#1217)")
+    void overflowLoggingAKeepFailureLosesOnlyTheLine() throws InterruptedException, TimeoutException {
+        OutOfMemoryError fatal = new OutOfMemoryError("keeping the copy");
+        RecordingCompiler compiler = new RecordingCompiler();
+        FailingQueue idle = new FailingQueue();
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        idle.addFailure.set(fatal);
+        AtomicReference<Error> returned = new AtomicReference<>();
+        Outcome<Throwable> outcome;
+        try {
+            Faults.inject(Faults.Step.FAILURE_LOGGED, 1, new StackOverflowError());
+            outcome = capture(() -> returned.set(rules.release(copy)));
+        } finally {
+            Faults.clear();
+        }
+
+        assertNull(outcome.thrown(), "the overflow in the log call isn't what the run gets");
+        assertSame(fatal, returned.get());
+        assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
+        assertEquals(List.of(), outcome.lines("WARN"), "the line is lost: " + outcome.logs());
     }
 
     @Test

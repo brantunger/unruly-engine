@@ -29,6 +29,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -44,9 +46,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * too (#1066, #1093), and those that the JVM's first load and first run would otherwise read from the engine's jar or
  * class directory (#1210). So are the JDK's classes that a first read of a generic type or of a method's annotations,
  * or a first reflective call of a native method, initializes, in a language's load or run or a write through a generic
- * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). In a native
- * image, the classes it can only name are left to the image, which can't look a name up that it has no metadata for,
- * and no method is read. A language's own classes are its to initialize, in
+ * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). So is a run's
+ * first change to the JDK's queue that a rule set keeps its idle copies in, which initializes nothing but links the
+ * queue's compare-and-set call sites, and which, overflowing deep in a stack after the queue has changed, could lose a
+ * copy taken from it or close one left in it: a queue of this class's own is built, added to, counted and emptied
+ * (#1217). In a native image, the classes it can only name are left to the image, which can't look a name up that it
+ * has no metadata for, and no method is read. A language's own classes are its to initialize, in
  * {@link ExpressionLanguage#prepare()}, which {@link #prepare(Collection)} calls with room made for it in the same way.
  *
  * <p>
@@ -119,6 +124,18 @@ final class RunClasses {
             Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
             RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                     rule.toBuilder().ruleName("b").priority(1).build())));
+            // What a run does with the JDK's queue that a rule set keeps its idle copies in: each change to it is a
+            // compare-and-set through a VarHandle, whose call site the JVM links the first time it runs, which can
+            // overflow deep in a stack after the queue has changed, losing a copy taken from it or closing one left in
+            // it (#1217). So a queue of its own is built from two items, as a rule set builds the queue of its open
+            // compilers, which links each to the next, then given two more, as the second add is the first to move the
+            // queue's tail, counted, and polled as many times as it counted, which empties it and moves its head.
+            Queue<Rule> queue = new ConcurrentLinkedQueue<>(List.of(rule, rule));
+            queue.add(rule);
+            queue.add(rule);
+            for (int left = queue.size(); left > 0; left--) {
+                queue.poll();
+            }
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
             initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
