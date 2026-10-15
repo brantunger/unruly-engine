@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.31.0](https://github.com/brantunger/unruly-engine/compare/v2.30.17...v2.31.0) (2026-10-15)
+
+
+### Features
+
+* let a condition or an action read the instant its run read from the engine's clock, and the run's tags, from its context ([#1230](https://github.com/brantunger/unruly-engine/issues/1230)) ([a7d5f7e](https://github.com/brantunger/unruly-engine/commit/a7d5f7e1e0b97b2d4dfb686d2d2690f7d033c69b))
+
 ## [2.30.17](https://github.com/brantunger/unruly-engine/compare/v2.30.16...v2.30.17) (2026-10-15)
 
 
