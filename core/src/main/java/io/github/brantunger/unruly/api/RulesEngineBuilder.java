@@ -698,7 +698,10 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * The instant a run read is its {@link RunContext#startedAt()}, which listeners get, and its
-     * {@link RunResult#startedAt()}, so an audit record can say what time judged the windows.
+     * {@link RunResult#startedAt()}, so an audit record can say what time judged the windows. Its conditions and
+     * actions read the same instant as
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#startedAt() EvaluationContext.startedAt()},
+     * so a condition that compares against the current time agrees with the windows, and with a fixed clock.
      * </p>
      *
      * @param clock The clock

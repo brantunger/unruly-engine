@@ -4,7 +4,7 @@ How to implement `ExpressionLanguage` so rules can be written in a language of y
 when, and on which thread.
 
 **Who it's for:** language authors.
-**You'll be able to:** implement the four interfaces, report compile errors the way the engine expects, read facts of
+**You'll be able to:** implement the four interfaces, report compile errors as the engine expects, read facts of
 any shape, keep state in sessions or for one run, and [package](packaging.md) the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
 [Compiled copies](../compiled-copies.md). Moving a language from 1.x?
@@ -163,7 +163,7 @@ wrapped in your own exception. Keep caught exceptions as causes. A condition ret
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
-`FactProperties.read`'s own `IllegalStateException` around such a failure is safe to let through as it is.
+`FactProperties.read`'s own `IllegalStateException` around such a failure is safe to let through.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
 `imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
@@ -200,27 +200,26 @@ return new CompiledCondition() {
 };
 ```
 
-The engine calls `evaluateWithDetail`, once per rule it evaluates, and never `evaluate` itself. The default
+The engine calls `evaluateWithDetail`, once per rule it evaluates, and never `evaluate`. The default
 returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
 `evaluate` works unchanged.
 
 Since 2.3.0, `ConditionResult`s with equal values and details are equal, by the detail's own `equals`, so an array
 compares by identity. `toString()` prints the call that makes it, such as `ConditionResult.of(true, <detail>)`.
 
-Keep `evaluate` returning the same value: a condition that wraps yours, or your own tests, may call it. The kit's
+Keep `evaluate` returning the same value: a condition that wraps yours, or your tests, may call it. The kit's
 `evaluateAgreesWithDetail` check fails a condition whose two methods disagree.
 
-The detail can be any object, or `null`. The application reads it as
-[`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports) on the run result. The engine records it for every
-rule it evaluates, so keep it cheap to build. It's kept only with a `Boolean` value, and `afterEvaluate` doesn't receive
-it.
+The detail can be any object, or `null`; the application reads it as
+[`RuleEvaluation.detail()`](../run-results.md#-what-a-run-reports). The engine records it for every rule it evaluates,
+so keep it cheap to build. It's kept only with a `Boolean` value, and `afterEvaluate` doesn't receive it.
 
 - **Don't return the session, or hold it.** Sessions are closed when their copy is retired, and reused by later runs.
 - **Keep it usable after `close()`.** A run result may outlive later runs and `close()`, so the detail's
   `toString()` must still give the same text.
 
 > [!WARNING]
-> A condition that wraps another one must override `evaluateWithDetail` and forward it. A lambda implements only
+> A condition that wraps another must override `evaluateWithDetail` and forward it. A lambda implements only
 > `evaluate`, so the default answers with no detail, and the wrapped condition's detail is silently dropped.
 
 ### Preparing the language's classes
@@ -382,8 +381,8 @@ An action that changes `output` in place returns `ActionResult.done()`. A langua
 `NullPointerException`, an empty one `IllegalArgumentException`, and `null` values are allowed.
 
 The engine sets each property in map order after the action returns and passes its cancellation check, with its
-`OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached the same way
-`FactProperties` reaches a getter. It widens a boxed primitive only as Java does, and only when no setter takes it as
+`OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached as `FactProperties`
+reaches a getter. It widens a boxed primitive only as Java does, and only when no setter takes it as
 is, so a `Long` never reaches an `int` setter; see
 [The output object](../engines-and-runs.md#-the-output-object).
 
@@ -462,10 +461,13 @@ Since 2.9.0, `timeLeft()` is the time to the run's deadline, as the engine measu
 `Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`
 without a timeout. None is required.
 
-Since 2.28.0, a runtime stopped only from another thread, such as by a flag, needs no timer of its
-own: `onCancel(action)` runs `action` once when the run passes its deadline, unless you close the `CancelRegistration`
-it returns first. It never runs for an interrupt, nor without a deadline. If the deadline has passed,
-it runs on your thread before `onCancel` returns.
+Since 2.31.0, `startedAt()` and `tags()` are the run's
+[`RunContext.startedAt()` and `tags()`](../engines-and-runs.md#-choosing-which-rules-a-run-uses). Take "now" from
+`startedAt()`, not `Instant.now()`, so a fixed clock reaches your expressions too.
+
+Since 2.28.0, a runtime stopped only from another thread, such as by a flag, needs no timer: `onCancel(action)` runs
+`action` once when the run passes its deadline, unless its `CancelRegistration` is closed first. It never runs for an
+interrupt, nor without a deadline. If the deadline has passed, it runs on your thread before `onCancel` returns.
 
 Otherwise it runs while your expression does, on a [reused](#-thread-safety) platform thread without the run's
 thread-locals or context class loader: keep it thread-safe and short. What it throws, or one still running after a
@@ -538,7 +540,7 @@ returns. Around any other blocking call, your runtime must restore it, as above,
 | `ExpressionCompiler.close()` | Never runs while any of the above does |
 
 `newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
-condition and action of your language in a run gets that copy's session. Return `Session.none()` when your compiled
+expression of your language in a run gets that copy's session. Return `Session.none()` when your compiled
 expressions keep no state while they run, and a new session when they do, such as a single-threaded interpreter
 context. A rule list whose languages all return `Session.none()` needs no copies: its runs share one set of sessions,
 with no [copy limit](../compiled-copies.md#-limiting-the-copies). Values kept with `runScoped` need no session.
@@ -559,10 +561,10 @@ See [A fatal error while closing](../error-handling.md#-a-fatal-error-while-clos
 
 ### Warming up a session
 
-An engine built with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) makes its copies during
-`load()`, and passes each new session to `warmUp(Session)` before any run uses it. Override it to do there what your
-session would otherwise do on its first runs, such as compiling expressions. By default it does nothing, and
-the copies are still made. MVEL compiles every condition and action into the session.
+An engine built with [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) passes each session `load()`
+makes to `warmUp(Session)` before any run uses it. Override it to do there what your session would otherwise do on its
+first runs, such as compiling expressions. By default it does nothing, and the copies are still made. MVEL compiles
+every condition and action into the session.
 
 - **When:** on the `load()` thread, one session after another, after every expression has compiled.
 - **Not called:** for `Session.none()`, for a session a run creates, or by `validate()`, which makes no copies.

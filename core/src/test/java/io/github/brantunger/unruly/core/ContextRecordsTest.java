@@ -155,6 +155,113 @@ class ContextRecordsTest {
     }
 
     @Test
+    @DisplayName("#1128: an evaluation or action context needs the run's start and tags, and names the one that is"
+            + " null")
+    void contextsNeedAStartAndTags() {
+        Instant now = Instant.now();
+        Map<String, Object> output = new HashMap<>();
+        RunScope scope = new RunScope();
+
+        assertAll(
+                () -> assertNullMessage("runStartedAt must not be null",
+                        () -> new EngineEvaluationContext(Map.of(), Deadline.NONE, scope, null, Set.of())),
+                () -> assertNullMessage("runTags must not be null",
+                        () -> new EngineEvaluationContext(Map.of(), Deadline.NONE, scope, now, null)),
+                () -> assertNullMessage("runStartedAt must not be null",
+                        () -> new EngineActionContext(Map.of(), output, Deadline.NONE, scope, null, Set.of())),
+                () -> assertNullMessage("runTags must not be null",
+                        () -> new EngineActionContext(Map.of(), output, Deadline.NONE, scope, now, null)),
+                () -> assertNullMessage("startedAt must not be null",
+                        () -> new EngineEvaluationContext(Map.of(), (Instant) null, null, Set.of())),
+                () -> assertNullMessage("tags must not be null",
+                        () -> new EngineEvaluationContext(Map.of(), (Instant) null, now, null)),
+                () -> assertNullMessage("startedAt must not be null",
+                        () -> new EngineActionContext(Map.of(), output, (Instant) null, null, Set.of())),
+                () -> assertNullMessage("tags must not be null",
+                        () -> new EngineActionContext(Map.of(), output, (Instant) null, now, null)),
+                () -> assertNullMessage("facts must not be null",
+                        () -> new EngineEvaluationContext(null, (Instant) null, now, Set.of())),
+                () -> assertNullMessage("facts must not be null",
+                        () -> new EngineActionContext(null, output, (Instant) null, now, Set.of())));
+    }
+
+    @Test
+    @DisplayName("#1128: a context created from a start and tags gives them back, the tags as the set it was given")
+    void contextsFromAStartAndTags() {
+        Instant start = Instant.parse("2027-06-01T09:00:00Z");
+        Instant deadline = Instant.now().plusSeconds(60);
+        Set<String> tags = Set.of("eu");
+        Map<String, Object> output = new HashMap<>();
+
+        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("x", 1), deadline, start, tags);
+        EngineActionContext action = new EngineActionContext(Map.of("x", 1), output, deadline, start, tags);
+
+        assertAll(
+                () -> assertEquals(start, evaluation.startedAt()),
+                () -> assertSame(tags, evaluation.tags()),
+                () -> assertEquals(start, action.startedAt()),
+                () -> assertSame(tags, action.tags()),
+                () -> assertEquals(deadline, evaluation.deadline()),
+                () -> assertEquals(deadline, action.deadline()),
+                () -> assertEquals(Map.of("x", 1), evaluation.facts()),
+                () -> assertEquals(Map.of("x", 1), action.facts()),
+                () -> assertSame(output, action.output()),
+                () -> assertNotSame(evaluation.runScope(), action.runScope(), "each is a run of its own"),
+                () -> assertEquals(start, EngineEvaluationContext.startedAt(evaluation)),
+                () -> assertSame(tags, EngineEvaluationContext.tags(action)));
+        // The fact names are checked as the other test-kit constructors check them.
+        Map<String, Object> blank = new HashMap<>(Map.of("x", 1));
+        blank.put(" ", 2);
+        assertEquals("fact name must not be blank", assertThrows(IllegalArgumentException.class,
+                () -> new EngineEvaluationContext(blank, deadline, start, tags)).getMessage());
+        assertEquals("fact name must not be blank", assertThrows(IllegalArgumentException.class,
+                () -> new EngineActionContext(blank, output, deadline, start, tags)).getMessage());
+    }
+
+    @Test
+    @DisplayName("#1128: a context created without a start or tags started now, by the system clock, and has none")
+    void contextsWithoutAStartOrTags() {
+        Instant before = Instant.now();
+        Map<String, Object> output = new HashMap<>();
+
+        List<EvaluationContext> contexts = List.of(new EngineEvaluationContext(Map.of(), Deadline.NONE),
+                new EngineEvaluationContext(Map.of(), Deadline.NONE, new RunScope()),
+                new EngineEvaluationContext(Map.of(), (Instant) null),
+                new EngineActionContext(Map.of(), output, Deadline.NONE),
+                new EngineActionContext(Map.of(), output, Deadline.NONE, new RunScope()),
+                new EngineActionContext(Map.of(), output, (Instant) null));
+
+        Instant after = Instant.now();
+        for (EvaluationContext context : contexts) {
+            Instant startedAt = context.startedAt();
+            assertFalse(startedAt.isBefore(before) || startedAt.isAfter(after), context + " started at " + startedAt);
+            assertEquals(Set.of(), context.tags());
+        }
+    }
+
+    @Test
+    @DisplayName("#1128: an action context in the same run as another has its start and tags, the tags as the same set")
+    void sameRunActionContextCopiesTheStartAndTags() {
+        Instant start = Instant.parse("2027-06-01T09:00:00Z");
+        Set<String> tags = Set.of("eu", "retail");
+        Map<String, Object> output = new HashMap<>();
+        RunScope scope = new RunScope();
+        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("x", 1), Deadline.NONE, scope, start,
+                tags);
+
+        EngineActionContext action = new EngineActionContext(evaluation, output);
+        EngineActionContext next = new EngineActionContext(action, output);
+
+        assertAll(
+                () -> assertEquals(start, action.startedAt()),
+                () -> assertSame(tags, action.tags()),
+                () -> assertEquals(start, next.startedAt()),
+                () -> assertSame(tags, next.tags()),
+                () -> assertSame(scope, next.runScope()),
+                () -> assertEquals(Map.of("x", 1), next.facts()));
+    }
+
+    @Test
     @DisplayName("a run context names the argument that is null")
     void runContextNeedsItsArguments() {
         Instant now = Instant.now();

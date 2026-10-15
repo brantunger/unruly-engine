@@ -90,8 +90,8 @@ The context says what chose the rules: `tags()` is the run's `RunOptions.tags()`
 `startedAt()` is the instant its windows were judged at, from the
 [engine's clock](engines-and-runs.md#the-validity-window-and-the-engines-clock). Every run callback gets both, even
 `onRunError` for a run stopped while it waited for a compiled copy. A nested run doesn't inherit them: it reads the
-clock again, and has only the tags its own options give it. Conditions and actions can't read either value, because
-neither is on `EvaluationContext` or `ActionContext`.
+clock again, and has only the tags its own options give it. Since 2.31.0, a condition or action reads the same two
+values from its [context](languages/custom.md#-stopping-a-run).
 
 Compile errors from `load()` are never reported to listeners; they're thrown directly.
 

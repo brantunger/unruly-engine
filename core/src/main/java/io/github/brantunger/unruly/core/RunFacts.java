@@ -49,8 +49,8 @@ record RunFacts(Map<String, Object> values, Map<String, Object> forListeners, En
      */
     static RunFacts of(Map<String, Object> values, Map<String, Object> forListeners, Deadline deadline, long runId,
                        RunContext parent, RunTally tally, RuleSelection selection, LoggedFailures.Runs runs) {
-        return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline, new RunScope()),
-                deadline, runId, parent, tally, selection, runs);
+        return new RunFacts(values, forListeners, new EngineEvaluationContext(values, deadline, new RunScope(),
+                selection.startedAt(), selection.tags()), deadline, runId, parent, tally, selection, runs);
     }
 
     // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which

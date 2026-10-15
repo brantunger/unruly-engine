@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -188,6 +189,91 @@ class LanguageTestContextsTest {
         assertTrue(ex.getMessage().startsWith("The facts passed to an action are read-only; 'y'"), ex.getMessage());
     }
 
+    @Test
+    @DisplayName("#1128: a context created with a start and tags gives them as a run does: the tags sorted,"
+            + " unmodifiable, and copied")
+    void evaluationAndActionWithAStartAndTags() {
+        Instant start = Instant.parse("2027-06-01T09:00:00Z");
+        Instant deadline = Instant.now().plusSeconds(60);
+        Set<String> tags = new HashSet<>(List.of("retail", "eu"));
+        Map<String, Object> output = new HashMap<>();
+
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1), deadline, start, tags);
+        ActionContext action = LanguageTestContexts.action(Map.of("x", 1), output, null, start, tags);
+        tags.add("uk");
+
+        assertAll(
+                () -> assertEquals(start, evaluation.startedAt()),
+                () -> assertEquals(start, action.startedAt()),
+                () -> assertEquals(List.of("eu", "retail"), List.copyOf(evaluation.tags())),
+                () -> assertEquals(List.of("eu", "retail"), List.copyOf(action.tags())),
+                () -> assertThrows(UnsupportedOperationException.class, () -> evaluation.tags().add("uk")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> action.tags().remove("eu")),
+                () -> assertEquals(deadline, evaluation.deadline()),
+                () -> assertNull(action.deadline()),
+                () -> assertEquals(Map.of("x", 1), evaluation.facts()),
+                () -> assertSame(output, action.output()),
+                () -> assertEquals(Set.of(),
+                        LanguageTestContexts.evaluation(Map.of(), null, start, Set.of()).tags()),
+                () -> assertEquals(Set.of(),
+                        LanguageTestContexts.action(Map.of(), output, null, start, Set.of()).tags()));
+    }
+
+    @Test
+    @DisplayName("#1128: a null or blank tag is rejected as RunOptions.withTags rejects it, with its message")
+    void nullOrBlankTagRejected() {
+        Set<String> withNull = new HashSet<>(Arrays.asList("eu", null));
+        Set<String> withBlank = Set.of("eu", " ");
+        Map<String, Object> output = new HashMap<>();
+
+        for (Set<String> bad : List.of(withNull, withBlank)) {
+            String run = assertThrows(IllegalArgumentException.class,
+                    () -> RunOptions.defaults().withTags(bad)).getMessage();
+            assertAll(bad.toString(),
+                    () -> assertTrue(run.startsWith("tags must not contain "), run),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.evaluation(Map.of(), null, Instant.EPOCH, bad)).getMessage()),
+                    () -> assertEquals(run, assertThrows(IllegalArgumentException.class,
+                            () -> LanguageTestContexts.action(Map.of(), output, null, Instant.EPOCH, bad))
+                            .getMessage()));
+        }
+    }
+
+    @Test
+    @DisplayName("#1128: a context created without a start or tags started when it was created, by the system clock,"
+            + " and has no tags")
+    void contextsWithoutAStartOrTags() {
+        Instant before = Instant.now();
+        Map<String, Object> output = new HashMap<>();
+        List<EvaluationContext> contexts = List.of(LanguageTestContexts.evaluation(Map.of()),
+                LanguageTestContexts.evaluation(Map.of(), Instant.MAX), LanguageTestContexts.action(Map.of(), output),
+                LanguageTestContexts.action(Map.of(), output, Instant.MAX));
+        Instant after = Instant.now();
+
+        for (EvaluationContext context : contexts) {
+            Instant startedAt = context.startedAt();
+            assertFalse(startedAt.isBefore(before) || startedAt.isAfter(after), context + " started at " + startedAt);
+            assertEquals(Set.of(), context.tags());
+        }
+    }
+
+    @Test
+    @DisplayName("#1128: an action context in the same run as another has its start and tags, the tags as the same set")
+    void actionInTheSameRunHasItsStartAndTags() {
+        Instant start = Instant.parse("2027-06-01T09:00:00Z");
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of(), null, start, Set.of("eu"));
+
+        ActionContext action = LanguageTestContexts.actionInRun(evaluation, new HashMap<>());
+        ActionContext next = LanguageTestContexts.actionInRun(action, new HashMap<>());
+
+        assertAll(
+                () -> assertEquals(start, action.startedAt()),
+                () -> assertEquals(start, next.startedAt()),
+                () -> assertSame(evaluation.tags(), action.tags()),
+                () -> assertSame(evaluation.tags(), next.tags()),
+                () -> assertEquals(Set.of("eu"), next.tags()));
+    }
+
     /** A value a test keeps for a run, which records its close() and then throws what it was given, if anything. */
     private record Closeable(String name, List<String> closed, Throwable failure) implements AutoCloseable {
 
@@ -346,6 +432,20 @@ class LanguageTestContextsTest {
                 () -> assertNullMessage("output must not be null",
                         () -> LanguageTestContexts.actionInRun(LanguageTestContexts.evaluation(Map.of()), null)),
                 () -> assertNullMessage("output must not be null", () -> LanguageTestContexts.action(Map.of(), null)),
+                () -> assertNullMessage("facts must not be null",
+                        () -> LanguageTestContexts.evaluation(null, null, Instant.EPOCH, Set.of())),
+                () -> assertNullMessage("startedAt must not be null",
+                        () -> LanguageTestContexts.evaluation(Map.of(), null, null, Set.of())),
+                () -> assertNullMessage("tags must not be null",
+                        () -> LanguageTestContexts.evaluation(Map.of(), null, Instant.EPOCH, null)),
+                () -> assertNullMessage("facts must not be null",
+                        () -> LanguageTestContexts.action(null, new HashMap<>(), null, Instant.EPOCH, Set.of())),
+                () -> assertNullMessage("output must not be null",
+                        () -> LanguageTestContexts.action(Map.of(), null, null, Instant.EPOCH, Set.of())),
+                () -> assertNullMessage("startedAt must not be null",
+                        () -> LanguageTestContexts.action(Map.of(), new HashMap<>(), null, null, Set.of())),
+                () -> assertNullMessage("tags must not be null",
+                        () -> LanguageTestContexts.action(Map.of(), new HashMap<>(), null, Instant.EPOCH, null)),
                 () -> assertNullMessage("context must not be null", () -> LanguageTestContexts.endRun(null)),
                 () -> assertNullMessage("packageImports must not be null",
                         () -> LanguageTestContexts.compile(null, Set.of(), loader)),

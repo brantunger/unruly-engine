@@ -82,17 +82,17 @@ engine closes it after a later `load()` or `close()` replaces the rule list, onc
 The expression that decides whether a rule [matches](#match-and-fire). It must evaluate to a boolean; `null` or any
 other type fails the rule. It can't assign to a fact: a language that passes the
 [contract test kit](#contract-test-kit), and can express an assignment, rejects that at `load()` or when the rule
-runs, and the engine itself rejects any write to the facts. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
+runs, and the engine rejects any write to the facts. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Contract test kit
 
-`ExpressionLanguageContractTest`, in the `unruly-engine-test` artifact, which a language's own test extends to check the
+`ExpressionLanguageContractTest`, in the `unruly-engine-test` artifact, which a language's test extends to check the
 promises every language must keep. The same artifact has `LanguageTestContexts` for testing a compiler without an
 engine. See [Testing with the contract kit](languages/contract-kit.md).
 
 ### Copies at load
 
-The [compiled copies](#compiled-copy) `load()` makes itself, before it swaps the new rules in, on an engine built with
+The [compiled copies](#compiled-copy) `load()` makes, before it swaps the new rules in, on an engine built with
 `copiesAtLoad(n)`; by default it makes none. Each copy's sessions are warmed up with `ExpressionCompiler.warmUp`, and
 runs borrow the copies ready instead of making them. See
 [Making copies at load](compiled-copies.md#making-copies-at-load).
@@ -294,8 +294,9 @@ rule matched, fire actions and return. `run()` throws `IllegalStateException` be
 
 The `RunContext` that identifies one run to listeners: `runId()`, `parent()`, `matchPolicy()`, `ruleSetChecksum()`,
 `facts()`, `tags()` and `startedAt()`. The last two are the [tags](#tag) the run was given, and the instant it judged
-every [validity window](#validity-window) at. It's sealed: its one implementation is internal, and the engine creates
-the contexts it passes. See [Callbacks](listeners-and-logging.md#-callbacks).
+every [validity window](#validity-window) at; since 2.31.0, an expression's `EvaluationContext` has both. It's
+sealed: the engine alone implements it and creates the contexts it passes. See
+[Callbacks](listeners-and-logging.md#-callbacks).
 
 ### Run options
 
@@ -309,8 +310,8 @@ setting; `RunOptions.defaults()` changes nothing. See [Stopping a run](stopping-
 
 The `RunResult` that `runWithResult(...)` returns: `output()`, `firedRules()` in firing order, `evaluations()` with
 every rule's outcome, `ruleSetChecksum()`, and the run's `tags()` and `startedAt()`, as on the
-[run context](#run-context). Its output is `null` exactly when no rule fired; a failed run throws instead of returning
-one. See [What a run reports](run-results.md#-what-a-run-reports).
+[run context](#run-context). Its output is `null` exactly when no rule fired; a failed run throws instead. See
+[What a run reports](run-results.md#-what-a-run-reports).
 
 ### Session
 

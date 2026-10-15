@@ -78,7 +78,8 @@ public sealed interface RunContext permits io.github.brantunger.unruly.core.Engi
      * Returns the tags the run was given with {@link RunOptions#withTags(java.util.Collection)}: the run uses only the
      * rules that carry at least one of them, and reports the others as
      * {@link RuleEvaluation.Outcome#SKIPPED SKIPPED}. With {@link #startedAt()} and the {@link #ruleSetChecksum()}, it
-     * tells which rules the run uses, so an audit record can say why one was skipped.
+     * tells which rules the run uses, so an audit record can say why one was skipped. The run's conditions and actions
+     * get the same set as {@link io.github.brantunger.unruly.api.language.EvaluationContext#tags()}.
      *
      * @return The run's {@link RunOptions#tags()}: in {@link String} order, unmodifiable, and empty if the run uses
      *         every rule
@@ -89,7 +90,9 @@ public sealed interface RunContext permits io.github.brantunger.unruly.core.Engi
      * Returns when the run started, by the engine's {@link RulesEngineBuilder#clock(java.time.Clock) clock}: the one
      * instant the run read from it, which judged every rule's {@link Rule#getValidFrom() validFrom} and
      * {@link Rule#getValidTo() validTo}. A fixed clock gives every run the same instant. It isn't comparable to
-     * {@link RuleSetInfo#loadedAt()} or the run's deadline, which are measured with the system clock.
+     * {@link RuleSetInfo#loadedAt()} or the run's deadline, which are measured with the system clock. The run's
+     * conditions and actions get the same instant as
+     * {@link io.github.brantunger.unruly.api.language.EvaluationContext#startedAt()}.
      *
      * @return The instant the run started at
      */

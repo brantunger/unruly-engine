@@ -1603,9 +1603,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // The context gives the action a read-only view: an action changes the output object, never the facts other
         // rules see.
         // Not shared like the evaluation context: a first-match engine builds a fresh output object per rule. The
-        // run's values are shared, so an action finds what the run's conditions kept.
+        // run's values are shared, so an action finds what the run's conditions kept, and it has the run's start and
+        // tags as the conditions do.
+        EngineEvaluationContext evaluation = facts.evaluation();
         ActionContext context = new EngineActionContext(facts.values(), outputResult, facts.deadline(),
-                facts.evaluation().runScope());
+                evaluation.runScope(), evaluation.runStartedAt(), evaluation.runTags());
         ActionResult result;
         try {
             // A call-out of its own, as the condition is: what a run the rule's condition started logged isn't below
