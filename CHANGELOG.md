@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.14](https://github.com/brantunger/unruly-engine/compare/v2.30.13...v2.30.14) (2026-10-15)
+
+
+### Bug Fixes
+
+* count a rule set's runs with compare-and-set loops instead of lambdas, so a deep first run under -Xcomp no longer links a lambda while leaving, an overflow that kept a retired rule set from ever closing its compilers ([#1218](https://github.com/brantunger/unruly-engine/issues/1218)) ([e41c4e4](https://github.com/brantunger/unruly-engine/commit/e41c4e4f1a51dfdf3e19bcd3a2ea3c1527f79508))
+
 ## [2.30.13](https://github.com/brantunger/unruly-engine/compare/v2.30.12...v2.30.13) (2026-10-15)
 
 
