@@ -145,7 +145,7 @@ class FirstRunClassInitializationTest {
                     LanguageRegistry.class, ImportResolver.class, LanguageNames.Problem.class, FactNames.Problem.class,
                     RuleListCompiler.Mode.class, LoggedFailures.class, Faults.Step.class, Failures.class,
                     ExpressionKind.class, InvalidExpressionException.Issue.Severity.class, RuleSet.class,
-                    FlightRecorderEvents.class, RunEvent.class, RuleEvent.class, Cancellation.class,
+                    OneStepStack.class, FlightRecorderEvents.class, RunEvent.class, RuleEvent.class, Cancellation.class,
                     Cancellation.Reason.class, Deadline.class, RuleSet.Kind.class, RuleSet.Held.class, Closing.class,
                     Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                     ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,

@@ -87,6 +87,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * #1217: an overflow in the call that logs why a copy couldn't be kept loses the line, not the copy's closing or the
  * queue's fatal {@code Error}.
  * </p>
+ *
+ * <p>
+ * #1220: a borrow or a give-back that overflows as it changes the idle stack, before the stack has changed, loses no
+ * copy and closes none twice. The stack is last in first out, so the copies made at load are closed newest first.
+ * </p>
  */
 @DisplayName("closing a rule list closes every session and then the compilers, and throws the first fatal Error")
 class CloseEverySessionTest {
@@ -229,6 +234,17 @@ class CloseEverySessionTest {
         return IntStream.rangeClosed(from, to).mapToObj(n -> "session " + n).toList();
     }
 
+    // The sessions from the newest down to session 1: the idle copies are a stack, so they're closed newest first.
+    private static List<String> newestFirst(int newest) {
+        return IntStream.rangeClosed(1, newest).mapToObj(n -> "session " + (newest + 1 - n)).toList();
+    }
+
+    private static List<String> newestFirstThenCompiler(int newest) {
+        List<String> closed = new ArrayList<>(newestFirst(newest));
+        closed.add("compiler");
+        return closed;
+    }
+
     private static List<String> sessionsThenCompiler(int from, int to) {
         List<String> closed = new ArrayList<>(sessions(from, to));
         closed.add("compiler");
@@ -353,6 +369,12 @@ class CloseEverySessionTest {
                 .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(Long.MAX_VALUE).withIdle(idle).build();
     }
 
+    /** The same rule set, whose idle copies wait in the stack the engine keeps them in. */
+    private static RuleSet ruleSet(RecordingCompiler compiler, CopyPermits permits) {
+        return TestRuleSets.ruleSet(List.of(), Map.of(LANGUAGE, compiler))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(Long.MAX_VALUE).build();
+    }
+
     @Test
     @DisplayName("close() with two sessions that throw a fatal Error closes the third and then the compiler, and"
             + " throws the first, carrying the second")
@@ -362,20 +384,20 @@ class CloseEverySessionTest {
         RecordingLanguage language = new RecordingLanguage();
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
-        language.sessionCloseFailures.put(1, first);
+        language.sessionCloseFailures.put(3, first);
         language.sessionCloseFailures.put(2, second);
 
         Outcome<Throwable> outcome = capture(engine::close);
 
         assertSame(first, outcome.thrown());
-        assertEquals(sessionsThenCompiler(1, 3), language.closed, "every session, then the compiler, once");
+        assertEquals(newestFirstThenCompiler(3), language.closed, "every session, then the compiler, once");
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
                 + "' expression language failed to close a session: second"),
                 "the second is logged: " + outcome.logs());
         assertArrayEquals(new Throwable[] {second}, first.getSuppressed());
         assertEquals(0, second.getSuppressed().length);
         engine.close();
-        assertEquals(sessionsThenCompiler(1, 3), language.closed, "closing again closes nothing more");
+        assertEquals(newestFirstThenCompiler(3), language.closed, "closing again closes nothing more");
     }
 
     @Test
@@ -387,14 +409,14 @@ class CloseEverySessionTest {
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("old"));
         // Only the old rules' sessions: the reload makes sessions 4 to 6 for the new ones.
-        language.sessionCloseFailures.put(1, first);
+        language.sessionCloseFailures.put(3, first);
         language.sessionCloseFailures.put(2, new OutOfMemoryError("second"));
         List<Rule> next = rules("new");
 
         Throwable thrown = capture(() -> engine.load(next)).thrown();
 
         assertSame(first, thrown);
-        assertEquals(sessionsThenCompiler(1, 3), language.closed, "every old session, then the old compiler, once");
+        assertEquals(newestFirstThenCompiler(3), language.closed, "every old session, then the old compiler, once");
         assertEquals("new", engine.rules().rules().get(0).getRuleName(), "the new rules stay loaded");
         assertEquals(Map.of("new", true), engine.run(new FactMap<>()));
     }
@@ -425,10 +447,10 @@ class CloseEverySessionTest {
 
         assertEquals(Map.of("r", true), output.get(), "the run finished normally");
         assertSame(fatal, closeThrew.get());
-        assertEquals(sessions(2, 5), closedWhenCloseReturned.get(),
+        assertEquals(newestFirst(4), closedWhenCloseReturned.get(),
                 "the idle copies, closed before close() returned; not the run's copy, nor the compiler");
-        List<String> expected = new ArrayList<>(sessions(2, 5));
-        expected.addAll(List.of("session 1", "compiler"));
+        List<String> expected = new ArrayList<>(newestFirst(4));
+        expected.addAll(List.of("session 5", "compiler"));
         assertEquals(expected, language.closed, "the run's copy and then the compiler, once the run gave it back");
     }
 
@@ -449,7 +471,7 @@ class CloseEverySessionTest {
                 fatal.getSuppressed()[0]);
         assertEquals("The '" + LANGUAGE + "' expression language failed to warm up a session: can't warm up",
                 loadFailure.getMessage());
-        assertEquals(sessionsThenCompiler(1, 2), language.closed, "both copies made, then the compiler");
+        assertEquals(newestFirstThenCompiler(2), language.closed, "both copies made, then the compiler");
     }
 
     @Test
@@ -468,7 +490,7 @@ class CloseEverySessionTest {
         assertSame(warmUp, thrown);
         assertArrayEquals(new Throwable[] {close}, warmUp.getSuppressed());
         assertEquals(0, close.getSuppressed().length);
-        assertEquals(sessionsThenCompiler(1, 2), language.closed);
+        assertEquals(newestFirstThenCompiler(2), language.closed);
     }
 
     @Test
@@ -519,7 +541,7 @@ class CloseEverySessionTest {
         assertEquals(1, fatal.getSuppressed().length);
         IllegalStateException refused = assertInstanceOf(IllegalStateException.class, fatal.getSuppressed()[0]);
         assertEquals("The engine is closed", refused.getMessage());
-        assertEquals(sessionsThenCompiler(1, 2), language.closed);
+        assertEquals(newestFirstThenCompiler(2), language.closed);
     }
 
     @Test
@@ -534,7 +556,7 @@ class CloseEverySessionTest {
         Throwable thrown = capture(engine::close).thrown();
 
         assertSame(fatal, thrown);
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
     }
 
     @Test
@@ -551,7 +573,7 @@ class CloseEverySessionTest {
         Throwable thrown = capture(engine::close).thrown();
 
         assertSame(session, thrown);
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
     }
 
     @Test
@@ -567,7 +589,7 @@ class CloseEverySessionTest {
         Throwable thrown = capture(engine::close).thrown();
 
         assertSame(fatal, thrown);
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
     }
 
     @Test
@@ -582,7 +604,7 @@ class CloseEverySessionTest {
         Outcome<Throwable> outcome = capture(engine::close);
 
         assertNull(outcome.thrown());
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
         assertTrue(outcome.logs().contains("failed to close a session: first"), outcome.logs());
         assertTrue(outcome.logs().contains("failed to close a session: second"), outcome.logs());
     }
@@ -607,7 +629,7 @@ class CloseEverySessionTest {
         }
 
         assertTrue(interrupted, "the interrupt inside the close failure was swallowed");
-        assertEquals(sessionsThenCompiler(1, 2), language.closed, "every session, then the compiler");
+        assertEquals(newestFirstThenCompiler(2), language.closed, "every session, then the compiler");
         assertTrue(logs.contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language failed to close"
                 + " a session: stuck"), logs);
     }
@@ -635,7 +657,7 @@ class CloseEverySessionTest {
 
         assertNull(outcome.thrown());
         assertTrue(interrupted, "the interrupt inside the close failure was swallowed");
-        assertEquals(sessionsThenCompiler(1, 2), language.closed, "every old session, then the old compiler");
+        assertEquals(newestFirstThenCompiler(2), language.closed, "every old session, then the old compiler");
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE + "' expression language"
                 + " failed to close a session: stuck"), outcome.logs());
         assertEquals(Map.of("new", true), engine.run(new FactMap<>()));
@@ -777,7 +799,7 @@ class CloseEverySessionTest {
         Outcome<Throwable> outcome = capture(engine::close);
 
         assertNull(outcome.thrown());
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
         assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "The '" + LANGUAGE
                 + "' expression language failed to close a session: raw"), outcome.logs());
     }
@@ -1226,6 +1248,60 @@ class CloseEverySessionTest {
         assertSame(fatal, returned.get());
         assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
         assertEquals(List.of(), outcome.lines("WARN"), "the line is lost: " + outcome.logs());
+    }
+
+    @Test
+    @DisplayName("a borrow that overflows as it takes an idle copy, before the idle stack has changed, closes nothing"
+            + " and gives back the permit, and the next run gets the same copy (#1220)")
+    void overflowTakingAnIdleCopyLeavesItIdle() throws InterruptedException, TimeoutException {
+        RecordingCompiler compiler = new RecordingCompiler();
+        CopyPermits permits = new CopyPermits(1);
+        RuleSet rules = ruleSet(compiler, permits);
+        RuleSet.Copy first = rules.borrow(Deadline.NONE);
+        assertNull(rules.release(first));
+        StackOverflowError overflow = new StackOverflowError();
+        Throwable thrown;
+        try {
+            Faults.inject(Faults.Step.STACK_CHANGING, 1, overflow);
+            thrown = thrownBy(() -> rules.borrow(Deadline.NONE));
+        } finally {
+            Faults.clear();
+        }
+
+        assertSame(overflow, thrown);
+        assertEquals(List.of(), compiler.closed, "nothing closed");
+        assertEquals(1, permits.available().availablePermits(), "the permit taken for it was given back");
+        RuleSet.Copy again = rules.borrow(Deadline.NONE);
+        assertSame(first.sessions(), again.sessions(), "the copy left idle, lent again");
+        assertEquals(1, compiler.sessionsMade.get());
+        assertNull(rules.release(again));
+        assertNull(rules.retire());
+        assertEquals(sessionsThenCompiler(1, 1), compiler.closed, "the copy closed once, then the compiler");
+    }
+
+    @Test
+    @DisplayName("a copy given back that overflows the idle stack before it has changed is closed once, the warning"
+            + " logged, and nothing returned (#1220)")
+    void overflowKeepingACopyClosesItOnce() throws InterruptedException, TimeoutException {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RuleSet rules = ruleSet(compiler, new CopyPermits(1));
+        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        AtomicReference<Error> returned = new AtomicReference<>();
+        Outcome<Throwable> outcome;
+        try {
+            Faults.inject(Faults.Step.STACK_CHANGING, 1, new StackOverflowError("keeping the copy"));
+            outcome = capture(() -> returned.set(rules.release(copy)));
+        } finally {
+            Faults.clear();
+        }
+
+        assertNull(outcome.thrown());
+        assertNull(returned.get(), "an overflow isn't fatal");
+        assertEquals(List.of("session 1"), compiler.closed, "the copy that couldn't be kept");
+        assertTrue(outcome.logs().contains("WARN " + ENGINE_LOGGER + "A copy of the rules couldn't be kept for a later"
+                + " run, so its sessions were closed:"), outcome.logs());
+        assertNull(rules.retire());
+        assertEquals(List.of("session 1", "compiler"), compiler.closed, "only the compiler, as no copy was kept");
     }
 
     @Test
@@ -2040,15 +2116,15 @@ class CloseEverySessionTest {
         RecordingLanguage language = new RecordingLanguage();
         RulesEngine<Map<String, Object>> engine = engine(language, 3);
         engine.load(rules("r"));
-        language.sessionCloseFailures.put(1, first);
+        language.sessionCloseFailures.put(3, first);
         language.sessionCloseFailures.put(2, cached);
-        language.sessionCloseFailures.put(3, cached);
+        language.sessionCloseFailures.put(1, cached);
 
         Throwable thrown = capture(engine::close).thrown();
 
         assertSame(first, thrown);
         assertArrayEquals(new Throwable[] {cached}, first.getSuppressed());
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
     }
 
     @Test
@@ -2060,13 +2136,13 @@ class CloseEverySessionTest {
         RecordingLanguage first = new RecordingLanguage();
         RulesEngine<Map<String, Object>> firstEngine = engine(first, 2);
         firstEngine.load(rules("r"));
-        first.sessionCloseFailures.put(1, one);
-        first.sessionCloseFailures.put(2, other);
+        first.sessionCloseFailures.put(2, one);
+        first.sessionCloseFailures.put(1, other);
         RecordingLanguage second = new RecordingLanguage();
         RulesEngine<Map<String, Object>> secondEngine = engine(second, 2);
         secondEngine.load(rules("r"));
-        second.sessionCloseFailures.put(1, other);
-        second.sessionCloseFailures.put(2, one);
+        second.sessionCloseFailures.put(2, other);
+        second.sessionCloseFailures.put(1, one);
         AtomicReference<Throwable> firstThrown = new AtomicReference<>();
         AtomicReference<Throwable> secondThrown = new AtomicReference<>();
 
@@ -2127,7 +2203,7 @@ class CloseEverySessionTest {
 
         assertSame(cached, thrown);
         assertEquals(0, cached.getSuppressed().length);
-        assertEquals(sessionsThenCompiler(1, 3), language.closed);
+        assertEquals(newestFirstThenCompiler(3), language.closed);
     }
 
     @Test
