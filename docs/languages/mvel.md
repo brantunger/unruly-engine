@@ -67,7 +67,7 @@ which names the value's type, not the output's.
 Inside a `def` function, `output = ...` doesn't fail: it creates a function-local variable, and
 later `output.put(...)` calls change the discarded object.
 
-Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates a variable local to the action:
+Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates an action-local variable:
 the fact keeps its value, which later rules see.
 
 A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
@@ -107,10 +107,10 @@ instead: `unknown class or illegal statement`, often naming `BigDecimal`.
 Write a nested class as `new Outer.Nested()` after importing `Outer` or its package, or as
 `new com.example.Outer$Nested()`: `new com.example.Outer.Nested()` fails at `run()` with `could not resolve class`.
 
-- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, is rejected with
-  `IllegalArgumentException` from `build()`.
-- So is a string over 1,000 characters or 64 parts, before any lookup.
-- So is an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
+- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, fails `build()` with
+  `IllegalArgumentException`.
+- So does a string over 1,000 characters or 64 parts, before any lookup.
+- So does an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
 - Imported names, inline ones too, can't be [fact names](mvel-fact-names.md) a rule's text holds.
@@ -139,7 +139,7 @@ rule; so does this one for a name over about 1,000 bytes
 
 ## 📁 Facts in MVEL
 
-A rule refers to a fact by its name, as a variable; see [Facts](../facts.md).
+A rule reads a fact by its name, as a variable; see [Facts](../facts.md).
 `applicant.creditScore` reads a public getter, a record accessor or a public field. A
 misspelled property, or a private field with no getter, fails the run with
 `could not access: creditScor; in class: com.example.Applicant`.
@@ -220,8 +220,7 @@ doesn't catch a condition that isn't a boolean; the engine checks that for every
   | `def bonus(score) { score / 100 }` | Not possible: write the expression inline |
 
 - Any other option for `mvel`, or a value other than `true` or `false`, fails `load()` once MVEL compiles the rule list
-  (any MVEL rule, or an empty list with MVEL as the default), so a typo can't leave strong
-  typing silently off.
+  (any MVEL rule, or an empty list with MVEL as the default), so a typo can't leave it silently off.
 
 ## 🚨 Errors when rules load
 
@@ -310,15 +309,15 @@ different: `load()` compiles every condition and action into it, reached or not,
 `load()` compiled. Its accessors are still built as it runs.
 
 An [extra copy](../glossary.md#extra-copy) pays that price and throws it away when the run ends. A rule that
-keeps making them, by starting a run of the same engine on another thread under a full
+keeps making them, by running the same engine on another thread under a full
 [copy limit](../compiled-copies.md#-limiting-the-copies), recompiles and rebuilds accessors each time.
 
 A session's expressions belong to one run at a time: any MVEL optimizer is safe.
 
 ### MVEL's optimizer
 
-MVEL's JIT, its default optimizer, switches an expression from reflection to a class it generates with ASM once
-it has run about 50 times within 100 ms. The engine makes the reflective optimizer MVEL's default for the whole JVM,
+MVEL's JIT, its default optimizer, switches an expression from reflection to a class generated with ASM after
+about 50 runs within 100 ms. The engine makes the reflective optimizer MVEL's default for the whole JVM,
 other MVEL users included, before it compiles a rule, whatever `-Dmvel2.disable.jit` says; MVEL used before then gets
 MVEL's own. Benchmarked, that cost runs of 10 to 100 rules up to 13%; at 1,000 rules the JIT was 1.4 times slower
 once warm.
@@ -339,10 +338,11 @@ MVEL clears a thread's own optimizer after each use; only one set before the eng
 
 ### The dynamic optimizer and class loaders
 
-With the JIT the default, MVEL holds two class loaders: the JIT's own, for the JVM's life, whose parent is the
-context class loader of the thread that made it the default, and a rule list's, while a static list of up to 1,500
-accessors holds one of its accessors. Closing the engine releases neither, so an application discarding
-class loaders, on a redeploy, keeps one per cycle. The reflective optimizer holds none.
+With the JIT the default, MVEL holds two class loaders: its own, for the JVM's life, whose parent is the context
+class loader of the thread that made it the default, though under the engine every compiled accessor gets a throwaway
+loader instead; and a rule list's, from its first run until 1,500 accessors have been registered after its last, as a
+static list holds that many. Closing the engine releases neither: an application discarding class loaders, on a
+redeploy, keeps each cycle's that long. The reflective optimizer holds none.
 
 When a rule's Java code throws, the failure's `getCause()` is what it threw, except where MVEL's exception
 stays above it:
@@ -361,10 +361,10 @@ message while wrapping it; see [Calling Java code](mvel-gotchas.md#-calling-java
 On JDK 21 to 23, MVEL rules run from many virtual threads can **deadlock**: MVEL's property cache is guarded by one
 JVM-wide monitor, and a virtual thread waiting on a monitor keeps the platform thread carrying it. Once every carrier
 is held, no run completes again. The engine's default limit on virtual threads (one copy per two processors) makes that
-rarer but doesn't prevent it:
+rarer, not impossible:
 
 - each engine has its own limit, so several engines' limits add up;
-- a run that waited five seconds without a copy coming back takes an extra copy on its own thread;
+- a run that waited five seconds for a copy takes an extra one on its own thread;
 - with one processor, the limit of one copy equals the one carrier;
 - `unlimitedCopies()`, or a `maxCopies(...)` at or above the number of carriers, leaves no carrier free;
   [build slots](../virtual-threads.md#-waiting-for-a-build-slot) don't change that.
@@ -372,7 +372,7 @@ rarer but doesn't prevent it:
 So on JDK 21 to 23:
 
 - use JDK 24 or later, where a virtual thread waiting on a monitor releases its carrier (JEP 491). It
-  still keeps its carrier while the JVM looks up a class, which MVEL does whenever it compiles an
+  still keeps its carrier while the JVM looks up a class, as MVEL does compiling each
   expression, including for each new compiled copy (see
   [Making copies at load](../compiled-copies.md#making-copies-at-load));
 - otherwise run MVEL rules on platform threads, or keep all your engines' copies together below

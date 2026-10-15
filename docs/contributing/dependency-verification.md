@@ -53,6 +53,10 @@ Key servers are off (`<key-servers enabled="false"/>`), so a build never fetches
 Dependabot's two Gradle entries in `.github/dependabot.yml`, for the root build and for `buildSrc`, both open such
 pull requests. Run the command on each one, even when CI passes, and commit what it changes for the bump.
 
+A bump of `mvel2` or `extra-java-module-info` also needs `README.md` edited, where the module-path notes name
+`mvel2-<version>.jar` and the plugin's version: `docs/scripts/check_docs.py` fails the `docs-and-hygiene` job while
+either differs from `gradle/libs.versions.toml`.
+
 A failed build says `Dependency verification failed for configuration`, lists the files it couldn't verify, then
 prints one of these lines and a link to the report:
 

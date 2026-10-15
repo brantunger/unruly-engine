@@ -9,7 +9,13 @@
 # - a table row holding `||` outside code, which is two rows joined into one line;
 # - an SVG a link or <img src> points at whose root <svg> has no role="img", or no non-empty <title> or <desc> among
 #   its children (docs/contributing/style.md asks for all three). Not checked: an SVG shown only through
-#   <picture><source>, a raw.githubusercontent.com URL, or an <img> tag split over two lines.
+#   <picture><source>, a raw.githubusercontent.com URL, or an <img> tag split over two lines;
+# - a value a page copies from the build that differs from the build's: README.md's mvel2-<version>.jar and the version
+#   it applies org.gradlex.extra-java-module-info with, against the mvel2 and module-info-plugin entries of
+#   gradle/libs.versions.toml; docs/native-image.md's packages= lines and native-image command for the strict image,
+#   and the number of its packages the page writes out ("its six packages", "the library's six packages"), against
+#   the .github/workflows/ci.yml step that passes "-H:ThrowMissingRegistrationErrors=$packages". Skipped when the
+#   build file isn't there, as in the repository check_fixtures.py makes.
 # Usage: python docs/scripts/check_docs.py  (from the repository root). Exit code 1 when anything is reported.
 import io
 import os
@@ -23,6 +29,10 @@ from fences import fence_flags
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BLOB = 'https://github.com/brantunger/unruly-engine/blob/main/'
+CATALOG = 'gradle/libs.versions.toml'
+WORKFLOW = '.github/workflows/ci.yml'
+STRICT_OPTION = '"-H:ThrowMissingRegistrationErrors=$packages"'
+NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve']
 # An <a> or <img> tag, whose attributes may hold a quoted '>', then each attribute of it, its value quoted or not.
 HTML_TAG = re.compile(r'''<(a|img)(\s(?:"[^"]*"|'[^']*'|[^"'>])*)>''', re.IGNORECASE)
 HTML_ATTRIBUTE = re.compile(r'''([^\s"'>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?''')
@@ -136,6 +146,94 @@ for page in pages:
 for source in files('*.java') + files('config/javadoc/*.html'):
     for i, line in enumerate(open(source, encoding='utf-8').read().splitlines(), 1):
         check_absolute(source, i, line)
+
+
+def raw_lines(path):
+    """The file's lines, code blocks included: the copies checked below sit inside them."""
+    return open(path, encoding='utf-8').read().splitlines()
+
+
+def check_versions(page):
+    """The mvel2 jar name and the extra-java-module-info plugin version the page holds, against the version catalog.
+    Each catalog entry is a "group:artifact:version" string; its last part is the version."""
+    if not os.path.exists(page):
+        return
+    if not os.path.exists(CATALOG):
+        report(page, 1, f'copies versions from {CATALOG}, which is missing')
+        return
+    catalog = open(CATALOG, encoding='utf-8').read()
+    versions = {}
+    for alias in ('mvel2', 'module-info-plugin'):
+        m = re.search(rf'^{alias}\s*=\s*"[^"]*:([^:"]+)"\s*$', catalog, re.MULTILINE)
+        if m:
+            versions[alias] = m.group(1)
+        else:
+            report(CATALOG, 1, f'no {alias} = "group:artifact:version" line, which {page} copies the version of')
+    for i, line in enumerate(raw_lines(page), 1):
+        for found in re.findall(r'mvel2-(\d[^\s`]*?)\.jar', line):
+            if found != versions.get('mvel2', found):
+                report(page, i, f'mvel2-{found}.jar: {CATALOG} has mvel2 {versions["mvel2"]}')
+        for found in re.findall(r'''org\.gradlex\.extra-java-module-info['"]?\s+version\s+['"]([^'"]+)['"]''', line):
+            if found != versions.get('module-info-plugin', found):
+                report(page, i, f'extra-java-module-info {found}: {CATALOG} has {versions["module-info-plugin"]}')
+
+
+def strict_image(path, fenced_only):
+    """The strict image's commands in a file: the packages= lines and the native-image command, every line trimmed,
+    around the one line that passes "-H:ThrowMissingRegistrationErrors=$packages", with the number of the first; on a
+    page, only a line inside a fenced code block counts. Without exactly one such line, None and the lines found."""
+    lines = raw_lines(path)
+    inside = fence_flags(lines) if fenced_only else [True] * len(lines)
+    lines = [line.strip() for line in lines]
+    hits = [i for i, line in enumerate(lines) if inside[i] and STRICT_OPTION in line]
+    if len(hits) != 1:
+        return None, [i + 1 for i in hits]
+    start = end = hits[0]
+    while start > 0 and lines[start - 1].endswith('\\'):  # back to the command's first line
+        start -= 1
+    while start > 0 and lines[start - 1].startswith('packages='):
+        start -= 1
+    while lines[end].endswith('\\') and end + 1 < len(lines):
+        end += 1
+    return lines[start:end + 1], start + 1
+
+
+def check_strict_image(page):
+    """The page's copy of the strict image's commands against the workflow's, and each count of packages the page
+    writes out, as "its six packages" or "the library's six packages", against the packages= lines."""
+    if not os.path.exists(page):
+        return
+    if not os.path.exists(WORKFLOW):
+        report(page, 1, f"copies the strict image's commands from {WORKFLOW}, which is missing")
+        return
+    (want_lines, want_at), (have_lines, first) = strict_image(WORKFLOW, False), strict_image(page, True)
+    if want_lines is None:
+        report(WORKFLOW, want_at[0] if want_at else 1, f'{len(want_at)} lines pass {STRICT_OPTION}, not one '
+                                                       f'(lines {want_at}); {page} copies that step')
+        return
+    if have_lines is None:
+        report(page, first[0] if first else 1, f'{len(first)} code-block lines pass {STRICT_OPTION}, not one '
+                                               f'(lines {first}); {WORKFLOW} has one such step')
+        return
+    for n in range(max(len(want_lines), len(have_lines))):
+        want = want_lines[n] if n < len(want_lines) else ''
+        have = have_lines[n] if n < len(have_lines) else ''
+        if want != have:
+            report(page, first + min(n, len(have_lines) - 1),
+                   f'the strict image\'s commands differ from {WORKFLOW}: expected "{want}", found "{have}"')
+            break
+    packages = [p for line in want_lines if line.startswith('packages=')
+                for p in line.partition('=')[2].split(',') if p != '$packages']
+    word = NUMBERS[len(packages)] if len(packages) < len(NUMBERS) else str(len(packages))
+    prose = '\n'.join(outside_fences(page))  # a phrase may wrap onto the next line
+    for m in re.finditer(r"\b(?:its|the library's)\s+(" + '|'.join(NUMBERS) + r'|\d+)\s+packages\b', prose):
+        if m.group(1) != word:
+            report(page, prose.count('\n', 0, m.start()) + 1,
+                   f'"{m.group(1)} packages": {WORKFLOW} lists {len(packages)} for the strict image')
+
+
+check_versions('README.md')
+check_strict_image('docs/native-image.md')
 
 print(f'{len(pages)} pages checked, {problems} problems')
 sys.exit(1 if problems else 0)

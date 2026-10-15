@@ -144,7 +144,7 @@ the decision to a version of the rules even if they're reloaded a moment later:
 ```java
 RunResult<LoanDecision> result = loanRulesEngine.runWithResult(facts);
 
-auditLog.record(applicant.id(),     // auditLog is your own code
+auditLog.record(applicant.name(),   // auditLog is your own code
         result.firedRules().stream().map(Rule::getRuleName).toList(),
         result.ruleSetChecksum(),           // engine.rules().checksum() is the engine's current rule set
         result.tags(), result.startedAt()); // what explains a SKIPPED rule

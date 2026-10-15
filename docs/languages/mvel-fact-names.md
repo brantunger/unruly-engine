@@ -1,6 +1,6 @@
 # 🔤 MVEL fact names
 
-Which fact names MVEL rejects, which facts it checks at all, and where that check is only a best effort.
+Which fact names MVEL rejects, which facts it checks at all, and where that check is a best effort.
 
 **Who it's for:** rule authors, and application developers who name the facts MVEL rules read.
 **You'll be able to:** pick fact names MVEL rules can read, tell why a name was rejected, and know which names MVEL
@@ -55,7 +55,7 @@ flowchart TD
 
 A rejected fact fails `run()` with `IllegalArgumentException` before any condition runs. A
 [declared fact](../facts.md#-declaring-facts) is checked the same way when a rule list is compiled: `load()` throws a
-`RuleCompilationException` for it, and `validate()` returns one. A blank name fails `fact()`.
+`RuleCompilationException` for it, and `validate()` returns one.
 
 When a rule of the list fails to compile, MVEL can't say what its rules read, so `load()` and `validate()` check
 every declared fact's name with it: their failures can include one such as
@@ -71,10 +71,10 @@ every declared fact's name with it: their failures can include one such as
 ## 🚫 Fact names MVEL rejects
 
 These rules apply to a fact whose name the rule list's MVEL text holds. `run()` throws `IllegalArgumentException` for
-such a fact whose name MVEL can't read as that fact. A declared one fails `load()` instead, with a
-`RuleCompilationException` (`Declared fact 'Math' can't be used: ...`).
+such a fact whose name MVEL can't read as that fact. A declared one fails `load()` instead:
+`Declared fact 'Math' can't be used: ...`.
 
-A name must be a Java identifier. `my-fact` would read as `my - fact`, so it is rejected with the message below. So is
+A name must be a Java identifier. `my-fact` would read as `my - fact`, so it's rejected with the message below. So is
 `2nd` where a rule's text holds it, such as in a comment: code that reads it, such as `2nd == 1`, fails `load()` with
 `invalid number literal: 2nd`.
 
@@ -82,7 +82,7 @@ A name must be a Java identifier. `my-fact` would read as `my - fact`, so it is 
 'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
 ```
 
-MVEL reads these as something else before the facts, so they're rejected too:
+MVEL reads these as something else first, so they're rejected too:
 
 | Kind | Names |
 | --- | --- |
@@ -104,6 +104,10 @@ MVEL reads these as something else before the facts, so they're rejected too:
 - A class in an imported package that can't be loaded isn't read as a class name, so the fact keeps it, as in
   MVEL's own lookup; a [fatal error](../glossary.md#fatal-error) such as an `OutOfMemoryError` leaves `run()` instead.
 
+> [!WARNING]
+> A fact named like a function an action defines, `bonus` with `def bonus(score) { ... }`, isn't rejected: every run
+> supplying it fails the action with `duplicate function: bonus`. Name them differently.
+
 **An inline import**, written in a condition's or action's own text, counts for that expression alone. MVEL reads the
 imported name there, never the fact, so the expression rejects a fact named like:
 
@@ -118,8 +122,7 @@ imported name there, never the fact, so the expression rejects a fact named like
 The import's words hold the name, so the first two always reject the fact. A class of the package the
 expression doesn't use stays a fact name: with `import java.util.*; output.put('n', new ArrayList().size())` in one
 rule and `Date == 1` in another, a fact `Date` is accepted, and the second rule reads it. A field the expression
-doesn't read stays one too: with `import java.lang.Math.*; output.put('r', 'E')`, a fact `E` is accepted. The import's
-package root, such as `acme`, is per rule list.
+doesn't read stays one too: with `import java.lang.Math.*; output.put('r', 'E')`, a fact `E` is accepted.
 
 With [strong typing](mvel.md#-strong-typing), which makes declared facts inputs of every expression, a declared fact
 named like such a field fails `load()` wherever the importing expression's text holds its name, even in a comment or
@@ -133,7 +136,7 @@ loader, so a class only the latter reaches brings in none, though the import sti
 **Package roots** are per rule list: the first part of each class `load()` or `validate()` looks up as it compiles
 a rule. That's a class found through a package import (`acme` for `Order` with `imports("acme.orders")`), nested in an
 imported class (`Map.Entry`) or named in a rule's `import`. It's also each class named with its package outside
-strings and comments (`new java.util.ArrayList()`), which compiling a rule looks up too.
+strings and comments (`new java.util.ArrayList()`).
 
 A root that comes from an import, and so isn't written in the rule, is rejected only where a rule's text also
 holds the name, even in a comment. That's `acme` for `Order` with `imports("acme.orders")`, or `java` for `Map.Entry`
@@ -257,6 +260,6 @@ rule, or an empty one while MVEL is the default language. For such a list:
 - `load()` throws, and `validate()` returns, a `RuleCompilationException` for a declared `output`, with
   `'output' is reserved for the output object and cannot be declared as a fact`. `build()` accepts the declaration.
 
-A rule list with no MVEL rule, such as one of only another language's rules, accepts a fact `output`, unless another
+A rule list with no MVEL rule, such as another language's, accepts a fact `output`, unless another
 of the engine's languages reserves it; see [Fact names](custom.md#-fact-names). `Output` and `OUTPUT` are ordinary
 names.
