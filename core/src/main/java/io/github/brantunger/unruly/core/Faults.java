@@ -101,6 +101,11 @@ final class Faults {
          */
         FAILURE_LOGGED,
         /**
+         * A rule set's stack of idle copies or of open compilers adding or taking an item, before it has read the
+         * stack, so it fails with the stack unchanged and the item in the caller's hands.
+         */
+        STACK_CHANGING,
+        /**
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).
          */
@@ -142,7 +147,13 @@ final class Faults {
          * records its own, so a test can change the count meanwhile. Watched only, never failed (see
          * {@link #reached(Step)}).
          */
-        USERS_READ(true);
+        USERS_READ(true),
+        /**
+         * A rule set's stack of idle copies or of open compilers adding or taking an item, once it has read the top of
+         * the stack, before it compares and sets it, so a test can change the stack meanwhile. Watched only, never
+         * failed (see {@link #reached(Step)}).
+         */
+        STACK_TOP_READ(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;

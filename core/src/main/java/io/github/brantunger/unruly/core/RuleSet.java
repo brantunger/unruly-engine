@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -109,7 +108,7 @@ final class RuleSet {
     // is bounded: a rule set that 2^30 runs were using at once would read as retired, which no JVM's threads reach.
     private static final int RETIRED = 1 << 30;
     // The copies retire() closes if it fails to make room for those it takes: none. Shared, and nothing adds to it.
-    private static final Queue<Map<String, Session>> NO_COPIES = new ConcurrentLinkedQueue<>();
+    private static final Queue<Map<String, Session>> NO_COPIES = new OneStepStack<>();
     // The bits of partsDone: retire() has closed the copies it took, and the copies still idle once no run used the
     // rule set have been closed.
     private static final int COPIES_TAKEN_CLOSED = 1;
@@ -166,7 +165,7 @@ final class RuleSet {
     // What retire() has done, for a later call to go on from where one that failed stopped. Only the call holding the
     // claim above reads or writes them, and the claim's volatile writes publish them to the next.
     // The idle copies retire() took before it marked the rule set retired, until each is closed, and the one it has
-    // just taken from the idle queue, until it's among them: each is reachable from here from the moment it's taken.
+    // just taken from the idle stack, until it's among them: each is reachable from here from the moment it's taken.
     private Queue<Map<String, Session>> retiredCopies = NO_COPIES;
     private Map<String, Session> copyTaken;
     // Whether retire() has marked the rule set retired, and whether no run was using it then, so retire() closes it.
@@ -177,7 +176,7 @@ final class RuleSet {
     // The two parts that must finish before the compilers close: retire() closing the copies that were idle when it
     // retired the rule set, and closing the copies still idle once no run uses it (closeUnused). Each sets its bit,
     // which setting again changes nothing, and whichever finds both set closes the compilers still open, one at a time
-    // from a queue, so a part that is done again after failing part way closes only the ones still open.
+    // from a stack, so a part that is done again after failing part way closes only the ones still open.
     private final AtomicInteger partsDone = new AtomicInteger();
     private final Queue<Map.Entry<String, ExpressionCompiler>> openCompilers;
     // The next rule set in the engine's list of those still to retire, while this one is in it, and the load() or
@@ -190,7 +189,7 @@ final class RuleSet {
     enum Kind {
         /**
          * Kept for a later run, unless the rule set has been retired and already keeps an idle copy for each run of it
-         * waiting for one, up to the limit, or the idle queue can't take it.
+         * waiting for one, up to the limit, or the idle stack can't take it.
          */
         KEPT,
         /** An extra copy made above the limit: its sessions are closed. */
@@ -245,7 +244,7 @@ final class RuleSet {
         /**
          * Returns whether the copy is kept for a later run.
          *
-         * @return {@code true} if it goes back into the idle queue
+         * @return {@code true} if it goes back into the idle stack
          */
         boolean kept() {
             return kind == Kind.KEPT;
@@ -285,7 +284,7 @@ final class RuleSet {
     static final class Loan {
         private final int[] runs;
         private Held held = Held.NOTHING;
-        // Taken from the idle queue or made, and neither lent nor closed yet.
+        // Taken from the idle stack or made, and neither lent nor closed yet.
         private Map<String, Session> sessions;
 
         // The thread's own count, not a copy of it: the copy lent with this loan lowers it when it's given back.
@@ -333,7 +332,7 @@ final class RuleSet {
             Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames,
             Map<String, ExpressionLanguage> languages, CopyLimit limit, CopyPermits permits, long stallWindowMillis) {
         this(compiledRules, compilers, namesRead, reservedFactNames, languages, limit, permits, stallWindowMillis,
-                new ConcurrentLinkedQueue<>());
+                new OneStepStack<>());
     }
 
     private RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
@@ -356,7 +355,8 @@ final class RuleSet {
         this.permits = permits;
         this.stallWindow = stallWindowMillis;
         this.idle = idle;
-        this.openCompilers = new ConcurrentLinkedQueue<>(this.compilers.entrySet());
+        // Taken in the order the compilers check fact names, which is the order they're closed in.
+        this.openCompilers = new OneStepStack<>(List.copyOf(this.compilers.entrySet()));
     }
 
     /**
@@ -621,7 +621,7 @@ final class RuleSet {
             Map<String, Session> sessions = new LinkedHashMap<>();
             // Idle before any of its sessions is made, and filled in place, so the sessions made before a language
             // failed, and a copy that fails to warm up, are closed with the other copies when load() retires the rule
-            // set, and a fatal Error from closing them is weighed against the load's failure there. A queue that can't
+            // set, and a fatal Error from closing them is weighed against the load's failure there. A stack that can't
             // take the copy fails before anything is made. No run can see the rule set yet.
             idle.add(sessions);
             addSessions(sessions);
@@ -661,7 +661,7 @@ final class RuleSet {
 
     /**
      * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
-     * is retired and already keeps an idle copy for each run of it waiting for one, up to the limit, or the idle queue
+     * is retired and already keeps an idle copy for each run of it waiting for one, up to the limit, or the idle stack
      * can't take it; any other copy's sessions are closed. The last copy given back to a retired rule set closes the
      * copies still idle, and its compilers too, unless {@link #retire()} is still closing the copies that were idle
      * when it retired the rule set: then {@code retire()} closes the compilers once it has.
@@ -707,10 +707,11 @@ final class RuleSet {
     // first fatal Error from closing them. Counting the idle copies and adding one isn't one step, so copies given back
     // at the same instant may keep one or two more than that; each is still closed by the last run to leave. A copy
     // kept for a run that is waiting is never left open: the run giving it back is counted until it leaves, after this,
-    // so if no run takes it, the last run to leave closes it, even one that stopped waiting. A copy the idle queue
-    // can't take, as when it can't allocate room for it, is closed too, rather than lost with its sessions open, and
-    // what the queue threw is logged at WARN, and returned first if it's fatal. An overflow in that log call loses only
-    // the line (see Failures.logWarn, #1217).
+    // so if no run takes it, the last run to leave closes it, even one that stopped waiting. A copy the idle stack
+    // can't take, as when it runs out of stack or memory before the stack has changed, is closed too, rather than lost
+    // with its sessions open, and what the stack threw is logged at WARN, and returned first if it's fatal. Once the
+    // stack has changed, nothing is left to fail (see OneStepStack, #1220). An overflow in that log call loses only the
+    // line (see Failures.logWarn, #1217).
     // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
         if (isRetired() && idle.size() >= keptForWaiters()) {
@@ -730,7 +731,7 @@ final class RuleSet {
 
     // How many idle copies a retired rule set keeps: one for each run still waiting, and never more than the limit. A
     // copy given back without a permit or a build slot wakes no run, so without this bound a retired rule set that one
-    // run waits on would keep every copy that runs on platform threads give back. The idle queue holds no more than
+    // run waits on would keep every copy that runs on platform threads give back. The idle stack holds no more than
     // this, so counting it is cheap.
     private int keptForWaiters() {
         int waiters = waiting.get();
@@ -822,8 +823,9 @@ final class RuleSet {
     // Takes the idle copies, after any an earlier call took and couldn't close, into a queue made with room for them
     // all before the first is taken, and held by retiredCopies from then on; no more are taken than it has room for,
     // so setting one aside allocates nothing. Each copy is held by copyTaken from the moment it leaves the idle
-    // queue until it's set aside, so a failure at any step leaves every copy taken where closeRetired() closes it.
-    // One given back meanwhile past those stays idle.
+    // stack until it's set aside, so a failure at any step leaves every copy taken where closeRetired() closes it.
+    // One given back meanwhile lands on top of the idle stack and may be taken in place of an older one, so the number
+    // of copies left idle is the same either way.
     @SuppressWarnings("PMD.NullAssignment")
     private void takeIdleCopies() {
         int left = idle.size();
@@ -1176,7 +1178,7 @@ final class RuleSet {
         return (done | part) == BOTH_PARTS ? closeCompilers() : null;
     }
 
-    // Closes the compilers still open, each taken from the queue as it's closed, so none is closed twice.
+    // Closes the compilers still open, each taken from the stack as it's closed, so none is closed twice.
     private Error closeCompilers() {
         Error fatal = null;
         for (Map.Entry<String, ExpressionCompiler> compiler = openCompilers.poll(); compiler != null;

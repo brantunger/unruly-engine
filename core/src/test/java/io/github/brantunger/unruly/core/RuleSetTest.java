@@ -1800,13 +1800,14 @@ class RuleSetTest {
         InternalError compilerFailure = new InternalError("closing the compiler");
         language.compilerFailure = compilerFailure;
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", language.compiler())).build();
-        // Copies 1 and 2, idle in that order: the run takes copy 1, and 2 stays idle for retire() to close.
+        // Copies 1 and 2, the idle copies a stack: the run takes copy 2, the last made, and 1 stays idle for retire()
+        // to close.
         rules.prepareCopies(2);
         KeepingRun run = startKeepingRun(rules, "run");
         run.copy();
         CountDownLatch closing = new CountDownLatch(1);
         CountDownLatch letGo = new CountDownLatch(1);
-        language.onClose = holdingClose(2, closing, letGo);
+        language.onClose = holdingClose(1, closing, letGo);
 
         AtomicReference<Error> fromRetire = new AtomicReference<>();
         Thread loader = retireOnLoader(rules, fromRetire);
@@ -1816,9 +1817,9 @@ class RuleSetTest {
         letGo.countDown();
         awaitRetired(loader);
 
-        assertEquals(List.of(1), closedWhileRetireWasClosing,
+        assertEquals(List.of(2), closedWhileRetireWasClosing,
                 "the run closed its copy, and not the compilers while retire() was still closing a session");
-        assertEquals(List.of(1, 2, 0), language.closed, "each copy closed once, then the compiler");
+        assertEquals(List.of(2, 1, 0), language.closed, "each copy closed once, then the compiler");
         assertEquals(0, language.closingWhenCompilerClosed, "no session was still closing when the compiler closed");
         assertEquals("loader", language.compilerClosedOn, "retire(), which finished second, closed the compilers");
         assertSame(compilerFailure, fromRetire.get(), "so it got their fatal Error");
@@ -1842,8 +1843,8 @@ class RuleSetTest {
         Error fromRun = run.giveBack();
 
         assertNull(fromRetire, "retire() finished first, so it didn't close the compilers");
-        assertEquals(List.of(2), closedByRetire, "retire() closed the idle copy only, while the run held its copy");
-        assertEquals(List.of(2, 1, 0), language.closed, "each copy closed once, then the compiler");
+        assertEquals(List.of(1), closedByRetire, "retire() closed the idle copy only, while the run held its copy");
+        assertEquals(List.of(1, 2, 0), language.closed, "each copy closed once, then the compiler");
         assertEquals(1, language.compilerCloses.get(), "the compiler was closed once");
         assertEquals("run", language.compilerClosedOn, "the run, which finished second, closed the compilers");
         assertSame(compilerFailure, fromRun, "so it got their fatal Error");
@@ -1863,7 +1864,8 @@ class RuleSetTest {
         RuleSet next = TestRuleSets.ruleSet(List.of(RULE),
                         Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
                 .withLimit(CopyLimit.of(2)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
-        // Copies 1, 2 and 3, idle in that order: the first run takes copy 1, and 2 and 3 stay idle.
+        // Copies 1, 2 and 3, the idle copies a stack: the first run takes copy 3, the last made, and 1 and 2 stay
+        // idle.
         rules.prepareCopies(3);
         KeepingRun holder = startKeepingRun(rules, "holder");
         RuleSet.Copy givenBack = holder.copy();
@@ -1876,7 +1878,7 @@ class RuleSetTest {
         CountDownLatch letGo = new CountDownLatch(1);
         IntConsumer holdCopy2 = holdingClose(2, closing, letGo);
         language.onClose = number -> {
-            if (number == 1) {
+            if (number == 3) {
                 throw keptFailure;
             }
             holdCopy2.accept(number);
@@ -1922,8 +1924,8 @@ class RuleSetTest {
         assertNull(second);
         assertNull(third);
         assertNull(fromRun);
-        assertEquals(List.of(2), closedWhileTheRunHeldItsCopy, "the compilers stayed open while the run held a copy");
-        assertEquals(List.of(2, 1, 0), language.closed, "each copy closed once, then the compiler");
+        assertEquals(List.of(1), closedWhileTheRunHeldItsCopy, "the compilers stayed open while the run held a copy");
+        assertEquals(List.of(1, 2, 0), language.closed, "each copy closed once, then the compiler");
         assertEquals(1, language.compilerCloses.get(), "the compiler was closed once");
         assertNull(rules.borrow(deadline()), "the rule set is closed");
     }

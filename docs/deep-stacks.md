@@ -44,9 +44,11 @@ checks any setting, even a wrong one. The next `build()` checks again.
 It also loads the engine's classes a load or run uses, so a first load or run reads none of them from a file; a
 language's own are its `prepare()`'s to load.
 
-**It also runs a `ConcurrentLinkedQueue` of its own,** the JDK class a rule set keeps its idle copies in, so the
-JVM links the call sites that change one. Up to 2.30.14, measured with `-Xcomp`, a deep first run could link them
-and overflow after the queue changed, losing a copy or closing one left in it.
+> [!NOTE]
+> In 2.30.15 and 2.30.16 the first `build()` also ran a `ConcurrentLinkedQueue` of its own, a stopgap so the JVM linked
+> the call sites that change the JDK queue a rule set then kept its idle copies in. A rule set now keeps its idle
+> copies and open compilers in a stack of the engine's own whose every change is one compare-and-set, the last step of
+> the call, so a deep first run can't leave a copy lost or open (#1220), and `build()` runs no queue.
 
 **On JDK 21 and 22, outside a native image, it also initializes the JDK's
 `jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep

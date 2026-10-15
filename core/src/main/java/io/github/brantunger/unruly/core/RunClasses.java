@@ -29,8 +29,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -46,13 +44,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * too (#1066, #1093), and those that the JVM's first load and first run would otherwise read from the engine's jar or
  * class directory (#1210). So are the JDK's classes that a first read of a generic type or of a method's annotations,
  * or a first reflective call of a native method, initializes, in a language's load or run or a write through a generic
- * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). So is a run's
- * first change to the JDK's queue that a rule set keeps its idle copies in, which initializes nothing but links the
- * queue's compare-and-set call sites, and which, overflowing deep in a stack after the queue has changed, could lose a
- * copy taken from it or close one left in it: a queue of this class's own is built, added to, counted and emptied
- * (#1217). In a native image, the classes it can only name are left to the image, which can't look a name up that it
- * has no metadata for, and no method is read. A language's own classes are its to initialize, in
- * {@link ExpressionLanguage#prepare()}, which {@link #prepare(Collection)} calls with room made for it in the same way.
+ * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). In a native
+ * image, the classes it can only name are left to the image, which can't look a name up that it has no metadata for,
+ * and no method is read. A language's own classes are its to initialize, in {@link ExpressionLanguage#prepare()}, which
+ * {@link #prepare(Collection)} calls with room made for it in the same way.
  *
  * <p>
  * Each is initialized as the JVM initializes a class, by running its static initializer and nothing else, so nothing
@@ -124,18 +119,6 @@ final class RunClasses {
             Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
             RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                     rule.toBuilder().ruleName("b").priority(1).build())));
-            // What a run does with the JDK's queue that a rule set keeps its idle copies in: each change to it is a
-            // compare-and-set through a VarHandle, whose call site the JVM links the first time it runs, which can
-            // overflow deep in a stack after the queue has changed, losing a copy taken from it or closing one left in
-            // it (#1217). So a queue of its own is built from two items, as a rule set builds the queue of its open
-            // compilers, which links each to the next, then given two more, as the second add is the first to move the
-            // queue's tail, counted, and polled as many times as it counted, which empties it and moves its head.
-            Queue<Rule> queue = new ConcurrentLinkedQueue<>(List.of(rule, rule));
-            queue.add(rule);
-            queue.add(rule);
-            for (int left = queue.size(); left > 0; left--) {
-                queue.poll();
-            }
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
             initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
@@ -324,16 +307,18 @@ final class RunClasses {
     // engine's logger, which starts SLF4J and its provider if the application hasn't. FlightRecorderEvents initializes
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
-    // may not be there. The twelve before the last five have no static initializer: they are what a rule's or a run's
-    // first failure would otherwise be the first to load, which can overflow deep in a stack as initializing a class
-    // can (#1066, #1093), so they are loaded here. So are the last five, which the JVM's first wait for a copy and its
-    // first failed load, in any language, would otherwise be the first to load or initialize (#1097).
+    // may not be there. OneStepStack makes the field updater that every change to a rule set's idle copies and open
+    // compilers goes through, which a load would otherwise make (#1220). The twelve before the last five have no
+    // static initializer: they are what a rule's or a run's first failure would otherwise be the first to load, which
+    // can overflow deep in a stack as initializing a class can (#1066, #1093), so they are loaded here. So are the
+    // last five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be
+    // the first to load or initialize (#1097).
     private static List<Class<?>> engineClasses() {
         return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
                 EngineCompileContext.Warnings.class, Prepared.class, Ran.class, LoggedFailures.class,
                 Faults.Step.class, Failures.class, ExpressionKind.class,
-                InvalidExpressionException.Issue.Severity.class, RuleSet.class,
+                InvalidExpressionException.Issue.Severity.class, RuleSet.class, OneStepStack.class,
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
                 RuleSet.Kind.class, RuleSet.Held.class, RuleSet.Source.class, RuleSet.Warning.class, Closing.class,
                 Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
@@ -356,15 +341,19 @@ final class RunClasses {
     // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
     // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
     // the JVM's first to read a file could leave every later run of every engine, and every file read on a virtual
-    // thread, failing for the life of the JVM (#1210). Initializing a class doesn't load its nested or outer classes,
-    // so RuleSet's and RuleEvaluation.Outcome's, in the list above, don't load these.
+    // thread, failing for the life of the JVM (#1210). Last, OneStepStack's Node, which a load makes for its
+    // compilers, and Walk, which the JVM's first retire() makes to read the copies an earlier call took, are
+    // preloaded too (#1220).
+    // Initializing a class doesn't load its nested or outer classes, so RuleSet's and RuleEvaluation.Outcome's, in the
+    // list above, don't load these.
     private static List<Class<?>> loadAndRunClasses() {
         return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
                 AbstractRulesEngine.RunBody.class, RuleSet.Copy.class,
                 RunFacts.class, RunResult.class, RuleSelection.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
-                RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class);
+                RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
+                OneStepStack.Node.class, OneStepStack.Walk.class);
     }
 
     // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a

@@ -297,7 +297,7 @@ class CopiesAtLoadTest {
         engine.load(List.of(rule("second")));
 
         assertEquals(4, language.created.size());
-        assertEquals(first, language.closed);
+        assertEquals(first.reversed(), language.closed, "newest first, as the idle copies are a stack");
         assertEquals(1, language.compilersClosed.get());
     }
 
