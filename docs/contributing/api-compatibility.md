@@ -53,8 +53,7 @@ The Javadoc promises that a field added to `RunOptions`, `RuleSetInfo` or `RunRe
 field to `toString` too.
 
 Additions pass: new classes, new methods on a class, and `default` methods on an interface. The check compares
-members, not class-file versions, so `ClassFileVersionTest` separately checks that the published classes target
-Java 21.
+members, not class-file versions, so `ClassFileVersionTest` checks that the published classes target Java 21.
 
 ## 🟣 Nullness annotations are API for Kotlin
 
@@ -62,7 +61,7 @@ Kotlin reads the JSpecify annotations strictly, and japicmp doesn't check them. 
 accepted `null`, or a return value, generic type or listener parameter `@Nullable` that wasn't, breaks Kotlin
 sources, so it belongs in a major release like any other break. `NullnessAnnotationsTest` checks the nullness of the
 members most likely to change: `run()`, fact names and values, what listeners and conditions see, `Rule`'s fields
-and an exception's message and cause, so a change there fails the tests rather than passing unnoticed.
+and an exception's message and cause, so a change there fails the tests.
 
 ## 🆕 Adding a method to a public interface
 
@@ -70,8 +69,8 @@ Users implement several public interfaces: `RulesEngine` (for example to decorat
 `FactStore`, `FactReference`, `OutputWriter`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
 `CompiledCondition`, `CompiledAction` and `Session`. Each interface's Javadoc says who implements it.
 
-Within a major version, a method added to any of them is a `default` method, and the check fails on an abstract
-one. When no generic implementation makes sense, the default throws `UnsupportedOperationException`.
+Within a major version, a method added to any of them is `default`, and the check fails on an abstract one. When no
+generic implementation makes sense, the default throws `UnsupportedOperationException`.
 
 The engine-only contexts, `CompileContext`, `EvaluationContext`, `ActionContext` and `RunContext`, are sealed to the
 engine's own implementations, so no user implements them and a new method breaks nobody. `SealedContextsTest`
@@ -79,8 +78,7 @@ checks that the three a language sees stay sealed.
 
 japicmp can't see sealing, though. It reports a new abstract method on a sealed interface like any other, so give it
 a `default` body, or accept it with a line and a `!` title, as `CompileContext` and `EvaluationContext` did for 2.0.
-For the same reason, sealing an interface that wasn't is a break the check won't catch: title that PR with a `!` by
-hand.
+For the same reason, sealing an interface that wasn't is a break the check won't catch: title that PR with a `!`.
 
 ## 💥 Accepting an intended break
 
@@ -88,14 +86,14 @@ An intended break belongs in a major release, and needs three things:
 
 1. For each element the report lists, add a line to
    [`config/japicmp/accepted-breaks.txt`](../../config/japicmp/accepted-breaks.txt): the major version the break
-   ships in (for example `2`), the kind, the element as japicmp names it, and why users can live with it. The header
-   shows the format. Every change to a listed element is accepted, not only the reported one.
+   ships in, the kind, the element as japicmp names it, and why users can live with it. The header shows the
+   format. Every change to a listed element is accepted, not only the reported one.
 2. Title the PR with a `!`, such as `feat!: make the engine classes package-private`, and describe the migration
    under "Behavior changes" in the description.
 3. Add a section to [Migrating to 2.0](../migrating-to-2.md): who is affected, and what to change.
 
 A break in the language SPI or in `RulesEngine` goes in
-[Migrating a language or an engine](../migrating-to-2-implementers.md) instead of that page.
+[Migrating a language or an engine](../migrating-to-2-implementers.md) instead.
 
 A line applies while the baseline is from an earlier major version, so a release from that earlier major version
 published in the meantime doesn't turn it off. Once that major version is published and becomes the baseline, the
@@ -114,7 +112,9 @@ of them gives such a kit a `NoSuchMethodError`, although `japicmp` leaves the pa
 | `EngineCompileContext(Set, Set, ClassLoader, Class, Map, Map, boolean, boolean, List)` | `LanguageTestContexts`, for a compile context with language imports |
 | `EngineCompileContext.forLanguage(ExpressionLanguage, Set, Set, ClassLoader, Class, Map, Map, boolean, List)` | `LanguageTestContexts`, for a compile context that rejects the language's reserved fact names |
 | `EngineEvaluationContext(Map, Instant)` | `LanguageTestContexts`, for an evaluation context |
+| `EngineEvaluationContext(Map, Instant, Instant, Set)` | `LanguageTestContexts`, for an evaluation context with the run's start and tags |
 | `EngineActionContext(Map, Object, Instant)` | `LanguageTestContexts`, for an action context |
+| `EngineActionContext(Map, Object, Instant, Instant, Set)` | `LanguageTestContexts`, for an action context with the run's start and tags |
 | `EngineActionContext(EvaluationContext, Object)` | `LanguageTestContexts.actionInRun`, for an action context in the same run |
 | `EngineEvaluationContext.endRun(EvaluationContext)` | `LanguageTestContexts.endRun` |
 
@@ -187,15 +187,15 @@ What fails although nothing broke:
 - **Moving a linked member up to a superclass.** japicmp compares class by class, so it reports the old declaring
   class as changed, with the member removed, although old binaries still link: the JVM searches supertypes too. If
   only the file lists the member, change its line to the new declaring class. If the released kit links it, move it
-  only in a major release, with an `accepted-breaks.txt` line for that major; until then, leave it where it is.
+  only in a major release, with an `accepted-breaks.txt` line for that major; until then, leave it.
 
 ## 📅 Baselines
 
 The baseline is the artifact's newest release on Maven Central that isn't higher than the version in
-`gradle.properties`. Because the baseline is never higher than the build's own version, a branch is always checked
+`gradle.properties`. Because the baseline is never higher than the build's version, a branch is always checked
 against its own release line, and a release PR's version, not yet published, is compared with the release before it.
 
-Every artifact the check compares now has a release of its own, so each is compared with its own newest release. For an
+Every artifact the check compares now has its own release, so each is compared with its newest. For an
 artifact added later, the check tries three things in order, and its `apiCheck { }` block supplies the last two until
 the first release:
 
@@ -215,7 +215,7 @@ build instead of skipping the check.
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
 baseline already in the Gradle cache. A local build keeps the lookup for 24 hours, so it may compare with a release
 up to a day old; pass `"-PapiCheck.refresh"` for the newest. CI and the release workflow pass it on every build, so they
-always compare with the newest release. The build verifies the download like every other dependency: see
+always compare with the newest. The build verifies the download like every other dependency: see
 [The API baseline](dependency-verification.md#-the-api-baseline).
 
 ## 📋 Reference

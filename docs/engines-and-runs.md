@@ -82,7 +82,7 @@ changes the [checksum](run-results.md#-auditing-a-decision).
 
 ## 🔖 Choosing which rules a run uses
 
-A run uses every loaded rule, except the ones it **skips**. A rule's `enabled`, its validity window and its tags, and
+A run uses every loaded rule but the ones it **skips**. A rule's `enabled`, its validity window and its tags, and
 the tags a run is given, decide which:
 
 ```java
@@ -132,13 +132,14 @@ takes. A [nested run](glossary.md#nested-run) reads the clock again. The window 
 `validTo`, and `build()` rejects a `validTo` that isn't after `validFrom`.
 
 The clock is `Clock.systemUTC()` unless the builder's `clock(Clock)` sets another. A test can run the rules as they
-will be on a date with `.clock(Clock.fixed(Instant.parse("2027-07-01T00:00:00Z"), ZoneOffset.UTC))`. Only windows
-use it: a [run timeout](stopping-runs.md) is measured on a monotonic clock, so setting the system clock doesn't move a
-running deadline.
+will be on a date with `.clock(Clock.fixed(Instant.parse("2027-07-01T00:00:00Z"), ZoneOffset.UTC))`. A
+[run timeout](stopping-runs.md) doesn't use it: it's measured on a monotonic clock, so setting the system clock doesn't
+move a running deadline.
 
-`RunContext.startedAt()` and `RunResult.startedAt()` return the instant the run judged the windows at, from the
-engine's clock, so a fixed clock gives every run the same instant. Don't compare it with `rules().loadedAt()` or
-the deadline: both use the system clock.
+`RunContext.startedAt()`, `RunResult.startedAt()` and, since 2.31.0, an expression's
+[`EvaluationContext.startedAt()`](languages/custom.md#-stopping-a-run) return the instant the run judged the windows
+at, from the engine's clock, so a fixed clock gives every run the same instant. Don't compare it with
+`rules().loadedAt()` or the deadline: both use the system clock.
 
 ### Tags
 
@@ -148,7 +149,7 @@ run without tags uses rules whatever their tags. Tags are compared exactly, case
 
 `withTags(...)` needs at least one tag: to use every rule, don't call it. `withTags(...)` keeps the options' timeout,
 and `withTimeout(...)` keeps their tags. `RunOptions.tags()` returns them, empty when the run uses every rule, and
-`RunContext.tags()` and `RunResult.tags()` return the same tags for the run they describe.
+`RunContext.tags()`, `RunResult.tags()` and, since 2.31.0, `EvaluationContext.tags()` return the same tags.
 
 > [!WARNING]
 > A run given tags skips every rule that has no tags, including a default meant to apply everywhere, such as a
@@ -236,7 +237,7 @@ engine.run(facts);                        // score 780 matches both: throws Rule
 ```
 
 The check counts conditions that were true, whatever the rules' language. It finds an overlap only for
-the facts of that run: to check a table for every input, run it against the inputs you care about in a test.
+the facts of that run: to check a table for every input, run it against the inputs you care about.
 
 What each failure throws, logs and tells listeners is in
 [What happens on each failure](error-handling.md#-what-happens-on-each-failure). A timeout or an interrupt stops a run

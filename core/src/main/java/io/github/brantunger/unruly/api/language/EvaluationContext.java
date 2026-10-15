@@ -5,6 +5,7 @@ import org.jspecify.annotations.Nullable;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -91,6 +92,32 @@ public sealed interface EvaluationContext
      */
     default Duration timeLeft() {
         return io.github.brantunger.unruly.core.EngineEvaluationContext.timeLeft(this);
+    }
+
+    /**
+     * Returns when the run started, by the engine's {@code RulesEngineBuilder.clock(...)}: the one instant the run
+     * read from it, which judged every rule's {@code validFrom} and {@code validTo}, and which the run's listeners get
+     * as {@link io.github.brantunger.unruly.api.RunContext#startedAt()}. A condition that compares against the
+     * current time should compare against this, so it agrees with the rules the run selected and with a test's fixed
+     * clock. It isn't comparable to {@link #deadline()}, which is measured with the system clock. A nested run reads
+     * the clock again, so its contexts have an instant of their own.
+     *
+     * @return The instant the run started at
+     */
+    default Instant startedAt() {
+        return io.github.brantunger.unruly.core.EngineEvaluationContext.startedAt(this);
+    }
+
+    /**
+     * Returns the tags the run was given with {@code RunOptions.withTags(...)}: the run uses only the rules that carry
+     * at least one of them, and skips the others. They are the run's
+     * {@link io.github.brantunger.unruly.api.RunContext#tags()}, the same set, so a language can bind them to a name
+     * its expressions read without copying them. A nested run has tags of its own.
+     *
+     * @return The run's tags: in {@link String} order, unmodifiable, and empty if the run uses every rule
+     */
+    default Set<String> tags() {
+        return io.github.brantunger.unruly.core.EngineEvaluationContext.tags(this);
     }
 
     /**

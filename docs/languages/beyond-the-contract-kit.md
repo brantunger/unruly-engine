@@ -21,7 +21,7 @@ Two things no check exercises, so passing the kit says nothing about them.
 one a timeout. A runtime that clears the thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does,
 passes the kit and still hides the caller's interrupt from the engine.
 
-The hole is a narrow one. The engine [checks between rules](../stopping-runs.md#-what-stops-a-run), so an interrupt
+The hole is narrow. The engine [checks between rules](../stopping-runs.md#-what-stops-a-run), so an interrupt
 raised there always stops the run, and the deadline path is unaffected. Only an interrupt raised and swallowed inside
 one expression escapes; see [Stopping a run](custom.md#-stopping-a-run).
 
@@ -147,8 +147,8 @@ initializer is checked only if nothing earlier in the JVM prepared a language of
 certain, to show: a window a few instructions wide may close before a second thread reaches it. Nor does it check
 that `prepare()` is cheap once it has done its work.
 
-`unreservedOutputReadAsFact` checks `output` only. A name your expressions bind to a context or helper object of your
-own is yours to [reserve](custom.md#-fact-names), or reject in `checkFactName`: no check finds it.
+`unreservedOutputReadAsFact` checks `output` only. A name your expressions bind to a context or helper object is
+yours to [reserve](custom.md#-fact-names), or reject in `checkFactName`: no check finds it.
 
 The check first runs a rule that doesn't name `output`, with facts `x` and `output`. It passes there if your
 `checkFactName` rejects `output`, so a language that can't compile a rule naming it needn't, and fails on a rejection
@@ -157,7 +157,7 @@ that reads `output`. If it fails to load, the failure says to reserve `output`, 
 declare it as `Object` in `configure`.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
-evaluates it in a session of its own, ending each fact's run with `LanguageTestContexts.endRun` before the session
+evaluates it in its own session, ending each fact's run with `LanguageTestContexts.endRun` before the session
 closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
 that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
 language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
@@ -175,8 +175,8 @@ that compares by value agree only for an `Integer`.
 `LanguageTestContexts` creates the contexts the engine passes to a language, to test a compiler or compiled
 expression without an engine. They're the engine's own contexts: writing to their facts fails as in a run, and
 `evaluation(facts, deadline)` gives a real `isCancelled()`, `timeLeft()` and `onCancel`. They read the system clock
-once, when the context is made, then time `deadline` as a run does, so one built from `Instant.now()` passes when you
-expect.
+when the context is made, then time `deadline` as a run does, so one built from `Instant.now()` passes when you
+expect. Overloads added in 2.31.0 take `startedAt()` and `tags()` too; the others give `Instant.now()` and none.
 
 For a language that reads [its own imports](custom.md#-implementing-the-interfaces), a `compile(...)` overload added
 in 2.19.0 also takes them: the list your compiler gets from `languageImports()`. The other overloads give none.
@@ -236,10 +236,10 @@ class MyLanguageContractTest extends ExpressionLanguageContractTest {
 }
 ```
 
-Each context from `evaluation(...)` or `action(...)` is a run of its own, so it shares no `runScoped` values with
+Each context from `evaluation(...)` or `action(...)` is its own run, so it shares no `runScoped` values with
 another. Since 2.13.0, `actionInRun(sameRun, output)` creates an action context in the run of `sameRun`, a context
-this class created: it has that context's facts and deadline and shares its `runScoped` values. So a test can check
-that an action finds what a condition kept:
+this class created: it has that context's facts, deadline, `startedAt()` and `tags()`, and shares its `runScoped`
+values. So a test can check that an action finds what a condition kept:
 
 ```java
 EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", 1));
@@ -248,7 +248,7 @@ ActionContext action = LanguageTestContexts.actionInRun(evaluation, new HashMap<
 assertSame(evaluation.runScoped("key", Object::new), action.runScoped("key", Object::new));
 ```
 
-No engine runs in these tests, so nothing closes a context's `runScopedClosing` values for you. Since 2.20.0,
+No engine runs in these tests, so nothing closes a context's `runScopedClosing` values. Since 2.20.0,
 `endRun(context)` closes them as a run's end would, newest first, but rethrows the first failure, so your test sees
 a `close()` that throws. Each other failure is in its `getSuppressed()` once, unless it already carries the first or
 the first carries it. If the last keep throws a [fatal error](../glossary.md#fatal-error) itself, it replaces the

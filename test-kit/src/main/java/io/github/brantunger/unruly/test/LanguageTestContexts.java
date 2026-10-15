@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
@@ -24,9 +25,13 @@ import java.util.Set;
  * not one with a name a language reserves: they have no engine, and so no languages to ask. Each context from
  * {@code evaluation} or {@code action} is for a run of its own, so the values it keeps with
  * {@link EvaluationContext#runScoped} aren't shared with another context; {@link #actionInRun} creates one in the run
- * of another context, and shares its values. No run ends by itself, so {@link #endRun} closes the values a context
- * keeps with {@link EvaluationContext#runScopedClosing}, and the actions it registered with
- * {@link EvaluationContext#onCancel(Runnable)} that haven't started, as the end of a run does.
+ * of another context, and shares its values. A context's run started when the context was created, by the system
+ * clock, and has no tags, unless the context was created with {@link #evaluation(Map, Instant, Instant, Set)} or
+ * {@link #action(Map, Object, Instant, Instant, Set)}, which give it the {@link EvaluationContext#startedAt()} and
+ * {@link EvaluationContext#tags()} of a run with an engine's clock and {@code RunOptions.withTags(...)}, or with
+ * {@link #actionInRun} from such a context, which has the same start and tags. No run ends by itself, so
+ * {@link #endRun} closes the values a context keeps with {@link EvaluationContext#runScopedClosing}, and the actions
+ * it registered with {@link EvaluationContext#onCancel(Runnable)} that haven't started, as the end of a run does.
  *
  * <p>
  * To check a language against everything the engine promises for its rules, extend
@@ -219,8 +224,52 @@ public final class LanguageTestContexts {
      */
     public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
                                                @Nullable Instant deadline) {
+        return new EngineEvaluationContext(copyOf(facts), deadline);
+    }
+
+    /**
+     * Returns a copy of the facts a context is created from, so a later change to the caller's map doesn't reach the
+     * context.
+     */
+    private static Map<String, Object> copyOf(Map<String, ? extends @Nullable Object> facts) {
         Objects.requireNonNull(facts, "facts must not be null");
-        return new EngineEvaluationContext(new LinkedHashMap<String, Object>(facts), deadline);
+        return new LinkedHashMap<>(facts);
+    }
+
+    /**
+     * Creates the context a condition is evaluated against, for a run that started at {@code startedAt} by its
+     * engine's clock and was given {@code tags}: so a language's test can check what its conditions make of the run's
+     * {@link EvaluationContext#startedAt()} and {@link EvaluationContext#tags()}, as a run with
+     * {@code RulesEngineBuilder.clock(...)} and {@code RunOptions.withTags(...)} gives them. The deadline is timed as
+     * {@link #evaluation(Map, Instant)} describes.
+     *
+     * @param facts     The facts by name, whose values can be {@code null}; copied
+     * @param deadline  When the run must stop, or {@code null} if it has none, as an engine built without
+     *                  {@code runTimeout} gives it
+     * @param startedAt When the run started, by the engine's clock, as a fixed clock gives it
+     * @param tags      The run's tags, as {@code RunOptions.withTags(...)} was given them, or empty for a run that
+     *                  uses every rule; copied
+     * @return The context. Its {@link EvaluationContext#startedAt()} is {@code startedAt}, and its
+     *         {@link EvaluationContext#tags()} are {@code tags} as a run has them: in {@link String} order and
+     *         unmodifiable. It equals only itself, as in a run.
+     * @throws NullPointerException     if {@code facts}, {@code startedAt} or {@code tags} is {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, or a tag is {@code null} or blank,
+     *                                  which a run rejects with the same message
+     */
+    public static EvaluationContext evaluation(Map<String, ? extends @Nullable Object> facts,
+                                               @Nullable Instant deadline, Instant startedAt, Set<String> tags) {
+        Map<String, Object> copy = copyOf(facts);
+        Objects.requireNonNull(startedAt, "startedAt must not be null");
+        return new EngineEvaluationContext(copy, deadline, startedAt, runTags(tags));
+    }
+
+    /**
+     * Returns the tags a run given {@code tags} has, as {@code RunOptions.withTags(...)} makes them, with its checks
+     * and messages: sorted and unmodifiable, or none for a run that uses every rule.
+     */
+    private static Set<String> runTags(Set<String> tags) {
+        Objects.requireNonNull(tags, "tags must not be null");
+        return tags.isEmpty() ? Set.of() : RunOptions.defaults().withTags(tags).tags();
     }
 
     /**
@@ -259,8 +308,36 @@ public final class LanguageTestContexts {
      */
     public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,
                                        @Nullable Instant deadline) {
-        Objects.requireNonNull(facts, "facts must not be null");
-        return new EngineActionContext(new LinkedHashMap<String, Object>(facts), output, deadline);
+        return new EngineActionContext(copyOf(facts), output, deadline);
+    }
+
+    /**
+     * Creates the context an action runs against, for a run that started at {@code startedAt} by its engine's clock
+     * and was given {@code tags}: so a language's test can check what its actions make of the run's
+     * {@link EvaluationContext#startedAt()} and {@link EvaluationContext#tags()}, as a run with
+     * {@code RulesEngineBuilder.clock(...)} and {@code RunOptions.withTags(...)} gives them. The deadline is timed as
+     * {@link #action(Map, Object, Instant)} describes.
+     *
+     * @param facts     The facts by name, whose values can be {@code null}; copied
+     * @param output    The output object, which the action changes in place
+     * @param deadline  When the run must stop, or {@code null} if it has none, as an engine built without
+     *                  {@code runTimeout} gives it
+     * @param startedAt When the run started, by the engine's clock, as a fixed clock gives it
+     * @param tags      The run's tags, as {@code RunOptions.withTags(...)} was given them, or empty for a run that
+     *                  uses every rule; copied
+     * @return The context. Its {@link EvaluationContext#startedAt()} is {@code startedAt}, and its
+     *         {@link EvaluationContext#tags()} are {@code tags} as a run has them: in {@link String} order and
+     *         unmodifiable. It equals only itself, as in a run.
+     * @throws NullPointerException     if {@code facts}, {@code output}, {@code startedAt} or {@code tags} is
+     *                                  {@code null}
+     * @throws IllegalArgumentException if a fact's name is {@code null} or blank, or a tag is {@code null} or blank,
+     *                                  which a run rejects with the same message
+     */
+    public static ActionContext action(Map<String, ? extends @Nullable Object> facts, Object output,
+                                       @Nullable Instant deadline, Instant startedAt, Set<String> tags) {
+        Map<String, Object> copy = copyOf(facts);
+        Objects.requireNonNull(startedAt, "startedAt must not be null");
+        return new EngineActionContext(copy, output, deadline, startedAt, runTags(tags));
     }
 
     /**
@@ -269,9 +346,9 @@ public final class LanguageTestContexts {
      *
      * @param sameRun A context of the run, created by this class, such as with {@link #evaluation(Map)}
      * @param output  The output object, which the action changes in place
-     * @return The context. It has the facts and deadline of {@code sameRun}, and shares its run-scoped values. Its
-     *         facts are read-only, and a write fails with the message the engine uses for an action. It equals only
-     *         itself.
+     * @return The context. It has the facts, deadline, {@link EvaluationContext#startedAt() start} and
+     *         {@link EvaluationContext#tags() tags} of {@code sameRun}, and shares its run-scoped values. Its facts are
+     *         read-only, and a write fails with the message the engine uses for an action. It equals only itself.
      * @throws NullPointerException if {@code sameRun} or {@code output} is {@code null}
      */
     public static ActionContext actionInRun(EvaluationContext sameRun, Object output) {
