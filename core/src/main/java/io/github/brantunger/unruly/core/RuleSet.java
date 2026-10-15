@@ -790,11 +790,17 @@ final class RuleSet {
                 // the compilers are still closed. In one step with the count of runs, so that either no run uses the
                 // rule set and this method closes it now, or the last run to leave does: never both, and never this
                 // method once a run has kept a copy for a waiting run. Recorded with no call after the step, so a
-                // later call never marks it twice.
+                // later call never marks it twice. A loop of compare-and-set rather than getAndUpdate with a lambda, as
+                // in leave().
                 try {
                     if (!marked) {
                         Faults.at(Faults.Step.RETIRE_MARKED);
-                        unused = users.getAndUpdate(count -> count == 0 ? CLOSED : count | RETIRED) == 0;
+                        int count;
+                        do {
+                            count = users.get();
+                            Faults.reached(Faults.Step.USERS_READ);
+                        } while (!users.compareAndSet(count, count == 0 ? CLOSED : count | RETIRED));
+                        unused = count == 0;
                         marked = true;
                     }
                 } finally {
@@ -1103,16 +1109,36 @@ final class RuleSet {
         }
     }
 
-    // Counts a run that holds a copy, unless the rule set is closed.
+    // Counts a run that holds a copy, unless the rule set is closed. A loop of compare-and-set rather than
+    // getAndUpdate with a lambda, as in leave().
     private boolean enter() {
-        return users.getAndUpdate(count -> count == CLOSED ? CLOSED : count + 1) != CLOSED;
+        int count;
+        do {
+            count = users.get();
+            if (count == CLOSED) {
+                return false;
+            }
+            Faults.reached(Faults.Step.USERS_READ);
+        } while (!users.compareAndSet(count, count + 1));
+        return true;
     }
 
     // Uncounts a run that gave back its copy, closing a retired rule set that no run uses any more. Returns the first
     // fatal Error from closing it. Whether the rule set is retired is read in the same step, so a run that leaves last
-    // closes it, and retire() never does once a run was counted when it retired the rule set.
+    // closes it, and retire() never does once a run was counted when it retired the rule set. A loop of
+    // compare-and-set rather than updateAndGet with a lambda: this is the last step of giving back a copy, and the JVM
+    // links a lambda the first time its call site runs, which takes more stack than the engine's checks make room for,
+    // so the JVM's first run, deep in a stack, could overflow here and leave the run counted for good, and a retired
+    // rule set would then never close its compilers (#1213).
     private Error leave() {
-        if (users.updateAndGet(count -> count - 1 == RETIRED ? CLOSED : count - 1) == CLOSED) {
+        int count;
+        int left;
+        do {
+            count = users.get();
+            left = count - 1 == RETIRED ? CLOSED : count - 1;
+            Faults.reached(Faults.Step.USERS_READ);
+        } while (!users.compareAndSet(count, left));
+        if (left == CLOSED) {
             return closeUnused();
         }
         return null;

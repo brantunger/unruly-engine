@@ -24,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * classes here link lambdas on paths every run or load takes too, so this reads each one's class file, as
  * {@link ClassFiles} does, and checks the methods on those paths alone: that none has an {@code invokedynamic}
  * instruction, a lambda's, a method reference's or any other. They are a failed borrow and the closing of a retired
- * rule set it may do, a run's wait for a copy or a build slot, a write that no setter accepts, with the methods of
+ * rule set it may do, a run's wait for a copy or a build slot, the counting of the runs that use a rule set, whose
+ * uncounting is the last step of giving back a copy (#1213), a write that no setter accepts, with the methods of
  * {@link Widening} it calls, and a load with two or more failures. The test fails too if a method named here isn't
  * there, so it can't pass because one was renamed.
  */
@@ -37,6 +38,9 @@ class FailureMethodLambdaTest {
                 // for a copy or a build slot.
                 Arguments.of(RuleSet.class, List.of("failedBorrow", "closeTaken", "closeUnused", "partDone",
                         "closeCompilers", "lend", "slottedCopy")),
+                // Counting a run that uses the rule set, uncounting it as the last step of giving back its copy, maybe
+                // deep in the JVM's first run's stack, and marking the rule set retired in the same count (#1213).
+                Arguments.of(RuleSet.class, List.of("enter", "leave", "retire")),
                 // A write that no setter accepts, and what its message says of the setters there are.
                 Arguments.of(OutputWriter.beansAndMaps().getClass(), List.of("set", "written", "primitiveSetters",
                         "unreachable")),
@@ -65,11 +69,13 @@ class FailureMethodLambdaTest {
     }
 
     @Test
-    @DisplayName("the reader finds the invokedynamic of a lambda on a path every run takes")
+    @DisplayName("the reader finds the invokedynamic of a lambda on a path every load takes")
     void readerFindsALambda() throws IOException, URISyntaxException {
-        // RuleSet.enter() counts a run with a lambda, which every run links shallow in its stack, so the reader finds
-        // one where there is one, and the test above can't pass because it finds none anywhere.
-        assertEquals(List.of("enter()Z"), ClassFiles.invokeDynamicMethods(ClassFiles.classFile(RuleSet.class))
-                .linking("enter"));
+        // RuleListCompiler.inPriorityOrder() sorts the rules with method references, which every load links shallow
+        // in its stack, so the reader finds one where there is one, and the test above can't pass because it finds
+        // none anywhere.
+        assertEquals(List.of("inPriorityOrder(Ljava/util/List;)Ljava/util/List;"),
+                ClassFiles.invokeDynamicMethods(ClassFiles.classFile(RuleListCompiler.class))
+                        .linking("inPriorityOrder"));
     }
 }

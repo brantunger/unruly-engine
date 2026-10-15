@@ -136,7 +136,13 @@ final class Faults {
          * records its own, so a test can record another meanwhile. Watched only, never failed (see
          * {@link #reached(Step)}).
          */
-        PARTS_DONE_READ(true);
+        PARTS_DONE_READ(true),
+        /**
+         * A rule set counting a run, uncounting one or marking itself retired, once it has read the count, before it
+         * records its own, so a test can change the count meanwhile. Watched only, never failed (see
+         * {@link #reached(Step)}).
+         */
+        USERS_READ(true);
 
         // Whether a test can only watch the step, which the code reaches with reached(Step), rather than make it fail.
         private final boolean watchOnly;
