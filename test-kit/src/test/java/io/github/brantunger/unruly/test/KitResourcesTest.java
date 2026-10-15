@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("KitResources stops a check's workers")
+@DisplayName("KitResources closes what a check creates and stops its workers")
 class KitResourcesTest {
 
     @Test
@@ -60,6 +60,61 @@ class KitResourcesTest {
             release.countDown();
             workers.shutdownNow();
             workers.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("closing() clears an interrupt that closing the resource puts back, as the engine does when a"
+            + " session's close() fails with an InterruptedException in its cause, after a check that passes (#1120)")
+    void closingClearsTheInterruptCloseSets() throws Exception {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+
+            KitResources.closing((AutoCloseable) () -> Thread.currentThread().interrupt(), resource -> {
+            });
+
+            assertFalse(Thread.currentThread().isInterrupted(), "closing() left the thread interrupted");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("closing() clears an interrupt that closing the resource puts back after a check that fails, and"
+            + " throws the check's failure (#1120)")
+    void closingClearsTheInterruptCloseSetsAfterAFailedCheck() {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+            IllegalStateException checkFailure = new IllegalStateException("the check failed");
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> KitResources.closing((AutoCloseable) () -> Thread.currentThread().interrupt(), resource -> {
+                        throw checkFailure;
+                    }));
+
+            assertSame(checkFailure, thrown);
+            assertFalse(Thread.currentThread().isInterrupted(), "closing() left the thread interrupted");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("on a thread that is already interrupted, closing() leaves the thread interrupted, though closing the"
+            + " resource interrupts it again (#1120)")
+    void closingOnAnInterruptedThread() throws Exception {
+        try {
+            Thread.currentThread().interrupt();
+
+            KitResources.closing((AutoCloseable) () -> Thread.currentThread().interrupt(), resource -> {
+            });
+
+            assertTrue(Thread.currentThread().isInterrupted(), "closing() cleared the thread's interrupt");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
         }
     }
 }

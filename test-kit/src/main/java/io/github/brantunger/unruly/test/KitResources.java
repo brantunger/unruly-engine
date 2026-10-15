@@ -30,7 +30,10 @@ final class KitResources {
      * try-with-resources would. A check builds its engine before it loads any rules, so a failed {@code load()} still
      * leaves the engine to be closed. What closing throws is attached to the check's own failure, unless it is that
      * failure or already attached to it (see {@link KitFailures#attach}): try-with-resources would report
-     * {@code "Self-suppression not permitted"} instead.
+     * {@code "Self-suppression not permitted"} instead. An interrupt that closing puts back, as the engine does when a
+     * session's or a compiler's {@code close()} fails with an {@link InterruptedException} in its cause, is cleared, so
+     * the checks that run on this thread next aren't interrupted; a thread that was interrupted before closing stays
+     * interrupted.
      *
      * @param resource The engine, with no rules loaded yet, or the compiler or session
      * @param check    What the check does with it
@@ -43,13 +46,30 @@ final class KitResources {
             check.accept(resource);
         } catch (Throwable failure) {
             try {
-                resource.close();
+                closeKeepingInterrupt(resource);
             } catch (Throwable closeFailure) {
                 KitFailures.attach(failure, closeFailure);
             }
             throw failure;
         }
-        resource.close();
+        closeKeepingInterrupt(resource);
+    }
+
+    // The engine puts back an interrupt that made a session's or a compiler's close() fail (Session.close()). That
+    // interrupt belongs to this check's engine, not to the checks that run on this thread after it (#1120). Accepted:
+    // an interrupt from outside that arrives during close(), on a thread that wasn't interrupted before, is cleared
+    // too. And one the engine puts back inside the check itself (a reload that closes the replaced copy's sessions, an
+    // explicit engine.close() in the check, a nested run's session close) reads as set before close() and is kept too
+    // (#1223).
+    private static void closeKeepingInterrupt(AutoCloseable resource) throws Exception {
+        boolean interruptedBefore = Thread.currentThread().isInterrupted();
+        try {
+            resource.close();
+        } finally {
+            if (!interruptedBefore) {
+                Thread.interrupted();
+            }
+        }
     }
 
     /**
