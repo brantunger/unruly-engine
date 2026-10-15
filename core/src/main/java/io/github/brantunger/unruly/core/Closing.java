@@ -59,9 +59,10 @@ final class Closing {
 
     /**
      * Closes the values the languages kept for a run, the last made first. Each is closed whatever was thrown while
-     * the one before was closed, even by logging what its {@code close()} threw, as logging can throw when it runs
-     * out of stack, or by keeping what logging threw, as that can when it runs out of memory. What logging throws
-     * isn't logged: it reaches the caller, carrying what the {@code close()} threw as a suppressed exception. What a
+     * the one before was closed, even by handling what its {@code close()} threw, as describing it can throw when it
+     * runs out of stack, or by keeping what that threw, as that can when it runs out of memory. An overflow inside the
+     * log call itself only loses the line (see {@link Failures#logWarn}); anything else handling it throws isn't
+     * logged: it reaches the caller, carrying what the {@code close()} threw as a suppressed exception. What a
      * {@code close()} threw is never lost when handling it fails: it's held, by assignment only, and added once every
      * value has been closed. Only combining what was thrown, then, can throw.
      *
@@ -112,13 +113,15 @@ final class Closing {
     /**
      * Handles what a value a language kept for a run threw from {@code close()}, and adds it to what the values closed
      * before it threw, the first fatal {@link Error} first (see {@link Failures#fatalFirst}): a fatal error it threw
-     * once it's logged, or, if logging it fails, what logging threw, carrying what it threw.
+     * once it's logged, or, if logging it fails, what logging threw, carrying what it threw. An overflow inside the log
+     * call itself isn't such a failure: it loses the line and nothing else (see {@link Failures#logWarn}).
      *
      * @param thrown What the value's {@code close()} threw
      * @param failed What the values closed before it threw that the caller throws, or {@code null}
      * @return What the caller throws, with this value's failure added
      */
-    // Any Throwable: what logging throws is the caller's to throw.
+    // Any Throwable: what logging throws is the caller's to throw, but for an overflow inside the log call, which
+    // Failures.logWarn swallows.
     private static Throwable runValueFailed(Throwable thrown, Throwable failed) {
         try {
             Faults.at(Faults.Step.RUN_VALUE_FAILURE_LOGGED);
@@ -170,10 +173,11 @@ final class Closing {
         Failures.keepInterruptStatus(e);
         if (!LoggedFailures.logged(e)) {
             if (language == null) {
-                log.warn("A value a language kept for the run failed to close: {}", Failures.describe(e));
-            } else {
-                log.warn("The '{}' expression language failed to close {}: {}", Failures.quote(language), what,
+                Failures.logWarn(log, "A value a language kept for the run failed to close: {}",
                         Failures.describe(e));
+            } else {
+                Failures.logWarn(log, "The '{}' expression language failed to close {}: {}",
+                        Failures.quote(language), what, Failures.describe(e));
             }
         }
         return Failures.fatalError(e);

@@ -324,7 +324,7 @@ final class RuleListCompiler {
         // failure. One logged here is recorded, so a run or load around this one's doesn't log it again.
         private void failed(RuleCompilationException failure) {
             if (logged && Failures.nestedRunFailure(failure) == null) {
-                log.error(failure.getMessage());
+                Failures.logError(log, failure.getMessage());
                 LoggedFailures.loggedByLoad(failure);
             }
             failures.add(failure);
@@ -498,7 +498,7 @@ final class RuleListCompiler {
         Error fatal = Failures.fatalError(cause);
         if (fatal != null) {
             if (LoggedFailures.unlogged(cause)) {
-                log.error(msg);
+                Failures.logError(log, msg);
             }
             throw fatal;
         }

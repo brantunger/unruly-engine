@@ -168,7 +168,7 @@ final class ListenerNotifier {
             boolean logs = thrown.ofTold() ? LoggedFailures.unloggedFatal(fatal)
                     : LoggedFailures.unlogged(thrown.thrown());
             if (logs) {
-                log.error(listenerFatalMessage(thrown, callback, wrapped));
+                Failures.logError(log, listenerFatalMessage(thrown, callback, wrapped));
             }
             Failures.keepAlso(fatal, failing);
             throw fatal;
@@ -233,7 +233,7 @@ final class ListenerNotifier {
             // Asked before unlogged() records a fatal error it's told of for the first time.
             boolean wrapped = Failures.wrapsLoggedFatal(thrown.thrown());
             if (LoggedFailures.unlogged(thrown.thrown())) {
-                log.error(listenerFatalMessage(thrown, forRule(callback, rule), wrapped));
+                Failures.logError(log, listenerFatalMessage(thrown, forRule(callback, rule), wrapped));
             }
             throw thrown.fatal();
         }
@@ -250,7 +250,7 @@ final class ListenerNotifier {
      */
     private Error logWrappedFromOnError(ListenerFatal thrown, CompiledRule rule) {
         if (Failures.wrapsLoggedFatal(thrown.thrown())) {
-            log.error(listenerFatalMessage(thrown, forRule("onError", rule), true));
+            Failures.logError(log, listenerFatalMessage(thrown, forRule("onError", rule), true));
         }
         return thrown.fatal();
     }
@@ -417,7 +417,7 @@ final class ListenerNotifier {
         // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
         // it throws, as a listener's own exception can.
         if (rethrowsTold || !LoggedFailures.logged(thrown)) {
-            log.warn("Listener threw exception in {}: {}", callback,
+            Failures.logWarn(log, "Listener threw exception in {}: {}", callback,
                     hasNested ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
         }
         logStackTrace(log, "Listener threw exception in " + callback, thrown);
@@ -465,7 +465,7 @@ final class ListenerNotifier {
             Failures.keepAlso(rethrown, fromListener);
             // Says which one onRunError can see: the loop has already logged any later fatal error.
             if (!LoggedFailures.logged(fromListener)) {
-                log.warn("Listener threw exception in onError, kept on the failure: {}",
+                Failures.logWarn(log, "Listener threw exception in onError, kept on the failure: {}",
                         Failures.describeWithClass(fromListener));
             }
             logStackTrace(log, "Listener threw exception in onError", fromListener);
@@ -515,7 +515,7 @@ final class ListenerNotifier {
      */
     private Error reportFailure(CompiledRule rule, RuleExecutionException error, boolean logged) {
         if (logged) {
-            log.error(error.getMessage());
+            Failures.logError(log, error.getMessage());
         }
         // Only a rule's condition, action or output writer, or a listener before one, fails a rule, inside run(), so a
         // run is in progress.

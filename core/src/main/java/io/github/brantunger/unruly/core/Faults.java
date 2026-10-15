@@ -96,6 +96,11 @@ final class Faults {
          */
         FAILURE_DESCRIBING,
         /**
+         * Logging at ERROR a failure the engine reports or rethrows, or a warning at WARN, before it has (see
+         * {@link Failures#logError} and {@link Failures#logWarn}).
+         */
+        FAILURE_LOGGED,
+        /**
          * {@code close()} marking the engine closed, once it has, before it lets go of the rules. Watched only, never
          * failed (see {@link #reached(Step)}).
          */

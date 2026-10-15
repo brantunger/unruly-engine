@@ -485,7 +485,7 @@ public final class Failures {
         winner.addSuppressed(loser);
         // A throwable built with suppression disabled ignores addSuppressed().
         if (!carries(winner, loser)) {
-            log.warn("The fatal error {} can't carry a suppressed exception, so it's rethrown without {}",
+            logWarn(log, "The fatal error {} can't carry a suppressed exception, so it's rethrown without {}",
                     describeWithClass(winner), describeWithClass(loser));
         }
     }
@@ -1744,6 +1744,59 @@ public final class Failures {
     static Throwable rootCause(Throwable e) {
         List<Throwable> chain = causeChain(e);
         return chain.get(chain.size() - 1);
+    }
+
+    /**
+     * Logs a failure the engine reports or rethrows at ERROR. The first message logged in a JVM loads and initializes
+     * classes of the logging provider's, such as SLF4J's {@code Level} and {@code FormattingTuple} with slf4j-simple,
+     * which no engine's build does, and that can take more stack than the room the engine checks for before a load or
+     * a run, so deep in a stack the log call itself can overflow. The line is then lost, and the caller still reports
+     * or rethrows the failure, rather than a {@link StackOverflowError} in its place (#1208). Whatever records the
+     * failure as logged has recorded it already, or still does, so a load or a run around this one doesn't log it
+     * again. Any other failure of the log call is thrown, as before, and so is an {@link InternalError} that doesn't
+     * wrap an overflow (see {@link #isOverflow}).
+     *
+     * @param logger  The engine's logger
+     * @param message What failed
+     */
+    static void logError(Logger logger, String message) {
+        try {
+            Faults.at(Faults.Step.FAILURE_LOGGED);
+            logger.error(message);
+        } catch (StackOverflowError ignored) {
+            // Only the line is lost; the caller still has the failure.
+        } catch (InternalError internal) {
+            // As for a StackOverflowError when it wraps one, as the JDK does, and else as for any other
+            // VirtualMachineError.
+            if (!isOverflow(internal)) {
+                throw internal;
+            }
+        }
+    }
+
+    /**
+     * Logs a warning at WARN, as {@link #logError} logs a failure at ERROR: an overflow inside the log call, as the
+     * first message logged in a JVM can overflow deep in a stack, loses the line, and the caller goes on as it does
+     * once the line is logged, rather than throwing a {@link StackOverflowError} (#1208). Any other failure of the log
+     * call is thrown, as before, and so is an {@link InternalError} that doesn't wrap an overflow (see
+     * {@link #isOverflow}).
+     *
+     * @param logger    The engine's logger
+     * @param format    The message, with a {@code {}} for each argument, as SLF4J formats it
+     * @param arguments The arguments
+     */
+    static void logWarn(Logger logger, String format, Object... arguments) {
+        try {
+            Faults.at(Faults.Step.FAILURE_LOGGED);
+            logger.warn(format, arguments);
+        } catch (StackOverflowError ignored) {
+            // Only the line is lost; the caller goes on.
+        } catch (InternalError internal) {
+            // As in logError.
+            if (!isOverflow(internal)) {
+                throw internal;
+            }
+        }
     }
 
     /**
