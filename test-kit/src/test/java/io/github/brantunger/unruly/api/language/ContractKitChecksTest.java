@@ -1652,6 +1652,31 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a session whose close() fails with an InterruptedException in its cause doesn't leave the thread"
+            + " interrupted for the next engine of the same check, nor for the checks after it (#1120)")
+    void interruptedCloseNotLeakedToTheNextEngine() {
+        // The engine puts back the interrupt when it closes an engine's sessions, so the check's later engines would
+        // run on an interrupted thread, and the check fail with "run() was interrupted before rule ...".
+        ExpressionLanguage interruptedClose = withSessions(new ToyExpressionLanguage(), () -> new Session() {
+            @Override
+            public void close() {
+                throw new IllegalStateException("the session's close was interrupted",
+                        new InterruptedException("while the session waited for its runtime"));
+            }
+        });
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+
+            assertDoesNotThrow(() -> runCheck(interruptedClose, "actionVariablesStayLocal"));
+
+            assertFalse(Thread.currentThread().isInterrupted(), "the check left the thread interrupted");
+        } finally {
+            // Cleared for the tests that run on this thread next, whatever the check did.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     @DisplayName("a session whose close() throws a fatal error fails the session check with that error (#470)")
     void fatalCloseReported() {
         // The engine rethrows a fatal error from close(), the same instance the session threw, from engine.close().
