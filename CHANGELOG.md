@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.15](https://github.com/brantunger/unruly-engine/compare/v2.30.14...v2.30.15) (2026-10-15)
+
+
+### Bug Fixes
+
+* run a throwaway ConcurrentLinkedQueue at the first build, so a deep first run under -Xcomp can't overflow inside the idle queue after it has changed and lose or double-close a copy ([#1221](https://github.com/brantunger/unruly-engine/issues/1221)) ([943b408](https://github.com/brantunger/unruly-engine/commit/943b408c5e6b56c85cb37b1587eb2ffcc7bc1ba0))
+
 ## [2.30.14](https://github.com/brantunger/unruly-engine/compare/v2.30.13...v2.30.14) (2026-10-15)
 
 
