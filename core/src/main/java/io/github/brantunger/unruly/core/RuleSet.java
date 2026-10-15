@@ -709,7 +709,8 @@ final class RuleSet {
     // kept for a run that is waiting is never left open: the run giving it back is counted until it leaves, after this,
     // so if no run takes it, the last run to leave closes it, even one that stopped waiting. A copy the idle queue
     // can't take, as when it can't allocate room for it, is closed too, rather than lost with its sessions open, and
-    // what the queue threw is logged at WARN, and returned first if it's fatal.
+    // what the queue threw is logged at WARN, and returned first if it's fatal. An overflow in that log call loses only
+    // the line (see Failures.logWarn, #1217).
     // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
         if (isRetired() && idle.size() >= keptForWaiters()) {
@@ -720,8 +721,8 @@ final class RuleSet {
         } catch (Throwable t) {
             Error closeFatal = Closing.sessions(sessions);
             Failures.keepInterruptStatus(t);
-            log.warn("A copy of the rules couldn't be kept for a later run, so its sessions were closed: {}",
-                    Failures.describe(t));
+            Failures.logWarn(log, "A copy of the rules couldn't be kept for a later run, so its sessions were closed:"
+                    + " {}", Failures.describe(t));
             return Failures.first(Failures.fatalError(t), closeFatal);
         }
         return null;

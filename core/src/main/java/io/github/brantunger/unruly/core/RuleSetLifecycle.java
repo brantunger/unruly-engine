@@ -310,9 +310,10 @@ final class RuleSetLifecycle {
                 : Failures.laterInsteadOf(failure, failed);
         // What retiring threw says it when it's thrown, and keepAlso logged it when it couldn't be carried. Carried,
         // it's logged once here while the rule set is left for a later load() or close(); a fatal error closing it
-        // threw, which leaves it retired, was logged as it was caught.
+        // threw, which leaves it retired, was logged as it was caught. An overflow in the log call loses only the line,
+        // as after a swap (#1217).
         if (Failures.carries(instead != null ? instead : failure, failed) && !loaded.retiredForGood()) {
-            log.warn(RETIRE_AGAIN, Failures.describe(failed));
+            Failures.logWarn(log, RETIRE_AGAIN, Failures.describe(failed));
         }
         Failures.rethrowUnchecked(instead);
     }

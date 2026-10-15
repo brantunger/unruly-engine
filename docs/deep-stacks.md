@@ -44,6 +44,10 @@ checks any setting, even a wrong one. The next `build()` checks again.
 It also loads the engine's classes a load or run uses, so a first load or run reads none of them from a file; a
 language's own are its `prepare()`'s to load.
 
+**It also runs a `ConcurrentLinkedQueue` of its own,** the JDK class a rule set keeps its idle copies in, so the
+JVM links the call sites that change one. Up to 2.30.14, measured with `-Xcomp`, a deep first run could link them
+and overflow after the queue changed, losing a copy or closing one left in it.
+
 **On JDK 21 and 22, outside a native image, it also initializes the JDK's
 `jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep
 in a stack, that read could leave every later one failing for the life of the JVM. It initializes `ForkJoinPool` too,
@@ -158,8 +162,8 @@ unusable: each struck while loading a class, not in its static initializer. Othe
 measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing overflowed.
 
 > [!NOTE]
-> Up to 2.30.12, the engine didn't catch it: the caller got a bare `StackOverflowError`, with no message, and no
-> ERROR or WARN line, in place of what the call would have done.
+> Up to 2.30.12, or 2.30.14 for the WARN lines on keeping an idle copy or retiring rules after a failed load, the
+> engine didn't catch it: the caller got a bare `StackOverflowError`, with no message or line.
 
 ### The JDK classes a rule names or calls
 
