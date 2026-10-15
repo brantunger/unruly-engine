@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.16](https://github.com/brantunger/unruly-engine/compare/v2.30.15...v2.30.16) (2026-10-15)
+
+
+### Bug Fixes
+
+* clear the interrupt that closing a check's engine puts back in the contract kit, so a session whose close() fails with an InterruptedException cause no longer interrupts the check's next engine ([#1224](https://github.com/brantunger/unruly-engine/issues/1224)) ([dfd59d7](https://github.com/brantunger/unruly-engine/commit/dfd59d741a73e43d8b2ec9f600c57b4350b79d91))
+
 ## [2.30.15](https://github.com/brantunger/unruly-engine/compare/v2.30.14...v2.30.15) (2026-10-15)
 
 
