@@ -168,6 +168,9 @@ class CancelCallbackTest {
     @Test
     @DisplayName("#1117: the action of a run on a virtual thread that never blocks runs at the deadline, though the run"
             + " holds the only carrier")
+    // Longer than ChildJvm.TIMEOUT, so a scenario that spins to its cap after retrying its runs on a busy machine is
+    // killed by ChildJvm, which reports its output, before JUnit interrupts the wait for it.
+    @Timeout(value = 120, unit = TimeUnit.SECONDS)
     void runsWhileVirtualCarriersAreBusy(@TempDir Path dir) throws IOException, InterruptedException {
         // One carrier, in the scenario's JVM only, so the spinning run holds every carrier there is.
         String output = ChildJvm.run(dir, BusyCarriersScenario.class, "-Djdk.virtualThreadScheduler.parallelism=1",
