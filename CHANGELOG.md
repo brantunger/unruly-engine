@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.30.17](https://github.com/brantunger/unruly-engine/compare/v2.30.16...v2.30.17) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep a rule set's idle copies and open compilers in a stack whose change is its last step, so a stack overflow deep in a run can't lose a copy or close one that is lent or closed again; idle copies are now lent newest first ([#1227](https://github.com/brantunger/unruly-engine/issues/1227)) ([1a27091](https://github.com/brantunger/unruly-engine/commit/1a27091c34571c11b87366fd0bb68f8ef59a1143))
+
 ## [2.30.16](https://github.com/brantunger/unruly-engine/compare/v2.30.15...v2.30.16) (2026-10-15)
 
 
