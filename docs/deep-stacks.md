@@ -139,7 +139,27 @@ language of its own.
 A path they don't take may initialize or load one, as may a JDK other than 21, 25 and 26, whose classes the engine
 names, skipping missing ones; a native image names none. Nothing prepares
 [what MVEL leaves to first use](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack), or the logging
-classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`.
+classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
+Logback, some of its own and the `java.time` classes it formats dates with.
+
+**An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
+first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
+exception, can overflow while the provider loads those classes. The engine catches that overflow in its ERROR and
+WARN log calls, all but a few last-resort ones made only while a fatal error, or a failure it never expects, is
+already being handled.
+
+The call then ends as it would have near the top: `load()` throws its `RuleCompilationException`, or succeeds
+past a language's warning; a run fails the rule, throws its failure or what stopped it, or goes on past a warning or
+a listener's exception; a rejected fact throws its `IllegalArgumentException`; and a fatal error is still thrown.
+The lost line is gone: nothing logs it later, not even a `load()` or `run()` around a nested one.
+
+Measured with `slf4j-simple` 2.0.20 and Logback 1.5.38, on JDK 21 and 25, none of those overflows left a class
+unusable: each struck while loading a class, not in its static initializer. Other paths and providers aren't
+measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing overflowed.
+
+> [!NOTE]
+> Up to 2.30.12, the engine didn't catch it: the caller got a bare `StackOverflowError`, with no message, and no
+> ERROR or WARN line, in place of what the call would have done.
 
 ### The JDK classes a rule names or calls
 

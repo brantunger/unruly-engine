@@ -64,7 +64,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * application's own, and if its first loads and its first run, a bean output's, load any class from a file but the
  * application's and its languages'. A path the scenario doesn't take may still initialize or load one,
  * and so does the first message the engine logs, with a provider that logs: with slf4j-simple, it initializes SLF4J's
- * {@code Level} and {@code FormattingTuple}, which aren't initialized here. This class has no static initializer of its
+ * {@code Level} and {@code FormattingTuple}, which aren't initialized here. Deep in a stack, that can overflow inside
+ * the engine's own log call, which then loses the line, and the failure is still reported or rethrown (see
+ * {@link Failures#logError}, #1208). This class has no static initializer of its
  * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
  * builder's settings reject may still initialize classes before any check, maybe deep in a stack, though nothing a
  * builder accepts does: {@code language()} initializes {@link LanguageNames.Problem} when it rejects a language's name,

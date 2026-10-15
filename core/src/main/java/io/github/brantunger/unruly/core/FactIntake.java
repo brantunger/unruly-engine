@@ -196,7 +196,7 @@ final class FactIntake {
      * @return The exception to throw
      */
     private IllegalArgumentException rejectedFact(String msg) {
-        log.error(msg);
+        Failures.logError(log, msg);
         return LoggedFailures.loggedByRun(new IllegalArgumentException(msg));
     }
 
@@ -323,7 +323,7 @@ final class FactIntake {
                 // run() or load() the check started has already logged its failure; the language's own instance is
                 // what's recorded as logged here.
                 if (logged && Failures.nestedRunFailure(e) == null) {
-                    log.error(Failures.describe(e));
+                    Failures.logError(log, Failures.describe(e));
                     LoggedFailures.loggedByRun(e);
                 }
                 return e;
@@ -339,7 +339,7 @@ final class FactIntake {
         Error fatal = Failures.fatalError(failure);
         boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
         if (logs) {
-            log.error(msg);
+            Failures.logError(log, msg);
         }
         Failures.throwIfPresent(fatal);
         // The engine's words around what the language threw, which may be a nested run's failure (see LoggedFailures).

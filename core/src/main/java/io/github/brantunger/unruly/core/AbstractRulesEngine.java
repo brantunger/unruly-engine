@@ -783,7 +783,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw, which belongs to no rule
      */
     static RuleExecutionException failedRun(String msg) {
-        log.error(msg);
+        Failures.logError(log, msg);
         return new ReportedFailure(msg, null);
     }
 
@@ -947,7 +947,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (cause instanceof InterruptedException) {
             tally.markInterrupted();
         }
-        log.warn(msg);
+        Failures.logWarn(log, msg);
         RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
@@ -1382,7 +1382,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private ReportedFailure cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
         if (!Failures.nestedRunStopped(thrown, deadline)) {
-            log.warn(msg);
+            Failures.logWarn(log, msg);
         }
         return ReportedFailure.stop(msg, cause, deadline);
     }
@@ -1445,7 +1445,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
         if (output == null) {
             String msg = "Output factory returned null. It must return a new output object on every call.";
-            log.error(msg);
+            Failures.logError(log, msg);
             throw new ReportedFailure(msg, null);
         }
         return output;
@@ -1486,7 +1486,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     static void reportCalledCodeFailure(String msg, Throwable e) {
         if (LoggedFailures.unlogged(e)) {
-            log.error(msg);
+            Failures.logError(log, msg);
         }
         Failures.throwIfPresent(Failures.fatalError(e));
     }

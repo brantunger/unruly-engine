@@ -177,7 +177,7 @@ final class RuleSetLifecycle {
         List<RuleCompilationException> listProblems = compiler.listProblems(ruleList, RuleListCompiler.Mode.LOAD);
         if (!listProblems.isEmpty()) {
             RuleCompilationException first = listProblems.get(0);
-            log.error(first.getMessage());
+            Failures.logError(log, first.getMessage());
             throw LoggedFailures.loggedByLoad(first);
         }
         RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.LOAD);
@@ -237,7 +237,7 @@ final class RuleSetLifecycle {
         }
         Failures.throwIfPresent(Failures.fatalError(failed));
         if (failed != null) {
-            log.warn(RETIRE_AGAIN, Failures.describe(failed));
+            Failures.logWarn(log, RETIRE_AGAIN, Failures.describe(failed));
         }
     }
 
