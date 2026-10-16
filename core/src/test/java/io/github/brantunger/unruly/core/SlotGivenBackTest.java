@@ -64,7 +64,8 @@ class SlotGivenBackTest {
     }
 
     private static final CompiledRule RULE = new CompiledRule(
-            Rule.builder().ruleName("r").condition("true").action("1").build(), "r", "a", new Stub(), new Stub());
+            Rule.builder().ruleName("r").condition("true").action("1").build(), "r", "a", new Stub(), new Stub(),
+            (value, target) -> value);
 
     /** A compiler that only creates sessions. */
     private static ExpressionCompiler compiler(AtomicInteger counter) {

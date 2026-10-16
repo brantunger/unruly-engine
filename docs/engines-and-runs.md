@@ -50,19 +50,19 @@ engine.close();
 - A [run](glossary.md#run) evaluates the rules in [evaluation order](glossary.md#evaluation-order), highest priority
   first, and [skips](#-choosing-which-rules-a-run-uses) disabled rules, rules outside their validity window, and, on a
   run given tags, rules with none of them.
-- A **first-match** engine stops at the first rule whose condition is true and fires only that one. An
-  **all-matches** engine evaluates every condition, then fires every match in order. A **unique-match** engine
-  evaluates every condition too, then fires its one match, or fails the run if more match.
-- The [output supplier](glossary.md#output-supplier) is called once per run, and only after a rule has
-  matched. `run()` returns `null` exactly when no rule fired.
+- A **first-match** engine fires the first rule whose condition is true; an **all-matches** engine evaluates every
+  condition, then fires every match in order; a **unique-match** engine does too, but fires its one match, or fails
+  the run if more match.
+- The [output supplier](glossary.md#output-supplier) is called once per run, after a rule has matched; `run()`
+  returns `null` exactly when no rule fired.
 - A failing condition or action fails the run: it throws. See
   [What happens on each failure](error-handling.md#-what-happens-on-each-failure).
 - Another `load()` swaps in new rules at once; a run finishes with the rules it started with.
 
 ## 📜 Rule order
 
-`load()` sorts the rule list into evaluation order once, and every run of the engine uses that order, on every thread
-and with every match policy:
+`load()` sorts the rule list into evaluation order once, and every run uses that order, on every thread and with
+every match policy:
 
 - A higher `priority` comes first.
 - Equal priorities keep their order from the list passed to `load()`.
@@ -151,13 +151,9 @@ run without tags uses rules whatever their tags. Tags are compared exactly, case
 and `withTimeout(...)` keeps their tags. `RunOptions.tags()` returns them, empty when the run uses every rule, and
 `RunContext.tags()`, `RunResult.tags()` and, since 2.31.0, `EvaluationContext.tags()` return the same tags.
 
-> [!WARNING]
-> A run given tags skips every rule that has no tags, including a default meant to apply everywhere, such as a
-> lowest-priority rule whose condition is `true`. Give such a rule every tag your runs are given.
-
 ## 🔀 First match or all matches
 
-The [match policy](glossary.md#match-policy) is chosen when the engine is built, and can't change. There are three:
+The [match policy](glossary.md#match-policy) is fixed when the engine is built. There are three:
 first match, all matches, and [unique match](#unique-match-one-rule-or-none), for a decision table whose rows must
 not overlap.
 
@@ -174,9 +170,6 @@ not overlap.
 | **`RunContext.matchPolicy()`** | `"firstMatch"` | `"allMatches"` | `"uniqueMatch"` |
 | **Good for** | Decision tables and "first match wins" logic | Scoring, tagging, and collecting every violation | Decision tables whose rows must not overlap |
 | **Quick start, score 780** | `4.5`, `[prime]` | `6.9`, `[prime, standard]` | Fails: both rules match |
-
-On every policy, a rule the run [skips](#-choosing-which-rules-a-run-uses) isn't evaluated, doesn't fire and
-doesn't count as a match.
 
 | If you need | Use |
 | --- | --- |
@@ -209,15 +202,10 @@ sequenceDiagram
     Note over E,B: B's condition isn't evaluated again
 ```
 
-> [!WARNING]
-> An all-matches run isn't atomic. If an action throws, the actions that already ran keep their changes to the output
-> object and to any facts they changed, and the run throws a `RuleExecutionException` naming the failing rule. A
-> failing condition changes nothing, because no action has run yet.
-
 ### Unique match: one rule or none
 
-In a decision table, two rows that match the same input usually mean a mistake in the table, and a first-match engine
-hides it by picking the higher priority. A unique-match engine evaluates every condition, like an all-matches engine,
+In a decision table, two rows that match the same input usually mean a mistake, and a first-match engine hides it by
+picking the higher priority. A unique-match engine evaluates every condition, like an all-matches engine,
 and then:
 
 - **No match:** returns `null` and fires nothing.
@@ -257,16 +245,12 @@ supplier, the `Supplier` you give `firstMatch(...)`, `allMatches(...)` or `uniqu
 | No condition is true, the rule list is empty, or the run skips every rule | Never, and `run()` returns `null` |
 | A condition fails, or the run is stopped before a rule matches | Never, and the run throws |
 
-- **It must return a new object on every call.** The engine doesn't copy what it returns. A supplier that returns one
-  shared object gives every run that object, so results pile up (`notes = [prime, prime]` after two runs), and runs on
-  different threads change it at once.
+- **It must return a new object on every call.** The engine doesn't copy it: `firstMatch(() -> decision)` passes a
+  test that runs once, but gives every run the same object, so results pile up (`notes = [prime, prime]` after two
+  runs) and concurrent runs change it at once. Write `firstMatch(LoanDecision::new)`.
 - **It must not return `null` or throw.** Either fails the run with a `RuleExecutionException` that names no rule.
 - `outputType(...)` on the builder only tells languages the output's type. The engine never checks the output against
   it.
-
-> [!WARNING]
-> `firstMatch(() -> decision)` passes a test that runs once, but in production every run adds to the one `decision`.
-> Write `firstMatch(LoanDecision::new)`.
 
 ### How actions change it
 
@@ -287,12 +271,21 @@ to the same setter every run. A `null` output or property name throws `NullPoint
 
 Only when none accepts the value does it widen it to the nearest primitive, as a
 [primitive fact declaration](facts.md#primitive-types-widen) does: an `Integer` reaches `setR(long)` before
-`setR(float)`.
+`setR(float)`. The writer itself converts nothing else: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't
+reach `setR(Long)`, and a `BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive.
 
-Nothing else is converted: a `Long` doesn't reach `setR(int)`, an `Integer` doesn't reach `setR(Long)`, and a
-`BigDecimal`, a `BigInteger` or `null` doesn't reach any primitive. So a CEL integer, a `Long`, needs a setter
-taking it, a `float` or `double`, and a Groovy decimal, a `BigDecimal`, one taking it; otherwise, write an
-`outputWriter(...)`.
+Since 2.32.0, when widening doesn't help either, the writer asks the rule's language to
+[convert](languages/output-conversion.md) the value for each setter of the property, and calls the first that accepts
+the result: a language whose numbers are all `Double` can set `setCount(int)` from `3.0`, and refuses `1.5`, which
+fails the rule, naming it and the property.
+
+Without a conversion, the failure below is as it was, so a CEL integer, a `Long`, needs a setter taking it, a `float`
+or `double`, and a Groovy decimal, a `BigDecimal`, one taking it; otherwise, write an `outputWriter(...)`. MVEL
+changes the output in place and never reaches the writer.
+
+A custom writer gets the language's conversion, as an `OutputConverter`, only if it overrides
+`set(output, property, value, converter)`; a lambda, or a writer overriding only the three-argument `set`, gets the
+value as the action returned it.
 
 Beside a same-named setter with a different parameter, one declared with its class's own type variable,
 `setContent(T)` in `Box<T>`, takes only what Java gives `T` in the output class, as in `LongBox extends Box<Long>` or
@@ -327,11 +320,11 @@ number, character or boolean, but one takes a primitive or boxed primitive, the 
 | **A shared output object** | `firstMatch(() -> decision)` gives every run the same object, so results from earlier runs pile up | Return a new object: `firstMatch(LoanDecision::new)` |
 | **A `null` priority** | The rule comes after every number, even `-1000` | Give every rule a priority, and assert the order with `rules().rules()` |
 | **Rules below a first match** | They aren't evaluated, so they're neither matched nor unmatched: `evaluations()` reports them as `NOT_EVALUATED`, or `SKIPPED` if the run skips them, and listeners hear nothing about them | Use `allMatches(...)` or `uniqueMatch(...)` to evaluate every rule |
-| **A run given tags, and rules without any** | The run skips every rule with no tags, including a catch-all default | Give such a rule every tag your runs are given |
+| **A run given tags, and rules without any** | The run skips every rule with no tags, including a catch-all default such as a lowest-priority rule whose condition is `true` | Give such a rule every tag your runs are given |
 | **Tags that differ only in case** | `withTags(Set.of("EU"))` skips a rule tagged `eu` | Use one spelling for each tag |
 | **Two rows of a decision table overlap** | A first-match engine fires the higher priority and hides the overlap | Use `uniqueMatch(...)`, which fails the run and names both rules |
 | **An action changes a fact in an all-matches run** | Rules that already matched still fire; conditions aren't evaluated again | Decide in conditions, from the facts as the run was given them |
-| **An action fails in an all-matches run** | The actions before it keep their changes | Discard the output and any facts the actions changed |
+| **An action fails in an all-matches run** | The run isn't atomic: it throws a `RuleExecutionException` naming the rule, and the actions before it keep their changes to the output and to facts | Discard the output and any facts the actions changed |
 
 > [!NOTE]
 > The rest of this page is for applications that reload rules. You can stop here if you load your rules once, at

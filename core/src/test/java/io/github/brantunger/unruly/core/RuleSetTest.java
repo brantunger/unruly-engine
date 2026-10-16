@@ -82,7 +82,7 @@ class RuleSetTest {
 
     private static final CompiledRule RULE = new CompiledRule(
             Rule.builder().ruleName("r").condition("true").action("1").build(), "r", "a", new Stub("condition"),
-            new Stub("action"));
+            new Stub("action"), (value, target) -> value);
 
     /** A compiler that only creates sessions, numbering them with {@code counter} and recording the language. */
     private static ExpressionCompiler compiler(String language, AtomicInteger counter, List<String> created) {

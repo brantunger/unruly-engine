@@ -10,8 +10,8 @@ import java.util.Set;
  *
  * <p>
  * It forwards the {@code default} methods too, so a test that overrides only the method it breaks doesn't silently
- * replace the other compiler's {@code warmUp}, {@code checkFactName} or {@code close} with the do-nothing default
- * (#736). {@code ForwardingTest} fails if a method of {@link ExpressionCompiler} isn't forwarded.
+ * replace the other compiler's {@code warmUp}, {@code checkFactName}, {@code convertOutput} or {@code close} with the
+ * do-nothing default (#736). {@code ForwardingTest} fails if a method of {@link ExpressionCompiler} isn't forwarded.
  * </p>
  */
 public class ForwardingExpressionCompiler implements ExpressionCompiler {
@@ -55,6 +55,11 @@ public class ForwardingExpressionCompiler implements ExpressionCompiler {
     @Override
     public @Nullable Set<String> factNamesRead() {
         return compiler.factNamesRead();
+    }
+
+    @Override
+    public @Nullable Object convertOutput(Object value, Class<?> target) {
+        return compiler.convertOutput(value, target);
     }
 
     @Override

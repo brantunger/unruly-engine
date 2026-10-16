@@ -196,6 +196,12 @@ final class SessionWatch {
                         return compiler.factNamesRead();
                     }
 
+                    // Forwarded, so the writer converts a wrapped language's values as it does unwrapped (#1127).
+                    @Override
+                    public @Nullable Object convertOutput(Object value, Class<?> target) {
+                        return compiler.convertOutput(value, target);
+                    }
+
                     @Override
                     public void close() {
                         compiler.close();

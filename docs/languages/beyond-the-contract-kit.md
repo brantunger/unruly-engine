@@ -31,8 +31,7 @@ whatever cancelled it, so an interrupt that lands as the adapter cancels for the
 the timeout.
 
 **The `CompileContext`.** Every check compiles with the context `configure` or `compileContext()` gives, empty by
-default, so a language that ignores imports, options, declared facts and the output type passes. Test how your
-language handles each;
+default, so a language that ignores imports, options, declared facts and the output type passes. Test each yourself;
 [Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
 
 ## 🔧 A language that needs declared facts, imports or options
@@ -67,7 +66,7 @@ mustn't, since `build()` then fails.
 
 `configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
 `runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
-checks could fail for reasons unrelated to your language. Nor may it declare a name your language
+checks could fail for reasons other than your language. Nor may it declare a name your language
 [reserves](custom.md#-fact-names), which fails `build()`, or the `unusableFactName()` name: `load()`
 checks declared names with your language, which rejects it. A `copiesAtLoad` or `maxCopies` it sets doesn't change
 the checks that set their own. A `maxCopies(2)` keeps `concurrentRuns` to two sessions, so it can't catch a repeat
@@ -80,14 +79,15 @@ checks table, and where each falls short.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
-closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, and
-`compilerClosed` adds `copiesAtLoad(1)`.
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, `compilerClosed`
+adds `copiesAtLoad(1)`, and `outputNumbersConverted` adds a writer setting each property on a `WritableApplicant` with
+the default writer.
 
 `concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
 `configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
 engine, which prepares the instance again, and loads and runs one rule. The engines are closed together once the
-threads are stopped, waiting up to 5 seconds. The failure names every thread that failed, or hadn't finished within
-30 seconds of the release, and the step it was at, with what each threw attached.
+threads are stopped, waiting up to 5 seconds. The failure names every thread that failed, or hadn't finished 30
+seconds after the release, its step, and what it threw.
 
 `sessionClosedOnAnotherThread` adds `copiesAtLoad(0)`. `sessionClosedWhileAnotherRuns` adds `copiesAtLoad(0)` and
 `maxCopies(1)`. `conditionDetail`, `failedActionVariablesStayLocal`, `sharedStateStaysLocal`, the later-run parts of
@@ -98,11 +98,12 @@ used.
 `compilerClosed`, `conditionDetail`, `concurrentRuns` and the three session checks (`sessionsClosed`,
 `sessionClosedWhileAnotherRuns` and `sessionClosedOnAnotherThread`) wrap your language to watch its compiler or
 sessions, and `unusableFactNameRejected`, `unreservedOutputReadAsFact` and `factNamesReadHoldsTheFactsRead` to watch
-its fact names. The wrappers forward `warmUp`, so copies made at load warm up as without the kit.
+its fact names. The wrappers forward `warmUp` and `convertOutput`, so copies made at load warm up, and values convert,
+as without the kit.
 
 `factValue(x)` must not coerce `"true"` or `1` to a boolean. Output numbers are compared by value, so `Long` or
 `Double` whole numbers pass. When an output differs only in a value's type, such as the `Integer` 1 and the `String`
-"1", which print the same, the failure says so. Except in `usableFactNamesAccepted`, a failure that compares outputs
+"1", which print alike, the failure says so. Except in `usableFactNamesAccepted`, a failure that compares outputs
 also carries both, for your IDE's diff view.
 
 `compilerClosed`, `concurrentRuns`, `concurrentPrepares`, the three session checks and `evaluateAgreesWithDetail` show
@@ -119,8 +120,8 @@ compare output.
 
 In `sessionClosedWhileAnotherRuns`, a listener starts a nested run. The check's run holds the only kept copy, so the
 nested run gets an [extra copy](../compiled-copies.md#runs-that-dont-wait), closed as it ends, while the outer run
-still has a rule to run. For any other language, the check fails if no session was closed during its run, if a
-`close()` threw, or if either run failed or gave the wrong output.
+still has a rule to run. For any other language, the check fails if no session closed during its run, a `close()`
+threw, or either run failed or gave the wrong output.
 
 `conditionDetail` compares each rule's detail with the sessions `newSession()` returned, by identity, so it can't
 catch a detail that is `Session.none()`, which holds no state. It doesn't look inside the detail for a session held
@@ -139,11 +140,11 @@ session.
 The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
 
 `reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once a check, or
-anything else earlier in the JVM, has prepared a language of that class, the check's first answers are already the
+anything earlier in the JVM, has prepared a language of that class, the check's first answers are already the
 prepared ones.
 
-`concurrentPrepares` has the same blind spot: a runtime your language sets up in a static field or a static
-initializer is checked only if nothing earlier in the JVM prepared a language of its class. And a race is likely, not
+`concurrentPrepares` has the same blind spot: a runtime your language sets up in a static field or initializer is
+checked only if nothing earlier in the JVM prepared a language of its class. And a race is likely, not
 certain, to show: a window a few instructions wide may close before a second thread reaches it. Nor does it check
 that `prepare()` is cheap once it has done its work.
 
@@ -158,9 +159,9 @@ declare it as `Object` in `configure`.
 
 `evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
 evaluates it in its own session, ending each fact's run with `LanguageTestContexts.endRun` before the session
-closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate`
-that returned the wrong value would pass every other check, and a condition that wraps yours would still see it. A
-language that doesn't override `evaluateWithDetail` passes: the default returns what `evaluate` does.
+closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate` returning the wrong value
+would pass every other check, and a wrapping condition would still see it. A language that doesn't override
+`evaluateWithDetail` passes: the default returns what `evaluate` does.
 
 In the `evaluateAgreesWithDetail` row of [the checks table](contract-kit.md#-testing-with-the-contract-kit), "both
 throw" means an exception or a non-fatal `Error` from each. A [fatal](../glossary.md#fatal-error) one is thrown

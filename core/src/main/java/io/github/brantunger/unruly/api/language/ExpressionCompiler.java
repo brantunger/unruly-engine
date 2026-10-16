@@ -12,8 +12,9 @@ import java.util.Set;
  * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} calls the compile methods on one
  * thread, and then, for an engine built with
  * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)}, {@link #newSession()}
- * and {@link #warmUp(Session)} on the same thread. {@link #checkFactName(String)} and {@link #newSession()} are also
- * called by runs of the rule list, possibly on many threads at once, so they must be thread-safe.
+ * and {@link #warmUp(Session)} on the same thread. {@link #checkFactName(String)}, {@link #newSession()} and
+ * {@link #convertOutput(Object, Class)} are also called by runs of the rule list, possibly on many threads at once, so
+ * they must be thread-safe.
  * </p>
  *
  * <p>
@@ -147,6 +148,47 @@ public interface ExpressionCompiler extends AutoCloseable {
     @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     default @Nullable Set<String> factNamesRead() {
         return null;
+    }
+
+    /**
+     * Converts a value an action returned with {@link ActionResult#set(java.util.Map)} to the type of a setter of the
+     * output object, as this language understands its own values, such as a {@link Double} 3.0, which a language whose
+     * numbers are all doubles computes for {@code 1 + 2}, to the {@link Integer} 3 for a setter taking an {@code int}.
+     * By default, returns the value unchanged: no conversion, so the writer sets only what it takes as it is.
+     *
+     * <p>
+     * The default {@link io.github.brantunger.unruly.api.OutputWriter}, {@code OutputWriter.beansAndMaps()}, calls it
+     * only when no setter of the property takes the value as it is, boxed primitives widened as Java widens them, and
+     * then for each type a setter takes, the most specific setter first, until one takes what this returns: a value
+     * the target accepts as it is, or one it accepts widened. A primitive target, such as {@code int.class}, takes its
+     * wrapper. Return the value unchanged for a target this language has no conversion for, such as a type it doesn't
+     * know: the writer tries the next setter, and fails the write as it does without a conversion, with the message
+     * that names the setters, when none takes the value. Throw an {@link IllegalArgumentException} naming the value and
+     * the target to refuse a conversion that would change the value, such as a fraction, {@code NaN}, an infinity or a
+     * number too large for an {@code int}: the writer still tries the property's other setters, and when none takes the
+     * value, it fails the write with the first refusal, which fails the rule naming it and the property. Anything else
+     * it throws fails the write at once. A writer of an application's own gets it as an
+     * {@link io.github.brantunger.unruly.api.OutputConverter}, and may call it as it likes, or not at all. It's never
+     * called with {@code null}, which every setter taking a reference accepts.
+     * </p>
+     *
+     * <p>
+     * A language whose numbers are doubles converts a finite, whole {@link Double} within the target's range to an
+     * {@code int}, a {@code short}, a {@code byte} or their wrappers, and one whose magnitude is at most 2<sup>53</sup>
+     * to a {@code long} or a {@link Long}, where every whole double is exact, and refuses every other double. The
+     * engine calls it on the thread running the rule, possibly on many threads at once, so it must be thread-safe.
+     * </p>
+     *
+     * @param value  The value an action returned, not {@code null}
+     * @param target The type of a setter's parameter, possibly primitive
+     * @return The converted value, which the target accepts, or {@code value} where this language has no conversion
+     *         for the target. {@code null} is a value too, which the first setter taking a reference takes, so return
+     *         it only to set the property to {@code null}, never for a conversion that isn't there.
+     * @throws IllegalArgumentException if this language refuses to convert the value to the target; its message
+     *                                  should name the value and the target, as the rule's failure quotes it
+     */
+    default @Nullable Object convertOutput(Object value, Class<?> target) {
+        return value;
     }
 
     /**

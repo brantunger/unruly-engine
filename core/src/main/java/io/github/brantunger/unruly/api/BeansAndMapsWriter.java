@@ -31,8 +31,12 @@ import java.util.Set;
  * accepts the value. Of overloaded setters, it calls the most specific one that accepts the value, as Java would; when
  * no single one is the most specific, the choice is fixed for the output class and the same on every run. A boxed
  * primitive, only when no setter takes it as it is, goes to a primitive setter it widens to, as Java would, such as
- * an {@link Integer} to a setter taking a {@code long}; no value is otherwise converted. A varargs setter takes an
- * array: a single value isn't wrapped in one. Each class's setters are looked up once.
+ * an {@link Integer} to a setter taking a {@code long}; no value is otherwise converted by the writer. Only when no
+ * setter takes a value as it is, and the engine gave an {@link OutputConverter}, the rule's language is asked to
+ * convert it, for the type each setter takes in turn, and the first setter that takes what it returns is called; a
+ * conversion the language refuses fails the write only when no setter takes the value, and the first refusal is what
+ * fails it. A varargs setter takes an array: a single value isn't wrapped in one. Each class's setters are looked up
+ * once.
  *
  * <p>
  * A setter declared with a type variable of a class, such as {@code setContent(T)}, takes what the output class makes
@@ -164,11 +168,15 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         }
     }
 
+    // What argument() returns for a setter that accepts neither the value nor a conversion of it. Not null, which a
+    // setter taking a reference accepts.
+    private static final Object NOT_ACCEPTED = new Object();
+
     private BeansAndMapsWriter() {
     }
 
     /**
-     * Sets one property on the output object.
+     * Sets one property on the output object, converting nothing but as Java widens a boxed primitive.
      *
      * @param output   The output object
      * @param property The property's name, not empty
@@ -183,6 +191,38 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      */
     @Override
     public void set(Object output, String property, @Nullable Object value) throws ReflectiveOperationException {
+        write(output, property, value, null);
+    }
+
+    /**
+     * Sets one property on the output object, asking the converter for a value of the type a setter takes when no
+     * setter takes the value as it is.
+     *
+     * @param output    The output object
+     * @param property  The property's name, not empty
+     * @param value     The value, possibly {@code null}
+     * @param converter Converts the value as the rule's language understands it
+     * @throws NullPointerException         if {@code output}, {@code property} or {@code converter} is {@code null}
+     * @throws IllegalArgumentException     if {@code property} is empty, or the output isn't a map and has no public
+     *                                      setter for the property that accepts the value or a conversion of it: the
+     *                                      converter's own exception where it refused a conversion, the first of them
+     * @throws IllegalStateException        if the setter can't be reached from the engine's module, saying how to
+     *                                      make it reachable
+     * @throws ReflectiveOperationException if the setter throws, which it reports as the cause of an
+     *                                      {@link java.lang.reflect.InvocationTargetException}
+     */
+    @Override
+    public void set(Object output, String property, @Nullable Object value, OutputConverter converter)
+            throws ReflectiveOperationException {
+        Objects.requireNonNull(converter, "converter must not be null");
+        write(output, property, value, converter);
+    }
+
+    // Sets the property, first with the value as it is, and then, where no setter took it and there's a converter, with
+    // what the converter makes of it for each setter's type: a value that a setter takes as it is is never converted,
+    // and null is never converted, as every setter taking a reference takes it.
+    private static void write(Object output, String property, @Nullable Object value,
+                              @Nullable OutputConverter converter) throws ReflectiveOperationException {
         Objects.requireNonNull(output, "output must not be null");
         Objects.requireNonNull(property, "property must not be null");
         if (property.isEmpty()) {
@@ -194,11 +234,13 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         }
         String name = Accessors.setterName(property);
         List<Setter> setters = SETTERS.get(output.getClass()).getOrDefault(name, List.of());
-        if (!written(output, property, setters, value)) {
-            throw new IllegalArgumentException(output.getClass().getName() + " has no public method " + name
-                    + " that accepts " + (value == null ? "null" : "a " + value.getClass().getName()
-                    + primitiveSetters(name, setters, value)));
+        if (written(output, property, setters, value, null)
+                || value != null && converter != null && written(output, property, setters, value, converter)) {
+            return;
         }
+        throw new IllegalArgumentException(output.getClass().getName() + " has no public method " + name
+                + " that accepts " + (value == null ? "null" : "a " + value.getClass().getName()
+                + primitiveSetters(name, setters, value)));
     }
 
     @SuppressWarnings("unchecked")
@@ -206,24 +248,46 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         ((Map<String, @Nullable Object>) map).put(property, value);
     }
 
-    // Calls the most specific setter that accepts the value, and says whether one did. If the engine can't reach it,
-    // only generic setters' bridges are tried after it, as a generic interface's setter is reached through its bridge,
-    // not the class's typed one. Such a bridge accepts only the types of the setters it may call, which come before
-    // it, so but for the limit accepted() describes, it calls the setter that was refused. Calling any other setter,
-    // including a bridge that calls a method with its own parameter, would call a method Java wouldn't, so the setter
-    // that can't be reached fails instead.
-    private static boolean written(Object output, String property, List<Setter> setters, @Nullable Object value)
-            throws ReflectiveOperationException {
+    // Calls the most specific setter that accepts the value, or, given a converter, what the converter makes of the
+    // value for a type the setter accepts, and says whether one did. If the engine can't reach it, only generic
+    // setters' bridges are tried after it, as a generic interface's setter is reached through its bridge, not the
+    // class's typed one. Such a bridge accepts only the types of the setters it may call, which come before it, so but
+    // for the limit accepted() describes, it calls the setter that was refused. Calling any other setter, including a
+    // bridge that calls a method with its own parameter, would call a method Java wouldn't, so the setter that can't be
+    // reached fails instead. A conversion the converter refuses, with an IllegalArgumentException, is kept, and the
+    // next type and setter tried, as a value may fit a wider setter than the one it refused; the first refusal fails
+    // the write when no setter is called. Anything else the converter throws fails the write at once.
+    private static boolean written(Object output, String property, List<Setter> setters, @Nullable Object value,
+                                   @Nullable OutputConverter converter) throws ReflectiveOperationException {
         Refusal refused = null;
+        IllegalArgumentException declined = null;
         for (Setter setter : setters) {
-            if (!accepts(setter, value)) {
-                continue;
-            }
             if (refused != null && !setter.generic()) {
                 continue;
             }
+            Object argument = NOT_ACCEPTED;
+            for (Class<?> type : setter.accepts()) {
+                Object candidate = value;
+                if (converter != null) {
+                    try {
+                        candidate = converter.convert(value, type);
+                    } catch (IllegalArgumentException e) {
+                        if (declined == null) {
+                            declined = e;
+                        }
+                        continue;
+                    }
+                }
+                if (accepts(type, candidate)) {
+                    argument = candidate;
+                    break;
+                }
+            }
+            if (argument == NOT_ACCEPTED) {
+                continue;
+            }
             try {
-                setter.method().invoke(output, value);
+                setter.method().invoke(output, argument);
                 return true;
             } catch (IllegalAccessException e) {
                 if (refused == null) {
@@ -233,6 +297,9 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
         }
         if (refused != null) {
             throw unreachable(output, property, refused);
+        }
+        if (declined != null) {
+            throw declined;
         }
         return false;
     }
@@ -610,15 +677,6 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
 
     private static Class<?> parameter(Method setter) {
         return setter.getParameterTypes()[0];
-    }
-
-    private static boolean accepts(Setter setter, @Nullable Object value) {
-        for (Class<?> type : setter.accepts()) {
-            if (accepts(type, value)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     // A value is accepted as it is, or, by a primitive parameter, where Java widens the value's primitive to it.

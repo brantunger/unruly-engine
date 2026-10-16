@@ -25,8 +25,11 @@
  *   <li>Let an action change {@link io.github.brantunger.unruly.api.language.ActionContext#output()} in place and
  *   return {@link io.github.brantunger.unruly.api.language.ActionResult#done()}, or return
  *   {@link io.github.brantunger.unruly.api.language.ActionResult#set(java.util.Map)} with properties for the engine
- *   to set. {@link io.github.brantunger.unruly.api.language.FactProperties} reads a fact's property the way rules
- *   expect, whether the fact is a record, a bean or a map.</li>
+ *   to set; a language whose values aren't Java's, such as one whose numbers are all doubles, converts them for the
+ *   output's setters in
+ *   {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#convertOutput(Object, Class)}.
+ *   {@link io.github.brantunger.unruly.api.language.FactProperties} reads a fact's property the way rules expect,
+ *   whether the fact is a record, a bean or a map.</li>
  *   <li>Let the engine find the language: a {@code META-INF/services} file or a module's {@code provides} clause for
  *   {@link java.util.ServiceLoader}, or {@code language(...)} on the
  *   {@link io.github.brantunger.unruly.api.RulesEngineBuilder}.</li>

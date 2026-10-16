@@ -1638,8 +1638,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Sets one property an action returned on the output object. A failure fails the rule, or stops a cancelled run,
-     * as a failing action does (see {@link #stopped}).
+     * Sets one property an action returned on the output object, with the engine's writer, which is given the rule's
+     * language's conversion of the value (see {@link CompiledRule#converter()}). A failure fails the rule, or stops a
+     * cancelled run, as a failing action does (see {@link #stopped}).
      *
      * @throws RuleExecutionException if the property can't be set, or the run was cancelled while it was being set
      */
@@ -1650,7 +1651,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             // A call-out of its own, as the action that returned the property is.
             facts.runs().callOut();
-            outputWriter.set(output, property, value);
+            outputWriter.set(output, property, value, rule.converter());
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
             Throwable cause = Failures.causeOf(e);

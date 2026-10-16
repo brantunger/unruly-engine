@@ -105,6 +105,7 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `conditionAssignmentRejected` | `alwaysTrue`, `assignment`, `putFact` | `assignment()` returns `null` | `load()` or two `run()`s throw, naming the rule and `CONDITION` |
 | `conditionWritesRejected` | `alwaysTrue`, `propertyAssignment`, `conditionDeclaration`, `putFact` | Both return `null`; each part is skipped by its own `null` | A condition that sets a property of `applicant`, a map and a `WritableApplicant`, and one that declares `z`, each make `load()` or two `run()`s throw, naming the rule and `CONDITION`, and `applicant` is unchanged |
 | `outputNotReplaceable` | `alwaysTrue`, `putFact`, `reassignOutput` | `reassignOutput()` returns `null` | `load()` or two `run()`s throw, naming the rule, the second `ACTION` |
+| `outputNumbersConverted` | `alwaysTrue`, `putFact` | `convertsOutputNumbers()` returns `false`, the default | With a writer that sets each property on a `WritableApplicant` bean through the default writer, `putFact("creditScore", "x")` sets `setCreditScore(int)` to 1 from the whole `Double` 1.0, and a run given the `Double` 1.5 throws, naming the rule, and leaves it 1 |
 | `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals`, `actionVariablesLastTheRun` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, no later run's condition or action sees the declared variable, and a later rule in the same run doesn't, or must if `actionVariablesLastTheRun()` returns `true` |
 | `sharedStateStaysLocal` | `factEquals`, `changeSharedState`, `sharedStateEquals`, `putFact` | `changeSharedState()` returns `null` | `load()` refuses the changing action, or `sharedStateEquals` is false before the change and in a later run, even when the action fails |
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
@@ -149,6 +150,11 @@ Only the fourteen `@Nullable` hooks may return `null`: `assignment`, `declareVar
 - `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
 - `language()` is called for each check and, except in `unreservedOutputReadAsFact` and `concurrentPrepares`, for
   each engine a check builds, so return a new instance.
+
+`convertsOutputNumbers()`, added in 2.32.0, skips `outputNumbersConverted` by returning `false`, the default. Return
+`true` once your language [converts](output-conversion.md) the numbers its actions return, as one whose numbers are all
+doubles does, or any language that converts a whole `Double` its actions return; a language whose whole numbers are
+`Integer`s or `Long`s needs no conversion for the other checks, and fails this one if it opts in without one.
 
 `endlessAction()`, added in 2.28.0, returns an action that runs until its run passes its deadline, such as
 `while (true) {}`, in a language that stops it with [`onCancel`](custom.md#-stopping-a-run) or by polling

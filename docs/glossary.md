@@ -20,8 +20,9 @@ for the engine to set on it. Its variables never outlive the run, and in MVEL no
 ### ActionResult
 
 What a compiled action returns to the engine: `ActionResult.done()` when it changed the output itself, or
-`ActionResult.set(properties)` for properties the engine sets on the output, in order, once the action returns. Only
-language authors deal with it. See [Actions and results](languages/custom.md#-actions-and-results).
+`ActionResult.set(properties)` for properties the engine sets on the output, in order, once the action returns, the
+language [converting](languages/custom.md#converting-a-value-for-the-output) a value no setter takes. For language
+authors; see [Actions and results](languages/custom.md#-actions-and-results).
 
 ### All-matches engine
 
@@ -255,8 +256,8 @@ and `null` sorts after every number. See [Rule order](engines-and-runs.md#-rule-
 ### Read-only view
 
 A map of facts that throws `UnsupportedOperationException` on a write. Conditions, actions, the listener callbacks
-that receive facts, and `RunContext.facts()` get one, and `FactStore.asMap()` returns an unmodifiable map of the
-store. A fact object's own methods can still change it. See
+that receive facts, and `RunContext.facts()` get one, and `FactStore.asMap()` returns one of the store. A fact
+object's own methods can still change it. See
 [Who sees facts](facts.md#-who-sees-facts).
 
 ### Resolved language
@@ -268,16 +269,16 @@ The [checksum](#checksum) uses it, so the same rules on engines with different d
 ### Rule
 
 An immutable `Rule`, created with `Rule.builder()`: a unique name, a condition, an action, and an optional priority,
-description and language. It's enabled, with no [validity window](#validity-window) and no [tags](#tag), unless
-those are set. See [Writing rules](writing-rules.md#-anatomy-of-a-rule).
+description and language; enabled, with no [validity window](#validity-window) and no [tags](#tag), unless set. See
+[Writing rules](writing-rules.md#-anatomy-of-a-rule).
 
 ### Rule evaluation
 
 What a run found out about one rule, in `RunResult.evaluations()`: the rule and its outcome, `MATCHED`, `NOT_MATCHED`,
 `NOT_EVALUATED` or `SKIPPED`, and any detail its language gave about the condition. A first-match engine reports the
-rules after the match as not evaluated; the other policies evaluate every rule the run uses. A
-[skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it is. A rule whose condition failed has none,
-because the run throws instead. See [What a run reports](run-results.md#-what-a-run-reports).
+rules below the match as `NOT_EVALUATED`; the other policies evaluate every rule the run uses. A
+[skipped rule](#skipped-rule) is `SKIPPED` on every policy, wherever it is; a rule whose condition failed has none:
+the run throws instead. See [What a run reports](run-results.md#-what-a-run-reports).
 
 ### Rule list
 

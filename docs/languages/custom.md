@@ -29,8 +29,8 @@ any shape, keep state in sessions or for one run, and [package](packaging.md) th
 
 ## 🛑 Lifecycle at a glance
 
-Nothing is created at `build()`: a [compiler](../glossary.md#compiler) exists once `load()` needs it, and a
-[session](../glossary.md#session) once a run does, or once `load()` makes its copies on an engine built with
+Nothing is created at `build()`: a [compiler](../glossary.md#compiler) comes with `load()`, a
+[session](../glossary.md#session) with a run, or with the copies of
 [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load).
 
 ```mermaid
@@ -54,6 +54,7 @@ sequenceDiagram
     Engine->>Comp: newSession(), when no idle copy is free
     Engine->>Comp: checkFactName(name), for each fact
     Engine->>Expr: evaluateWithDetail() or execute(), with the run's session
+    Engine->>Comp: convertOutput(value, type), when a returned property fits no setter
     Engine->>Engine: after afterRun or onRunError, close onCancel actions, then runScopedClosing values, newest first
     App->>Engine: load(newRules) or close()
     Engine->>Sess: close(), once no run uses the copy
@@ -71,6 +72,7 @@ sequenceDiagram
 | `newSession` | A run that finds no idle copy of the rules; with `copiesAtLoad(n)`, also up to `n` times during `load()`, once every rule has compiled. Return `Session.none()` or a new session each time | The run's thread, or the `load()` thread | Yes |
 | `warmUp` | Each session `load()` creates for a copy it makes, before any run uses it | The `load()` thread | No |
 | `evaluateWithDetail`, `execute` | Each rule the run reaches, once. By default `evaluateWithDetail` calls your `evaluate` | The run's thread | Yes, each with its own session |
+| `convertOutput` | When no setter takes a [returned property](output-conversion.md) as is or widened: for each type a setter takes, the most specific first | The run's thread | Yes |
 | `close()` of a [`runScopedClosing`](#-reading-facts) value | After its run's last listener call | The run's thread | Only with other runs' values |
 | `Session.close()` | Once, when the copy it belongs to is done with (the cases are below). Don't throw; see [Thread safety](#-thread-safety) | Depends on the case | Yes, alongside other sessions |
 | `ExpressionCompiler.close()` | Once, after its last session has closed; at once when the `load()` fails, or when `validate()` returns. Don't throw | The last thread to finish with the rule list, or the `load()` or `validate()` caller | Never while any method above runs |
@@ -96,15 +98,14 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | Interface | You implement | It returns |
 | --- | --- | --- |
 | `ExpressionLanguage` | `name()`, `newCompiler(CompileContext)`, optionally `prepare()`, `reservedFactNames()` and `reservesForEveryRuleList()` | A new compiler for each rule list |
-| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `factNamesRead()`, `warmUp(Session)` and `close()` | Compiled expressions that every run shares |
+| `ExpressionCompiler` | `compileCondition(Expression)`, `compileAction(Expression)`, `newSession()`, and optionally `checkFactName(String)`, `factNamesRead()`, `warmUp(Session)`, `convertOutput(Object, Class)` and `close()` | Compiled expressions that every run shares |
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
-Your language gets a `CompileContext`, `EvaluationContext` and `ActionContext` from the engine, which alone implements
-these sealed interfaces; tests create them with
-[`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). An evaluation or action
-context equals only itself. Methods added to interfaces you implement are `default`, so a language from an earlier 2.x
-release keeps compiling and working.
+The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext` your language gets;
+tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). An
+evaluation or action context equals only itself. Methods added to interfaces you implement are `default`, so an
+earlier 2.x language keeps working.
 
 ```java
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
@@ -150,10 +151,10 @@ public final class MyLanguage implements ExpressionLanguage {
 }
 ```
 
-**The expression.** An `Expression` has its `ruleName()`, whether it's the rule's `CONDITION` or its `ACTION`, and its
-never-blank `text()`.
+**The expression.** An `Expression` has its `ruleName()`, its kind, `CONDITION` or `ACTION`, and its never-blank
+`text()`.
 
-**Facts and output.** `facts()` is a read-only map of fact values by name, whose values can be `null`; writing to it
+**Facts and output.** `facts()` is a read-only map of fact values by name, `null` values included; writing to it
 throws `UnsupportedOperationException`. `output()` is the output object, MVEL's `output`.
 
 **Errors while running.** An exception from `evaluate`, `evaluateWithDetail` or `execute` becomes a
@@ -162,8 +163,8 @@ wrapped in your own exception. Keep caught exceptions as causes. A condition ret
 `null` included, fails the rule: the engine coerces nothing.
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
-as MVEL's adapter does: added words get the nested failure [logged twice](../nested-runs.md#-what-is-logged).
-`FactProperties.read`'s own `IllegalStateException` around such a failure is safe to let through.
+as MVEL's adapter does: added words get it [logged twice](../nested-runs.md#-what-is-logged). `FactProperties.read`'s
+own `IllegalStateException` around such a failure is safe to let through.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
 `imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
@@ -200,9 +201,8 @@ return new CompiledCondition() {
 };
 ```
 
-The engine calls `evaluateWithDetail`, once per rule it evaluates, and never `evaluate`. The default
-returns `ConditionResult.of(evaluate(context, session))`, a result with no detail, so a language that implements only
-`evaluate` works unchanged.
+The engine calls `evaluateWithDetail`, once per rule it evaluates, never `evaluate`. The default returns
+`ConditionResult.of(evaluate(context, session))`, with no detail, so implementing only `evaluate` works.
 
 Since 2.3.0, `ConditionResult`s with equal values and details are equal, by the detail's own `equals`, so an array
 compares by identity. `toString()` prints the call that makes it, such as `ConditionResult.of(true, <detail>)`.
@@ -293,27 +293,23 @@ String note = " (caused by " + MessageText.quoteWithin(causeClassName, MessageTe
 String issueText = MessageText.escapeWithin(libraryText, MessageText.MAX_TEXT_LENGTH - note.length()) + note;
 ```
 
-The `RuleCompilationException` carries the same issues; for several rules its message is `2 rules failed to compile:
-<first>; <second>`, its name, kind and issues are the first failure's, and `failures()` has each rule's.
+The `RuleCompilationException` carries the same issues; its name, kind and issues are the first failure's, and
+`failures()` has each rule's, in compile order: priority order, highest first, `null` last, equal priorities in list
+order. [Several failures from load()](../exception-messages.md#-several-failures-from-load) shows its message.
 
-- **Order.** Rules compile in priority order, highest first, `null` last and equal priorities in list order, and
-  so is `failures()`.
-- **What the engine rejects first.** A blank condition or action
-  (`Rule 'prime-rate' has a blank condition expression`) and a language the engine doesn't have
-  (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression languages: [mvel]`, with no
-  expression kind) fail one rule, collected with the rest. A `null` rule or a duplicate name fails at once.
+The engine itself fails a rule with a blank condition or action (`Rule 'prime-rate' has a blank condition expression`)
+or a language it doesn't have (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression
+languages: [mvel]`, with no expression kind), collected with the rest; a `null` rule or a duplicate name fails at once.
 
 > [!WARNING]
 > A condition that doesn't compile hides its action's errors: the action isn't compiled until a `load()` with the
 > condition fixed. One load reports every broken *rule*, not every broken expression.
 
-With failures other than a rule's among them, the message reads `2 failures while loading the rules: ...`.
-
 ## 📁 Reading facts
 
 Rules are written `applicant.creditScore` whether the fact is a record, a JavaBean or a `Map`, and the engine hands you
-facts as they are, so making all three work is your job. Adapters most often get records wrong: a component is a method,
-so a language that looks only for a getter or a field reads nothing, and the condition is silently `false`.
+facts as they are, so all three are your job. Adapters most often get records wrong: a component is a method, so
+looking only for a getter or a field reads nothing, and the condition is silently `false`.
 `FactProperties.read(fact, "creditScore")` does it:
 
 | Fact | What `read` returns |
@@ -382,13 +378,19 @@ An action that changes `output` in place returns `ActionResult.done()`. A langua
 
 The engine sets each property in map order after the action returns and passes its cancellation check, with its
 `OutputWriter`: by default `put` on a `Map` output, or the output's public setter, reached as `FactProperties`
-reaches a getter. It widens a boxed primitive only as Java does, and only when no setter takes it as
-is, so a `Long` never reaches an `int` setter; see
-[The output object](../engines-and-runs.md#-the-output-object).
+reaches a getter, which takes the value as is or [widened as Java widens a
+primitive](../engines-and-runs.md#-the-output-object).
 
 An application can set its writer with `.outputWriter(...)`; don't assume how a property is stored. A `null` result,
 or a property the writer can't set, fails the rule unless the run must [stop](../stopping-runs.md#-what-stops-a-run).
 In an all-matches run, a later rule's properties overwrite earlier ones.
+
+### Converting a value for the output
+
+Since 2.32.0, when a property fits no setter as is or widened, the default writer asks your compiler's
+`convertOutput(value, target)` for each type a setter takes, so a language whose numbers are all `Double` can set
+`setCount(int)`; the default returns the value unchanged. [Converting values for the output](output-conversion.md) has
+the contract, exact conversions and an example.
 
 ## 🔤 Fact names
 
@@ -481,10 +483,10 @@ suppressed in, what an expression throws. Unless the deadline has passed too, a 
 failure, at ERROR, as is a condition's non-boolean return (`evaluated to null` for `null`) or an action's
 `null`; other returns let the run go on.
 
-So record what cancelled the runtime. When an interrupt cancelled it, call `Thread.currentThread().interrupt()`
-before you throw or return, or throw with an `InterruptedException` as the cause. When the deadline cancelled it,
-restore nothing: the engine reports the timeout. Restoring it reports the timeout as an interrupt, which the engine
-checks first, and leaves the caller's thread interrupted, failing its next run:
+So record what cancelled the runtime. For an interrupt, call `Thread.currentThread().interrupt()` before you throw or
+return, or throw with an `InterruptedException` as the cause. For the deadline, restore nothing: the engine reports
+the timeout; restored, it reports an interrupt, which it checks first, and leaves the caller's thread interrupted,
+failing its next run:
 
 ```java
 class CancellableContext extends MapContext implements JexlContext.CancellationHandle {
@@ -531,7 +533,7 @@ returns. Around any other blocking call, your runtime must restore it, as above,
 | Your `ExpressionLanguage` instance | May serve several engines and concurrent `load()` calls at once: keep it stateless, with a constant `name()` |
 | `compileCondition`, `compileAction` | Called on one thread, the `load()` caller, and all finish before any run sees the compiler |
 | `warmUp` | Called on the `load()` thread, one session at a time; see [Warming up a session](#warming-up-a-session) |
-| `checkFactName`, `newSession` | Called from many threads at once |
+| `checkFactName`, `newSession`, `convertOutput` | Called from many threads at once |
 | Compiled conditions and actions | Shared by every run, on many threads at once, each with its own session |
 | A `Session` | Used by one run at a time, perhaps on another thread each time, so `newSession()` must not return one twice, unless it's `Session.none()` |
 | `Session.close()` | May run on any thread, while its compiler's other sessions run: don't tear down shared state, or throw |
@@ -542,8 +544,8 @@ returns. Around any other blocking call, your runtime must restore it, as above,
 `newSession()` creates a session for each [compiled copy](../glossary.md#compiled-copy) of the rules, and every
 expression of your language in a run gets that copy's session. Return `Session.none()` when your compiled
 expressions keep no state while they run, and a new session when they do, such as a single-threaded interpreter
-context. A rule list whose languages all return `Session.none()` needs no copies: its runs share one set of sessions,
-with no [copy limit](../compiled-copies.md#-limiting-the-copies). Values kept with `runScoped` need no session.
+context. When every language of a rule list returns `Session.none()`, its runs share one set of sessions, with no
+copies and no [copy limit](../compiled-copies.md#-limiting-the-copies). Values kept with `runScoped` need no session.
 
 > [!WARNING]
 > Only the `Session.none()` instance counts as stateless: the engine checks identity, not `equals`. A stateless
@@ -568,9 +570,9 @@ every condition and action into the session.
 
 - **When:** on the `load()` thread, one session after another, after every expression has compiled.
 - **Not called:** for `Session.none()`, for a session a run creates, or by `validate()`, which makes no copies.
-- **If it throws:** `load()` fails with a `RuleCompilationException` naming your language, logged at ERROR; the rules
-  loaded before stay loaded, and the failed load's sessions and compilers are closed. A fatal error is logged and
-  rethrown unchanged.
+- **If it throws:** `load()` fails with a `RuleCompilationException` naming your language, logged at ERROR, as
+  [the table above](#-errors-when-rules-load) says, and closes the sessions and compilers it made. A fatal error is
+  logged and rethrown unchanged.
 
 ## 📦 Packaging
 
@@ -586,7 +588,7 @@ See [The contract test kit](contract-kit.md) and [Testing beyond the contract ki
 | --- | --- | --- |
 | **Evaluating on a worker thread** | `isCancelled()` there misses the run thread's interrupt, and a run an expression starts isn't [nested](../nested-runs.md#-what-counts-as-nested): it may wait five seconds for a [copy](../compiled-copies.md#runs-that-dont-wait), then log a WARN. `runScoped` and `runScopedClosing` work there, with the limits in [Reading facts](#-reading-facts) | Evaluate, or at least poll `isCancelled()`, on the run's thread |
 | **A closing init that waits for a worker** | The worker's `runScopedClosing` waits for that init to finish, so both threads hang for good: an interrupt doesn't free them, and the run never ends | Get the value before handing work off, and pass it to the worker |
-| **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object), so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Have users set an `outputWriter(...)` that narrows a value that fits exactly, then calls `OutputWriter.beansAndMaps()` |
+| **Numbers that are all `Long` or `Double`** | The default writer [never narrows](../engines-and-runs.md#-the-output-object) by itself, so a `Long` fails an `int` bean property, a `Double` an `int` or `float` one | Override [`convertOutput`](output-conversion.md) to narrow a value that fits exactly, and refuse the rest |
 
 ## ❓ Questions you might not think to ask
 

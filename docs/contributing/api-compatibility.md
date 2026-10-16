@@ -1,7 +1,7 @@
 # 🧬 API compatibility
 
-How the build decides whether a change breaks code written against an earlier release, and what to do when a break
-is intended.
+How the build decides whether a change breaks code written against an earlier release, and what to do when one is
+intended.
 
 **Who it's for:** contributors changing a public type in `unruly-engine-core`, `unruly-engine` or
 `unruly-engine-test`, or a `core` constructor the test kit calls.
@@ -35,8 +35,8 @@ Each project writes its report to `<project>/build/reports/japicmp/report.html` 
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
 `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, and each project's `apiCheck { }` block in its `build.gradle.kts`
 says which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
-package, except the constructors the test kit calls: `:core:japicmpTestKitLinkage` checks those, as
-[The test kit's links into core](#-the-test-kits-links-into-core) explains.
+package, except the constructors the test kit calls: `:core:japicmpTestKitLinkage` checks those; see
+[The test kit's links into core](#-the-test-kits-links-into-core).
 
 ## 🚫 What counts as a break
 
@@ -65,12 +65,14 @@ and an exception's message and cause, so a change there fails the tests.
 
 ## 🆕 Adding a method to a public interface
 
-Users implement several public interfaces: `RulesEngine` (for example to decorate an engine), `RuleListener`,
-`FactStore`, `FactReference`, `OutputWriter`, and a language's `ExpressionLanguage`, `ExpressionCompiler`,
-`CompiledCondition`, `CompiledAction` and `Session`. Each interface's Javadoc says who implements it.
+Users implement several public interfaces: `RulesEngine` (to decorate an engine, say), `RuleListener`, `FactStore`,
+`FactReference`, `OutputWriter`, `OutputConverter` (in a writer's test), and a language's `ExpressionLanguage`,
+`ExpressionCompiler`, `CompiledCondition`, `CompiledAction` and `Session`. Each interface's Javadoc says who
+implements it.
 
 Within a major version, a method added to any of them is `default`, and the check fails on an abstract one. When no
-generic implementation makes sense, the default throws `UnsupportedOperationException`.
+generic implementation makes sense, the default throws `UnsupportedOperationException`. Since 2.32.0 the engine calls
+`OutputWriter`'s four-argument `set`, so a writer mock verified on the three-argument one stops matching.
 
 The engine-only contexts, `CompileContext`, `EvaluationContext`, `ActionContext` and `RunContext`, are sealed to the
 engine's own implementations, so no user implements them and a new method breaks nobody. `SealedContextsTest`
@@ -89,22 +91,22 @@ An intended break belongs in a major release, and needs three things:
    ships in, the kind, the element as japicmp names it, and why users can live with it. The header shows the
    format. Every change to a listed element is accepted, not only the reported one.
 2. Title the PR with a `!`, such as `feat!: make the engine classes package-private`, and describe the migration
-   under "Behavior changes" in the description.
+   under "Behavior changes".
 3. Add a section to [Migrating to 2.0](../migrating-to-2.md): who is affected, and what to change.
 
 A break in the language SPI or in `RulesEngine` goes in
 [Migrating a language or an engine](../migrating-to-2-implementers.md) instead.
 
-A line applies while the baseline is from an earlier major version, so a release from that earlier major version
-published in the meantime doesn't turn it off. Once that major version is published and becomes the baseline, the
-build warns that its lines no longer apply, and they can be deleted.
+A line applies while the baseline is from an earlier major version, so a release from that version published in the
+meantime doesn't turn it off. Once the new major version is published and becomes the baseline, the build warns that
+its lines no longer apply, and they can be deleted.
 
 ## 🧷 The test kit's links into core
 
 The `core` package is internal, but the published test kit, `unruly-engine-test`, calls some of its constructors and
-methods. A user's build can pair an older kit with a newer `unruly-engine-core`, because Gradle picks the newest version
-of `core` that anything asks for, and Maven the nearest. So these members are API for released kits, and a change to one
-of them gives such a kit a `NoSuchMethodError`, although `japicmp` leaves the package out. Today the kit calls these:
+methods. A user's build can pair an older kit with a newer `unruly-engine-core`, because Gradle picks the newest `core`
+anything asks for, and Maven the nearest. So these members are API for released kits: changing one gives such a kit a
+`NoSuchMethodError`, though `japicmp` leaves the package out. Today the kit calls these:
 
 | Constructor or method | The kit calls it from |
 | --- | --- |
@@ -126,14 +128,14 @@ canonical constructor, which has ten.
 `:core:japicmpTestKitLinkage`, which `check` and so `./gradlew build` run, compares two sets of `core` members with
 the same baseline as `japicmp`, `core`'s newest release that isn't higher than this version:
 
-- The members [`config/japicmp/test-kit-linkage.txt`](../../config/japicmp/test-kit-linkage.txt) lists, one on each
+- The members [`config/japicmp/test-kit-linkage.txt`](../../config/japicmp/test-kit-linkage.txt) lists, one per
   line, named as in `accepted-breaks.txt`: what this version's kit calls. `TestKitLinkageTest`, in
   `test-kit/src/test`, fails unless the file lists exactly the `core` members the kit's classes use.
 - The members the kit released at the baseline's version calls, read from its jar on Maven Central.
 
 A member is named after the class that declares it, found as the JVM finds it, not the class the kit calls it
-through. If the kit called `Sub.probe()` on a `core` class `Sub` whose superclass `Base` declares `probe()`, the line
-would be `…core.Base#probe()`. A constructor keeps its own class, and a member declared outside `core`, such as a
+through. If the kit called `Sub.probe()` and `Sub`'s superclass `Base` declares `probe()`, the line would be
+`…core.Base#probe()`. A constructor keeps its own class, and a member declared outside `core`, such as a
 JDK method, isn't listed.
 
 It fails with `Detected binary changes` on a binary- or source-incompatible change to one of them, removal included.

@@ -27,9 +27,10 @@
  *   {@link io.github.brantunger.unruly.api.FactMap}; {@link io.github.brantunger.unruly.api.FactReference} and its
  *   built-in implementation {@link io.github.brantunger.unruly.api.Fact}</li>
  *   <li><b>Results and output:</b> {@link io.github.brantunger.unruly.api.RunResult},
- *   {@link io.github.brantunger.unruly.api.RuleEvaluation} (one rule's outcome) and
+ *   {@link io.github.brantunger.unruly.api.RuleEvaluation} (one rule's outcome),
  *   {@link io.github.brantunger.unruly.api.OutputWriter} (how properties an action returns are set on the
- *   output)</li>
+ *   output) and {@link io.github.brantunger.unruly.api.OutputConverter} (how a rule's language converts such a
+ *   property's value for a setter's type)</li>
  *   <li><b>Observing runs:</b> {@link io.github.brantunger.unruly.api.RuleListener},
  *   {@link io.github.brantunger.unruly.api.RunContext} (one run, as its listeners see it) and
  *   {@link io.github.brantunger.unruly.api.LoggingRuleListener}</li>
