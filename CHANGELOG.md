@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.32.0](https://github.com/brantunger/unruly-engine/compare/v2.31.1...v2.32.0) (2026-10-16)
+
+
+### Features
+
+* let a language convert the numbers its actions return to the type the output's setter takes, so a JavaScript-style double can set an int, long or Integer property ([#1234](https://github.com/brantunger/unruly-engine/issues/1234)) ([2ba9194](https://github.com/brantunger/unruly-engine/commit/2ba91949eb0e910467f50aca275cf556a5fed49c))
+
 ## [2.31.1](https://github.com/brantunger/unruly-engine/compare/v2.31.0...v2.31.1) (2026-10-16)
 
 
