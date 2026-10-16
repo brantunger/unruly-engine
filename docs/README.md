@@ -29,16 +29,17 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 
 ## 🔨 Writing an expression language
 
-1. [Expression languages](languages/README.md): how an engine gets its languages and picks one for each rule.
+1. [Expression languages](languages/README.md): how an engine gets its languages and picks one per rule.
 2. [Lifecycle at a glance](languages/custom.md#-lifecycle-at-a-glance) and
    [Implementing the interfaces](languages/custom.md#-implementing-the-interfaces).
-3. [Thread safety](languages/custom.md#-thread-safety) and [Stopping a run](languages/custom.md#-stopping-a-run).
+3. [Thread safety](languages/custom.md#-thread-safety), [Stopping a run](languages/custom.md#-stopping-a-run) and
+   [Converting values for the output](languages/output-conversion.md).
 4. [The contract test kit](languages/contract-kit.md): adding `unruly-engine-test` and what its checks promise.
-5. [Upgrading the contract test kit](languages/contract-kit-upgrading.md): the checks a newer kit adds, and what a new
+5. [Upgrading the contract test kit](languages/contract-kit-upgrading.md): what a newer kit adds, and what a new
    failure means.
 6. [Testing beyond the contract kit](languages/beyond-the-contract-kit.md): what the checks leave untested, how each
-   runs, and `LanguageTestContexts`.
-7. [Packaging a language](languages/packaging.md): service declarations, the module path and native images.
+   runs, `LanguageTestContexts`.
+7. [Packaging a language](languages/packaging.md): services, the module path and native images.
 
 ## 🔼 Upgrading from 1.x
 
@@ -59,6 +60,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔤 [MVEL fact names](languages/mvel-fact-names.md) | Rule authors | Which fact names MVEL rejects, which facts it checks at all, where that check is only a best effort, and the name `output` |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, fact names and sessions for a language of your own |
+| 📤 [Converting values for the output](languages/output-conversion.md) | Language authors | How the default output writer asks a language to convert a returned value for a setter, the contract of `convertOutput`, which conversions are exact enough to make, and an example |
 | 📦 [Packaging a language](languages/packaging.md) | Language authors | Declaring a language as a service on the class path and the module path, the exports applications need, and native images |
 | 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, and what each of its checks promises |
 | 🔼 [Upgrading the contract test kit](languages/contract-kit-upgrading.md) | Language authors | The checks each kit version added or made stricter, and the defect each new failure means |

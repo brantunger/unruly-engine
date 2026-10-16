@@ -627,7 +627,8 @@ final class RuleListCompiler {
                 new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);
         CompiledAction compiledAction = compile(
                 new Expression(ruleName, ExpressionKind.ACTION, rule.getAction()), compiler::compileAction);
-        return new CompiledRule(rule, displayName, language, compiledCondition, compiledAction);
+        return new CompiledRule(rule, displayName, language, compiledCondition, compiledAction,
+                new LanguageOutputConverter(compiler));
     }
 
     /**

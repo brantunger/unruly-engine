@@ -103,7 +103,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * language reads is a separate promise, and every language here makes it, whatever its own numbers are: a rule
  * written for {@code 1} is also run against a {@code Long}, a {@code Short} and a {@code BigDecimal} fact, and must
  * fire for all three and not for a {@code 2L} one. A language that compares whole numbers by type opts out of that
- * one check with {@link #comparesWholeNumbersByValue()}.
+ * one check with {@link #comparesWholeNumbersByValue()}. A language that converts the numbers its actions return for
+ * the output's setters, so that a whole double sets an {@code int} property, opts into one more check with
+ * {@link #convertsOutputNumbers()}.
  * </p>
  *
  * @see <a href=
@@ -326,6 +328,30 @@ public abstract class ExpressionLanguageContractTest {
      * @return Whether an action's variables last the run
      */
     protected boolean actionVariablesLastTheRun() {
+        return false;
+    }
+
+    /**
+     * Whether this language converts the numbers its actions return for the output's setters, in
+     * {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#convertOutput convertOutput}, so that a whole
+     * {@link Double} reaches a setter taking an {@code int}, and a fraction fails the rule rather than being rounded.
+     * By default, {@code false}, which skips {@code outputNumbersConverted}: a language whose whole numbers are Java's,
+     * {@link Integer}s or {@link Long}s, needs no conversion to pass the other checks, and the default writer widens an
+     * {@link Integer} for a {@code long} setter by itself. A language whose numbers are all doubles, as JavaScript's
+     * and JsonLogic's are, opts in once it converts them; so may any language that converts a whole double its action
+     * returns, as one that reads a {@code Double} fact and returns it does.
+     *
+     * <p>
+     * The check runs {@link #putFact putFact("creditScore", "x")} against a run whose fact {@code x} is the
+     * {@link Double} 1.0, which must set the credit score to 1, and then the {@link Double} 1.5, which must fail the
+     * rule and leave the score, with a writer that sets each property on a {@link WritableApplicant} through the
+     * default writer, as an application whose output is a bean has it set. Its engine is built as every other check's
+     * is, so {@link #configure} applies.
+     * </p>
+     *
+     * @return Whether the language converts the numbers its actions return for a setter
+     */
+    protected boolean convertsOutputNumbers() {
         return false;
     }
 
@@ -1053,6 +1079,26 @@ public abstract class ExpressionLanguageContractTest {
             // A language that checks a compiled action only on its first run lets every later one replace the output.
             assertRunFailsAgain(engine, loaded.get(), new FactMap<>(new Fact<>("x", 1)), ExpressionKind.ACTION,
                     "an action that replaces the output");
+        });
+    }
+
+    @Test
+    @DisplayName("a whole Double an action returns reaches a setter taking an int, and a fraction fails the rule")
+    void outputNumbersConverted() throws Exception {
+        assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
+        // The writer is set after configure(), so configure() can't replace it: the applicant, not the map, is written.
+        WritableApplicant applicant = new WritableApplicant(0);
+        closing(builder(language()).outputWriter(new BeanWriter(applicant)).build(), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact("creditScore", "x"))));
+
+            // A Double, not an Integer, which the writer would take without the language converting anything.
+            engine.run(new FactMap<>(new Fact<>("x", 1.0)));
+            assertEquals(1, applicant.getCreditScore(), "the whole Double 1.0 didn't reach setCreditScore(int)");
+            // A language that rounds, as Number.intValue() does, sets 1 and fails nothing.
+            RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                    () -> engine.run(new FactMap<>(new Fact<>("x", 1.5))), "the fraction 1.5 was set on an int");
+            assertEquals("r", ex.getRuleName(), describe(ex));
+            assertEquals(1, applicant.getCreditScore(), "the fraction 1.5 changed the credit score");
         });
     }
 

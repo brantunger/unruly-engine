@@ -396,7 +396,10 @@ public final class RulesEngineBuilder<O> {
     /**
      * Sets how the engine sets the properties an action returns with
      * {@link io.github.brantunger.unruly.api.language.ActionResult#set(Map)} on the output object. Without this, it's
-     * {@link OutputWriter#beansAndMaps()}. Actions that change the output themselves don't use it.
+     * {@link OutputWriter#beansAndMaps()}. Actions that change the output themselves don't use it. The engine calls
+     * {@link OutputWriter#set(Object, String, Object, OutputConverter)}, so a writer that overrides it can have the
+     * rule's language convert a value for the type it needs; one written as a lambda gets the value as the action
+     * returned it.
      *
      * @param writer The writer, which runs on many threads at once
      * @return This builder

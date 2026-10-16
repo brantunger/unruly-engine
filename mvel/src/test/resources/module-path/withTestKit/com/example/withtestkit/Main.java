@@ -30,10 +30,11 @@ public final class Main {
      * change. Its actions can still change a class's static state, named by the class's full name, since MVEL runs
      * them without a sandbox, and that check doesn't cover it. MVEL reserves output, the name its actions bind the
      * output object to, so the engine rejects a fact by that name itself, and unreservedOutputReadAsFact has nothing to
-     * check. MVEL can't stop an action part-way, so it has no endless action for endlessActionStopsAtTimeout.
+     * check. MVEL can't stop an action part-way, so it has no endless action for endlessActionStopsAtTimeout. Its
+     * numbers are Java's, and its actions change the output in place, so it doesn't opt into outputNumbersConverted.
      */
-    private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "sharedStateStaysLocal",
-            "unreservedOutputReadAsFact");
+    private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "outputNumbersConverted",
+            "sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     private Main() {
     }

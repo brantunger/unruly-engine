@@ -10,6 +10,18 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.31
+
+In 2.32.0 `outputNumbersConverted` was added and no check got stricter.
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `outputNumbersConverted` | Returns `true` from `convertsOutputNumbers()`, and doesn't set `setCreditScore(int)` to 1 from the whole `Double` 1.0, or sets it, or fails nothing, from the `Double` 1.5 | `convertOutput` doesn't convert a whole number for an `int` setter, or rounds a fraction instead of refusing it |
+
+`convertsOutputNumbers()` returns `false` by default, which skips the check, so a language written for 2.31 passes as it
+is, with one more aborted check. Return `true` once your language
+[converts the numbers its actions return](output-conversion.md).
+
 ## 🔼 Upgrading from 2.27
 
 In 2.28.0 `endlessActionStopsAtTimeout` was added and no check got stricter.

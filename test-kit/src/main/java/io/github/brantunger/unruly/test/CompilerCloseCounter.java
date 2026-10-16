@@ -93,6 +93,12 @@ final class CompilerCloseCounter {
                         return compiler.factNamesRead();
                     }
 
+                    // Forwarded, so the writer converts a wrapped language's values as it does unwrapped (#1127).
+                    @Override
+                    public @Nullable Object convertOutput(Object value, Class<?> target) {
+                        return compiler.convertOutput(value, target);
+                    }
+
                     // Anything it throws, a checked exception thrown sneakily included: the engine logs any Exception
                     // or Error at WARN, and rethrows the fatal error one is or carries, which fails the check by
                     // itself.

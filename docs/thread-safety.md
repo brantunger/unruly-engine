@@ -41,8 +41,8 @@ Interrupting the thread a run is on, or giving the run a timeout, stops it **bet
 returns** — before each condition and each action, when each returns, and once an action's properties are set, so a
 run whose last condition or action returns past its deadline fails.
 
-Whether a running expression can be stopped depends on the language: MVEL can't stop one, so in MVEL a rule that
-loops for ever still blocks its thread; run rules you don't trust in a process of their own. See
+Whether a running expression can be stopped depends on the language: MVEL can't, so an MVEL rule that loops for ever
+still blocks its thread; run rules you don't trust in a process of their own. See
 [Stopping a run](stopping-runs.md).
 
 ### What you must keep thread-safe
@@ -55,7 +55,8 @@ The engine protects its own state. These parts are yours:
 
 - **The output supplier:** it must return a new object on every call. A shared instance would be changed by several
   runs at once.
-- **A custom `OutputWriter`:** one instance sets properties for every run, on many threads at once.
+- **A custom `OutputWriter`:** one instance sets properties for every run, on many threads at once. The
+  `OutputConverter` it's given is thread-safe.
 - **Listeners:** the same listener instance is called from every thread running the engine.
 
 ## 🛑 Lifecycle and closing
@@ -139,8 +140,8 @@ still kept, then the languages' compilers, are closed after the last run leaves.
 compiler is logged at WARN, unless a [nested run](nested-runs.md#-what-is-logged) logged it, and doesn't fail the run,
 `load()` or `close()` that closes them, unless it's a [fatal error](glossary.md#fatal-error).
 
-`RulesEngine` is `AutoCloseable`, so an engine built for a short task can go in a try-with-resources block. Closing an
-engine twice does nothing the second time, unless the first stopped part way.
+`RulesEngine` is `AutoCloseable`, so an engine for a short task fits a try-with-resources block. Closing an engine
+twice does nothing the second time, unless the first stopped part way.
 
 A [fatal error](glossary.md#fatal-error) from closing sessions or compilers is rethrown once everything else is closed,
 by the `close()`, `load()` or `validate()` call, or the run, that closes them. Who throws it, what it replaces, and
