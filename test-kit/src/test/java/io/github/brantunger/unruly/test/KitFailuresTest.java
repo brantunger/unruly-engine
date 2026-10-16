@@ -82,6 +82,57 @@ class KitFailuresTest {
     }
 
     @Test
+    @DisplayName("a run stopped by an interrupt is told by the InterruptedException it threw or carries as a cause, as"
+            + " the engine's stop carries one, or suppressed on it, as the engine throws what ending the stopped run"
+            + " threw with the stop suppressed (#1223)")
+    void isInterrupt() {
+        // What ending a stopped run leaves when ending it throws too: the stop suppressed on what the ending threw.
+        IllegalStateException ending = new IllegalStateException("ending the run failed");
+        ending.addSuppressed(new IllegalStateException("run() was interrupted during rule 'r'",
+                new InterruptedException()));
+        IllegalStateException suppressedItself = new IllegalStateException("top");
+        suppressedItself.addSuppressed(new InterruptedException());
+
+        assertTrue(KitFailures.isInterrupt(new InterruptedException()));
+        assertTrue(KitFailures.isInterrupt(new IllegalStateException("stopped", new InterruptedException())));
+        assertTrue(KitFailures.isInterrupt(new IllegalStateException("top",
+                new IllegalStateException("one", new IllegalStateException("two", new InterruptedException())))));
+        assertTrue(KitFailures.isInterrupt(ending));
+        assertTrue(KitFailures.isInterrupt(suppressedItself));
+        assertTrue(KitFailures.isInterrupt(new IllegalStateException("wrapped", ending)));
+        assertFalse(KitFailures.isInterrupt(new IllegalStateException("rule 'r' failed")));
+        assertFalse(KitFailures.isInterrupt(new UnreadableCause()));
+    }
+
+    @Test
+    @DisplayName("exceptions that lead back to each other through causes and suppressed exceptions, with no"
+            + " InterruptedException among them, end the search for one (#1223 guard)")
+    void interruptSearchEndsOnLoops() {
+        IllegalStateException top = new IllegalStateException("top");
+        IllegalStateException cause = new IllegalStateException("cause", top);
+        top.initCause(cause);
+        IllegalStateException back = new IllegalStateException("back", cause);
+        top.addSuppressed(back);
+        cause.addSuppressed(back);
+        back.addSuppressed(top);
+
+        assertFalse(KitFailures.isInterrupt(top));
+    }
+
+    @Test
+    @DisplayName("only the first hundred links of a run's failure are read for the InterruptedException that stopped it"
+            + " (#1223 guard)")
+    void interruptReadToAHundredLinks() {
+        Throwable hundredth = new InterruptedException();
+        for (int i = 0; i < 99; i++) {
+            hundredth = new IllegalStateException("link " + i, hundredth);
+        }
+
+        assertTrue(KitFailures.isInterrupt(hundredth));
+        assertFalse(KitFailures.isInterrupt(new IllegalStateException("one too many", hundredth)));
+    }
+
+    @Test
     @DisplayName("a fatal error a language throws itself is thrown on, and a StackOverflowError isn't (#894 guard)")
     void fatalErrorItself() {
         InternalError crash = new InternalError("crashed");

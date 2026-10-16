@@ -14,6 +14,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * How the contract kit's checks report what a language threw: which of it the engine rethrows, how it's described in
@@ -105,7 +106,7 @@ final class KitFailures {
      * @return The first fatal error found, or {@code null} if there is none among the exceptions read
      */
     static @Nullable Error fatalError(Throwable thrown) {
-        return new FatalSearch().find(thrown);
+        return (Error) new Search(KitFailures::isFatalItself).find(thrown);
     }
 
     /** Whether one throwable, not what it carries, is an error the engine rethrows. */
@@ -139,6 +140,21 @@ final class KitFailures {
         return false;
     }
 
+    /**
+     * Tells whether a run stopped because its thread was interrupted, as the engine reports the stop: an
+     * {@link InterruptedException} is what was thrown, one of its causes, or suppressed on any of them, or among the
+     * causes and suppressed exceptions of those, read as {@link #fatalError} reads them, with the same limits. The
+     * engine's stop carries the interrupt as its cause; when ending the stopped run throws too, the engine throws that
+     * instead, with the stop suppressed on it, as the engine itself reads an interrupt it puts back
+     * ({@code Failures.keepInterruptStatus}).
+     *
+     * @param thrown What the run threw
+     * @return {@code true} if an {@link InterruptedException} is among the exceptions read
+     */
+    static boolean isInterrupt(Throwable thrown) {
+        return new Search(t -> t instanceof InterruptedException).find(thrown) != null;
+    }
+
     /** Reads an exception's cause, or {@code null} when {@code getCause()} throws, as the engine reads it. */
     private static @Nullable Throwable causeOf(Throwable thrown) {
         try {
@@ -150,16 +166,22 @@ final class KitFailures {
     }
 
     /**
-     * One search of {@link #fatalError}: what it read, by identity, and the suppressed exceptions it read and has
-     * still to go into, a list for each exception it went into, the next on top.
+     * One search of {@link #fatalError} or {@link #isInterrupt}, for the first exception that matches: what it read, by
+     * identity, and the suppressed exceptions it read and has still to go into, a list for each exception it went
+     * into, the next on top.
      */
-    private static final class FatalSearch {
+    private static final class Search {
+        private final Predicate<Throwable> match;
         private final Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         private final Deque<Iterator<Throwable>> deeper = new ArrayDeque<>();
-        private @Nullable Error found;
+        private @Nullable Throwable found;
         private boolean stopped;
 
-        @Nullable Error find(Throwable thrown) {
+        Search(Predicate<Throwable> match) {
+            this.match = match;
+        }
+
+        @Nullable Throwable find(Throwable thrown) {
             List<Throwable> chain = new ArrayList<>();
             for (Throwable link = thrown; link != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && read(link);
                     link = causeOf(link)) {
@@ -180,7 +202,7 @@ final class KitFailures {
             return found;
         }
 
-        /** Counts and checks an exception; {@code true} if it was read for the first time, and isn't fatal. */
+        /** Counts and checks an exception; {@code true} if it was read for the first time, and doesn't match. */
         private boolean read(Throwable thrown) {
             if (seen.size() >= MAX_EXCEPTIONS_READ) {
                 stopped = true;
@@ -189,8 +211,8 @@ final class KitFailures {
             if (!seen.add(thrown)) {
                 return false;
             }
-            if (isFatalItself(thrown)) {
-                found = (Error) thrown;
+            if (match.test(thrown)) {
+                found = thrown;
                 stopped = true;
                 return false;
             }

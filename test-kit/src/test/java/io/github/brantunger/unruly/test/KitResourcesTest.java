@@ -117,4 +117,131 @@ class KitResourcesTest {
             Thread.interrupted();
         }
     }
+
+    @Test
+    @DisplayName("keepingInterrupt() clears an interrupt the step puts back, as the engine does when a reload or a"
+            + " close() inside a check closes a session whose close() fails with an InterruptedException in its cause,"
+            + " whether the step ends or fails, and throws the step's failure (#1223)")
+    void keepingInterruptClearsTheInterruptTheStepSets() {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+            IllegalStateException stepFailure = new IllegalStateException("the step failed");
+
+            KitResources.keepingInterrupt(() -> Thread.currentThread().interrupt());
+            boolean afterEnded = Thread.currentThread().isInterrupted();
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> KitResources.keepingInterrupt(() -> {
+                        Thread.currentThread().interrupt();
+                        throw stepFailure;
+                    }));
+
+            assertFalse(afterEnded, "keepingInterrupt() left the thread interrupted after a step that ended");
+            assertSame(stepFailure, thrown);
+            assertFalse(Thread.currentThread().isInterrupted(),
+                    "keepingInterrupt() left the thread interrupted after a step that failed");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("on a thread that is already interrupted, keepingInterrupt() leaves the thread interrupted, though the"
+            + " step interrupts it again (#1223)")
+    void keepingInterruptOnAnInterruptedThread() {
+        try {
+            Thread.currentThread().interrupt();
+
+            KitResources.keepingInterrupt(() -> Thread.currentThread().interrupt());
+
+            assertTrue(Thread.currentThread().isInterrupted(), "keepingInterrupt() cleared the thread's interrupt");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("runKeepingInterrupt() clears an interrupt a run that ends puts back, as the engine does when the run"
+            + " closes a nested run's session whose close() fails with an InterruptedException in its cause, and one"
+            + " a run that fails for another reason puts back (#1223)")
+    void runKeepingInterruptClearsTheInterruptAnEndedRunSets() {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+            IllegalStateException runFailure = new IllegalStateException("rule 'r' failed");
+
+            KitResources.runKeepingInterrupt(() -> Thread.currentThread().interrupt());
+            boolean afterEnded = Thread.currentThread().isInterrupted();
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> KitResources.runKeepingInterrupt(() -> {
+                        Thread.currentThread().interrupt();
+                        throw runFailure;
+                    }));
+
+            assertFalse(afterEnded, "runKeepingInterrupt() left the thread interrupted after a run that ended");
+            assertSame(runFailure, thrown);
+            assertFalse(Thread.currentThread().isInterrupted(),
+                    "runKeepingInterrupt() left the thread interrupted after a run that failed");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("runKeepingInterrupt() keeps the interrupt of a run that was stopped by it, which fails with an"
+            + " InterruptedException as the cause of its failure, as the engine's run() reports a stop, on a thread"
+            + " that wasn't interrupted before and on one that was (#1223, #534)")
+    void runKeepingInterruptKeepsTheInterruptOfAStoppedRun() {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+            // The engine's stop: its own exception, caused by an InterruptedException, with the interrupt set again.
+            IllegalStateException stop = new IllegalStateException("run() was interrupted during rule 'r'",
+                    new InterruptedException());
+            KitResources.ClosingStep<RuntimeException> stoppedRun = () -> {
+                Thread.currentThread().interrupt();
+                throw stop;
+            };
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> KitResources.runKeepingInterrupt(stoppedRun));
+            boolean keptWhenClearBefore = Thread.interrupted();
+            Thread.currentThread().interrupt();
+            assertThrows(IllegalStateException.class, () -> KitResources.runKeepingInterrupt(stoppedRun));
+
+            assertSame(stop, thrown);
+            assertTrue(keptWhenClearBefore, "runKeepingInterrupt() cleared the interrupt that stopped the run");
+            assertTrue(Thread.currentThread().isInterrupted(),
+                    "runKeepingInterrupt() cleared the interrupt of a thread that was interrupted before the run");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    @DisplayName("runKeepingInterrupt() keeps the interrupt of a run that was stopped by it when ending the run threw"
+            + " too, so the run fails with what the ending threw and the stop suppressed on it, as the engine's run()"
+            + " does (#1223)")
+    void runKeepingInterruptKeepsTheInterruptOfAStoppedRunWhoseEndingFailed() {
+        try {
+            assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+            IllegalStateException ending = new IllegalStateException("ending the run failed");
+            ending.addSuppressed(new IllegalStateException("run() was interrupted during rule 'r'",
+                    new InterruptedException()));
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> KitResources.runKeepingInterrupt(() -> {
+                        Thread.currentThread().interrupt();
+                        throw ending;
+                    }));
+
+            assertSame(ending, thrown);
+            assertTrue(Thread.currentThread().isInterrupted(),
+                    "runKeepingInterrupt() cleared the interrupt that stopped the run");
+        } finally {
+            // Cleared for the tests that run on this thread next.
+            Thread.interrupted();
+        }
+    }
 }
