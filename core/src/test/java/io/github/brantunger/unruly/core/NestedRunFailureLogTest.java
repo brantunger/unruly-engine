@@ -71,6 +71,8 @@ class NestedRunFailureLogTest {
     private static final String OUTPUT_REJECTED = "'output' is reserved for the output object and cannot be used as "
             + "a fact name";
     private static final String IN_NEW = "in new RuntimeException(e)";
+    /** How many runs with a short deadline are tried for one whose action the deadline passes in. */
+    private static final int STOP_ATTEMPTS = 20;
 
     private final OutOfMemoryError oom = new OutOfMemoryError("simulated heap exhaustion");
     private final AtomicInteger onError = new AtomicInteger();
@@ -547,8 +549,10 @@ class NestedRunFailureLogTest {
     @DisplayName("a listener that wraps the failure it's told of isn't taken for one whose run() failed")
     void wrappedToldFailureDescribedWithItsClass(String callback) {
         boolean stop = callback.endsWith("stop");
+        AtomicBoolean reached = new AtomicBoolean();
         RulesEngine<Map<String, Object>> engine = engine("outer-rule", (action, session) -> {
             if (stop) {
+                reached.set(true);
                 while (!action.isCancelled()) {
                     LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
                 }
@@ -573,8 +577,17 @@ class NestedRunFailureLogTest {
             }
         });
 
-        Outcome<Throwable> outcome = failed(() -> engine.runWithResult(new FactMap<>(),
-                stop ? RunOptions.withTimeoutOf(Duration.ofMillis(50)) : RunOptions.defaults()));
+        // The stop must be a deadline's: an interrupt's is described with its cause, which this line doesn't say. A
+        // deadline this short can pass before the run reaches the rule on a busy machine, where the stop opens no
+        // rule and so reaches onRunError but not onError, so, as the #1117 busy-carrier scenario does, a run the
+        // action wasn't reached in is run again, and only a run whose action saw the deadline pass is judged.
+        RunOptions options = stop ? RunOptions.withTimeoutOf(Duration.ofMillis(50)) : RunOptions.defaults();
+        Outcome<Throwable> outcome = failed(() -> engine.runWithResult(new FactMap<>(), options));
+        for (int attempt = 1; stop && !reached.get() && attempt < STOP_ATTEMPTS; attempt++) {
+            outcome = failed(() -> engine.runWithResult(new FactMap<>(), options));
+        }
+        assertTrue(!stop || reached.get(), "no run of " + STOP_ATTEMPTS + " reached the action before its deadline: "
+                + outcome.logs());
 
         String name = callback.startsWith("onError") ? "onError" : "onRunError";
         assertEquals(List.of("Listener threw exception in " + name + ": java.lang.IllegalStateException: could not "
@@ -1961,9 +1974,9 @@ class NestedRunFailureLogTest {
                 case "a failure" -> throw new IllegalStateException("outer rule failed");
                 case "a fatal failure" -> throw ruleError;
                 default -> {
-                    while (!action.isCancelled()) {
-                        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
-                    }
+                    // Interrupts its own thread, so the run stops during the rule, when the action returns, and
+                    // onError is told of the stop (see wrappedToldFailureDescribedWithItsClass).
+                    Thread.currentThread().interrupt();
                     return ActionResult.done();
                 }
             }
@@ -1974,8 +1987,9 @@ class NestedRunFailureLogTest {
             }
         });
 
-        Outcome<Throwable> outcome = failed(() -> engine.runWithResult(new FactMap<>(),
-                stop ? RunOptions.withTimeoutOf(Duration.ofMillis(50)) : RunOptions.defaults()));
+        Outcome<Throwable> outcome = failed(() -> engine.run(new FactMap<>()));
+        // A stopped run leaves the interrupt status it was stopped with; cleared, so it ends with the test.
+        Thread.interrupted();
 
         assertSame("a fatal failure".equals(closing) ? ruleError : oom, outcome.thrown());
         String wrapper = "A listener threw java.lang.OutOfMemoryError in onError for rule 'outer-rule': audit write"
