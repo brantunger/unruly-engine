@@ -8,7 +8,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * How the contract kit's checks close what they create: an engine, a compiler or a session, however the check ends,
- * and the workers a check runs its rules on.
+ * and the workers a check runs its rules on. And how they keep the thread they run on from staying interrupted once
+ * the engine has put back an interrupt that made a {@code close()} fail, whether at the check's end or inside it.
  */
 final class KitResources {
 
@@ -26,6 +27,18 @@ final class KitResources {
     }
 
     /**
+     * A step of a check that closes sessions or compilers, so the engine may put an interrupt back on the check's
+     * thread as it runs: a {@code close()}, a reload, or a run nested in the check's run, whose sessions are closed as
+     * it ends.
+     *
+     * @param <X> What the step throws
+     */
+    @FunctionalInterface
+    interface ClosingStep<X extends Exception> {
+        void run() throws X;
+    }
+
+    /**
      * Runs a check with an engine, a compiler or a session, and then closes it, however the check ends, as
      * try-with-resources would. A check builds its engine before it loads any rules, so a failed {@code load()} still
      * leaves the engine to be closed. What closing throws is attached to the check's own failure, unless it is that
@@ -33,7 +46,7 @@ final class KitResources {
      * {@code "Self-suppression not permitted"} instead. An interrupt that closing puts back, as the engine does when a
      * session's or a compiler's {@code close()} fails with an {@link InterruptedException} in its cause, is cleared, so
      * the checks that run on this thread next aren't interrupted; a thread that was interrupted before closing stays
-     * interrupted.
+     * interrupted (see {@link #keepingInterrupt}).
      *
      * @param resource The engine, with no rules loaded yet, or the compiler or session
      * @param check    What the check does with it
@@ -46,29 +59,61 @@ final class KitResources {
             check.accept(resource);
         } catch (Throwable failure) {
             try {
-                closeKeepingInterrupt(resource);
+                keepingInterrupt(resource::close);
             } catch (Throwable closeFailure) {
                 KitFailures.attach(failure, closeFailure);
             }
             throw failure;
         }
-        closeKeepingInterrupt(resource);
+        keepingInterrupt(resource::close);
     }
 
-    // The engine puts back an interrupt that made a session's or a compiler's close() fail (Session.close()). That
-    // interrupt belongs to this check's engine, not to the checks that run on this thread after it (#1120). Accepted:
-    // an interrupt from outside that arrives during close(), on a thread that wasn't interrupted before, is cleared
-    // too. And one the engine puts back inside the check itself (a reload that closes the replaced copy's sessions, an
-    // explicit engine.close() in the check, a nested run's session close) reads as set before close() and is kept too
-    // (#1223).
-    private static void closeKeepingInterrupt(AutoCloseable resource) throws Exception {
+    /**
+     * Runs a step that closes sessions or compilers, and clears any interrupt the engine puts back during it, unless
+     * the thread was interrupted before the step: the one a {@code close()} that fails with an
+     * {@link InterruptedException} in its cause leaves, or one a language's compile, {@code newSession()} or
+     * {@code warmUp()} reports as a reload makes a copy of the rules. That interrupt belongs to this check's engine,
+     * not to the checks that run on this thread after it. The close at a check's end ({@link #closing}) is one such
+     * step (#1120); so are a reload that closes the replaced copy's sessions and compiler, and an explicit
+     * {@code engine.close()}, inside a check (#1223). A step that runs rules uses {@link #runKeepingInterrupt}.
+     *
+     * @param step The step
+     * @param <X>  What the step throws
+     * @throws X What the step throws
+     */
+    // Accepted: an interrupt from outside that arrives during the step, on a thread that wasn't interrupted before, is
+    // cleared too, as is one a reload's compile or warm-up reports; the check still fails with what load() threw.
+    static <X extends Exception> void keepingInterrupt(ClosingStep<X> step) throws X {
         boolean interruptedBefore = Thread.currentThread().isInterrupted();
         try {
-            resource.close();
+            step.run();
         } finally {
             if (!interruptedBefore) {
                 Thread.interrupted();
             }
+        }
+    }
+
+    /**
+     * Runs a step that runs rules and closes sessions as it does, a run nested in a check's run whose extra copy of the
+     * rules the engine closes as soon as it ends, as {@link #keepingInterrupt} does, except that an interrupt that
+     * stopped the run itself is kept: the engine reports the stop with an {@link InterruptedException} as the cause of
+     * the run's failure, and sets the interrupt again as the run returns, so a check that is interrupted still reports
+     * it (#534). Only the interrupt a session's {@code close()} put back as the run left, whether it ended or failed
+     * for another reason, is cleared.
+     *
+     * @param step The step
+     * @param <X>  What the step throws
+     * @throws X What the step throws
+     */
+    static <X extends Exception> void runKeepingInterrupt(ClosingStep<X> step) throws X {
+        try {
+            keepingInterrupt(step);
+        } catch (Throwable failure) {
+            if (KitFailures.isInterrupt(failure)) {
+                Thread.currentThread().interrupt();
+            }
+            throw failure;
         }
     }
 

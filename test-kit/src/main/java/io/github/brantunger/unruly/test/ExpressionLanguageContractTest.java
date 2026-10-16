@@ -68,6 +68,8 @@ import static io.github.brantunger.unruly.test.KitFailures.rethrowIfFatal;
 import static io.github.brantunger.unruly.test.KitFailures.runAroundNestedFailed;
 import static io.github.brantunger.unruly.test.KitFailures.suppressAll;
 import static io.github.brantunger.unruly.test.KitResources.closing;
+import static io.github.brantunger.unruly.test.KitResources.keepingInterrupt;
+import static io.github.brantunger.unruly.test.KitResources.runKeepingInterrupt;
 import static io.github.brantunger.unruly.test.KitResources.stop;
 import static io.github.brantunger.unruly.test.SameOutput.assertSameOutput;
 import static io.github.brantunger.unruly.test.SameOutput.mismatch;
@@ -1612,13 +1614,17 @@ public abstract class ExpressionLanguageContractTest {
             closing(builder(countingCloses(language, closes, closeFailures)).copiesAtLoad(1).build(), engine -> {
                 engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
                 assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
-                engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x"))));
+                // The reload closes the replaced copy's sessions and compiler, and the closes below close the new
+                // one's, inside the check: an interrupt the engine puts back when one of those close() fails is
+                // cleared here, as closing() clears the one from the close at the check's end, so the run after the
+                // reload isn't stopped, and the thread isn't left interrupted (#1223).
+                keepingInterrupt(() -> engine.load(List.of(rule("r", 1, factEquals("x", 2), putFact(SEEN, "x")))));
 
                 assertEquals(List.of(1, 0), closes.stream().map(AtomicInteger::get).toList());
                 assertSameOutput(Map.of(SEEN, 2), engine.run(new FactMap<>(new Fact<>("x", 2))));
 
-                engine.close();
-                engine.close();
+                keepingInterrupt(engine::close);
+                keepingInterrupt(engine::close);
 
                 assertEquals(List.of(1, 1), closes.stream().map(AtomicInteger::get).toList());
             });
@@ -1678,10 +1684,14 @@ public abstract class ExpressionLanguageContractTest {
                     @Override
                     public void afterEvaluate(Rule rule, Map<String, @Nullable Object> facts, boolean matched) {
                         // Once, since the nested run evaluates the rule too. The engine only logs what a listener
-                        // throws, so what the nested run returns or throws is kept for the check.
+                        // throws, so what the nested run returns or throws is kept for the check. The nested run's
+                        // sessions are closed as it ends, inside the check's run: an interrupt the engine puts back
+                        // when one of those close() fails is cleared, so it doesn't stop the check's run, which would
+                        // hide the close() failure; one that stopped the nested run itself is kept (#1223).
                         if ("a".equals(rule.getRuleName()) && nested.compareAndSet(false, true)) {
                             try {
-                                nestedOutput.set(built.get().run(new FactMap<>(new Fact<>("x", 1))));
+                                runKeepingInterrupt(
+                                        () -> nestedOutput.set(built.get().run(new FactMap<>(new Fact<>("x", 1)))));
                             } catch (RuntimeException e) {
                                 nestedFailure.set(e);
                             }

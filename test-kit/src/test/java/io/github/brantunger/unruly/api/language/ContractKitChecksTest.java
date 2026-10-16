@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -1338,6 +1339,95 @@ class ContractKitChecksTest {
     }
 
     /**
+     * Wraps a language so that the compilers it creates whose index, counted from 0 in the order they're created,
+     * {@code which} accepts throw an {@link IllegalStateException} caused by an {@link InterruptedException} when
+     * they're closed, as a compiler interrupted while it waits for its runtime to release may. The engine puts the
+     * interrupt back on the thread that closed the compiler.
+     */
+    private static ExpressionLanguage interruptedCompilerClose(ExpressionLanguage language, IntPredicate which) {
+        AtomicInteger created = new AtomicInteger();
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                boolean interrupted = which.test(created.getAndIncrement());
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public void close() {
+                        compiler.close();
+                        if (interrupted) {
+                            throw new IllegalStateException("the compiler's close was interrupted",
+                                    new InterruptedException("while the compiler waited for its runtime"));
+                        }
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that each session it creates is new, and throws an {@link IllegalStateException} caused by
+     * an {@link InterruptedException} when it's closed, as a session interrupted while it waits for its runtime may.
+     * The engine puts the interrupt back on the thread that closed the session.
+     */
+    private static ExpressionLanguage interruptedSessionClose(ExpressionLanguage language) {
+        return withSessions(language, () -> new Session() {
+            @Override
+            public void close() {
+                throw new IllegalStateException("the session's close was interrupted",
+                        new InterruptedException("while the session waited for its runtime"));
+            }
+        });
+    }
+
+    /**
+     * Wraps a language so that the {@code nth} evaluation of one of its conditions, counted from 1 across every run,
+     * interrupts the thread it runs on, and returns {@code true}, so the engine stops that run during the rule.
+     */
+    private static ExpressionLanguage interruptingOnEvaluation(ExpressionLanguage language, int nth) {
+        AtomicInteger evaluations = new AtomicInteger();
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            if (evaluations.incrementAndGet() == nth) {
+                                Thread.currentThread().interrupt();
+                                return true;
+                            }
+                            return condition.evaluate(evaluation, session);
+                        };
+                    }
+                };
+            }
+        };
+    }
+
+    /** What a check that runs on this thread threw, and whether it left the thread interrupted. */
+    private record InterruptedCheck(Throwable failure, boolean interrupted) {
+    }
+
+    /**
+     * Runs one of the kit's checks, by name, on a contract test for {@code language}, on this thread, which isn't
+     * interrupted, and returns what it threw and whether the thread was interrupted when it ended. The thread is left
+     * as it was found, for the tests that run on it next.
+     */
+    private static InterruptedCheck runInterruptedCheck(ExpressionLanguage language, String check) {
+        assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+        try {
+            Throwable failure = assertThrows(Throwable.class, () -> runCheck(language, check));
+            return new InterruptedCheck(failure, Thread.currentThread().isInterrupted());
+        } finally {
+            // Cleared for the tests that run on this thread next, whatever the check did.
+            Thread.interrupted();
+        }
+    }
+
+    /**
      * Wraps a language so that an action {@code let NAME = FACT ; put KEY NAME} keeps its variable in a map compiled
      * into the action, which every run shares. The first two runs of the action wait for each other between declaring
      * the variable and putting it, each on its own thread, so one of them puts the other's value.
@@ -1657,13 +1747,7 @@ class ContractKitChecksTest {
     void interruptedCloseNotLeakedToTheNextEngine() {
         // The engine puts back the interrupt when it closes an engine's sessions, so the check's later engines would
         // run on an interrupted thread, and the check fail with "run() was interrupted before rule ...".
-        ExpressionLanguage interruptedClose = withSessions(new ToyExpressionLanguage(), () -> new Session() {
-            @Override
-            public void close() {
-                throw new IllegalStateException("the session's close was interrupted",
-                        new InterruptedException("while the session waited for its runtime"));
-            }
-        });
+        ExpressionLanguage interruptedClose = interruptedSessionClose(new ToyExpressionLanguage());
         try {
             assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
 
@@ -1674,6 +1758,79 @@ class ContractKitChecksTest {
             // Cleared for the tests that run on this thread next, whatever the check did.
             Thread.interrupted();
         }
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when a reload replaces it"
+            + " doesn't stop the compiler check's next run nor leave its thread interrupted, and the check fails with"
+            + " what close() threw (#1223)")
+    void interruptedCompilerCloseOnReloadNotLeakedToTheCheck() {
+        // The reload closes the replaced copy's compiler inside the check, and the engine puts back the interrupt
+        // then, so the check's next run would be stopped, and the check fail with "run() was interrupted before rule
+        // 'r'" in place of the close() failure it is there to report. Every compiler's close() throws: the one the
+        // reload replaces, and the one engine.close() closes.
+        InterruptedCheck check = runInterruptedCheck(
+                interruptedCompilerClose(new ToyExpressionLanguage(), compiler -> true), "compilerClosed");
+
+        assertAll(() -> assertFalse(check.interrupted(), "the check left the thread interrupted"),
+                () -> assertInstanceOf(AssertionFailedError.class, check.failure(), check.failure()::toString),
+                () -> assertEquals("a compiler's close() threw java.lang.IllegalStateException: the compiler's close"
+                        + " was interrupted, which the engine only logs at WARN", check.failure().getMessage()));
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when the compiler check"
+            + " closes its engine doesn't leave the check's thread interrupted, and the check fails with what close()"
+            + " threw (#1223)")
+    void interruptedCompilerCloseOnCloseNotLeakedToTheCheck() {
+        // Only the second compiler's close() throws: the one the reload creates, which the check's own engine.close()
+        // closes, inside the check. The engine puts back the interrupt then, and the check reports the close() failure
+        // either way, so what's left to check is the thread it ends on.
+        InterruptedCheck check = runInterruptedCheck(
+                interruptedCompilerClose(new ToyExpressionLanguage(), compiler -> compiler == 1), "compilerClosed");
+
+        assertAll(() -> assertFalse(check.interrupted(), "the check left the thread interrupted"),
+                () -> assertInstanceOf(AssertionFailedError.class, check.failure(), check.failure()::toString),
+                () -> assertEquals("a compiler's close() threw java.lang.IllegalStateException: the compiler's close"
+                        + " was interrupted, which the engine only logs at WARN", check.failure().getMessage()));
+    }
+
+    @Test
+    @DisplayName("a session whose close() fails with an InterruptedException in its cause when the run nested in the"
+            + " session check's run ends doesn't stop the check's run nor leave its thread interrupted, and the check"
+            + " fails with what close() threw (#1223)")
+    void interruptedSessionCloseOfTheNestedRunNotLeakedToTheCheck() {
+        // The engine closes the nested run's sessions as it ends, inside the check's run, and puts back the interrupt
+        // then, so the check's run would be stopped before its next rule, and the check fail with "the run failed
+        // after a run nested in it ended ...: run() was interrupted before rule 'b'" in place of the close() failure
+        // it is there to report.
+        InterruptedCheck check = runInterruptedCheck(interruptedSessionClose(new ToyExpressionLanguage()),
+                "sessionClosedWhileAnotherRuns");
+
+        assertAll(() -> assertFalse(check.interrupted(), "the check left the thread interrupted"),
+                () -> assertInstanceOf(AssertionFailedError.class, check.failure(), check.failure()::toString),
+                () -> assertEquals("a session's close() threw java.lang.IllegalStateException: the session's close"
+                        + " was interrupted, which the engine only logs at WARN", check.failure().getMessage()));
+    }
+
+    @Test
+    @DisplayName("a run nested in the session check's run that an interrupt stops leaves the check's thread"
+            + " interrupted, and the check reports that both runs were stopped (#1223 guard, #534)")
+    void interruptedNestedRunStaysInterrupted() {
+        // The second condition evaluated is the first of the run nested in the check's run: the check's run evaluates
+        // rule a, whose listener starts the nested run, which evaluates rules a and b, and the check's run then goes
+        // on to rule b. So the interrupt stops the nested run during its rule a, and, kept, the check's run before
+        // its rule b, as a check whose run is interrupted must still report (#534); the interrupt a session's close()
+        // puts back as the nested run ends is what's cleared, not this one.
+        InterruptedCheck check = runInterruptedCheck(interruptingOnEvaluation(new ToyExpressionLanguage(), 2),
+                "sessionClosedWhileAnotherRuns");
+
+        assertAll(() -> assertTrue(check.interrupted(), "the check cleared the thread's interrupt"),
+                () -> assertInstanceOf(AssertionFailedError.class, check.failure(), check.failure()::toString),
+                () -> assertEquals("the run failed, and so did the run nested in it, which is attached: run() was"
+                        + " interrupted before rule 'b'", check.failure().getMessage()),
+                () -> assertEquals(List.of("run() was interrupted during rule 'a'"),
+                        Arrays.stream(check.failure().getSuppressed()).map(Throwable::getMessage).toList()));
     }
 
     @Test
