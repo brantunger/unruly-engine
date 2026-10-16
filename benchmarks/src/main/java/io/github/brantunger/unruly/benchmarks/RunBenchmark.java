@@ -75,8 +75,9 @@ public class RunBenchmark {
     private static final String LOGGING = "logging";
     private static final String KEPT = "kept";
 
-    // The parameters, the engine, the facts and ruleList() are package-private so RunBenchmarkWorkloadTest can
-    // assert what one run evaluates and fires. JMH sets a parameter by reflection, so it reaches either one.
+    // The parameters, the engine, the facts, ruleList(), denseRuleList() and the dense shape's constants are
+    // package-private so RunBenchmarkWorkloadTest can assert what one run evaluates and fires and what a dense rule
+    // holds. JMH sets a parameter by reflection, so it reaches either one.
     @Param({"10", "100", "1000"})
     int rules;
 
@@ -149,6 +150,46 @@ public class RunBenchmark {
                             .action("output.put('" + property + "', true)").priority(count - i).build());
         }
         return ruleList;
+    }
+
+    // The shape of a dense rule, which RunBenchmarkWorkloadTest counts in each rule's text.
+    static final int DENSE_CLAUSES = 8;
+    static final int DENSE_STATEMENTS = 5;
+
+    /**
+     * Builds {@code count} MVEL rules with the thresholds and priorities of {@link #ruleList}, so the same tenth
+     * matches, but each with a condition of {@code DENSE_CLAUSES} clauses and an action of {@code DENSE_STATEMENTS}
+     * statements, reading the applicant, the amount and the term from {@link #newFacts()} and calling a class MVEL
+     * resolves. Compiling such a rule, with the checks a compile runs over its text, costs far more than adding it to
+     * the engine, so a load of these is the per-rule compile cost with little else in the way.
+     *
+     * @param count How many rules to build
+     * @return The rules, in the order they're loaded
+     */
+    static List<Rule> denseRuleList(int count) {
+        List<Rule> ruleList = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            int threshold = MATCHING_SCORE + count * 9 / 10 - i;
+            String property = "rule" + i;
+            // Neither && nor ; appears inside a string literal, so counting them counts the clauses and statements.
+            ruleList.add(Rule.builder().ruleName(property)
+                    .condition("applicant.creditScore >= " + threshold + " && applicant.employed"
+                            + " && applicant.name != null && amount >= 1000 && amount <= 100000"
+                            + " && term >= 12 && term <= 72 && Math.max(amount, 1) / term < 5000")
+                    .action(String.join("; ",
+                            put(property, "true"),
+                            put(property + ".score", "applicant.creditScore"),
+                            put(property + ".ratio", "amount / term"),
+                            put(property + ".term", "Math.min(term, 72)"),
+                            put(property + ".name", "applicant.name.toUpperCase()")))
+                    .priority(count - i).build());
+        }
+        return ruleList;
+    }
+
+    /** One statement of a dense rule's action, which puts {@code value} into the output under {@code key}. */
+    private static String put(String key, String value) {
+        return "output.put('" + key + "', " + value + ")";
     }
 
     /**
@@ -269,6 +310,62 @@ public class RunBenchmark {
                     .language(new MvelExpressionLanguage()).language(new NoopLanguage()).defaultLanguage(MVEL)
                     .build();
             ruleList = ruleList(rules, language);
+        }
+
+        /** Closes the engine the iteration loaded, so the next one starts from nothing. */
+        @TearDown(Level.Iteration)
+        public void closeTheEngine() {
+            engine.close();
+        }
+
+        /**
+         * Compiles the whole rule list.
+         *
+         * @return The engine that now holds them, so the call can't be optimised away
+         */
+        @Benchmark
+        public RulesEngine<Map<String, Object>> load() {
+            engine.load(ruleList);
+            return engine;
+        }
+    }
+
+    /**
+     * {@link Load} with few, heavy rules: 100 or 500 MVEL rules from {@link #denseRuleList}, each with a condition of
+     * several clauses and an action of several statements, more dotted names and a class call, so each rule costs
+     * about three times as much to compile as one of {@link Load}'s two-clause MVEL rules. Compiling already dominates
+     * an MVEL load there; here it is nearly all of it, so a step in the compile-time checks MVEL runs over a rule's
+     * text, which is what the load-time steps in 2.25.2 and 2.29.0 were (#1137), shows up most clearly. The same warm
+     * load is measured, in the same way: a fresh, empty engine filled before each iteration, so retiring replaced
+     * rules isn't counted, after 100 warm-up loads.
+     */
+    @State(Scope.Benchmark)
+    @BenchmarkMode(Mode.SingleShotTime)
+    @OutputTimeUnit(TimeUnit.MILLISECONDS)
+    @Fork(1)
+    @Warmup(iterations = 100)
+    @Measurement(iterations = 20)
+    public static class LoadDense {
+
+        /** Creates the benchmark. JMH creates one for each value of the parameter below. */
+        public LoadDense() {
+            // Nothing to set up: buildTheEngine() runs before each iteration.
+        }
+
+        // The parameter is package-private so RunBenchmarkWorkloadTest can load the dense rules the way an iteration
+        // does. JMH sets it by reflection, so it reaches either one.
+        @Param({"100", "500"})
+        int rules;
+
+        private RulesEngine<Map<String, Object>> engine;
+        private List<Rule> ruleList;
+
+        /** Builds an engine with no rules, and the list to compile into it, before each iteration. */
+        @Setup(Level.Iteration)
+        public void buildTheEngine() {
+            engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                    .language(new MvelExpressionLanguage()).defaultLanguage(MVEL).build();
+            ruleList = denseRuleList(rules);
         }
 
         /** Closes the engine the iteration loaded, so the next one starts from nothing. */

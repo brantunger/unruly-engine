@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
 import java.util.List;
@@ -50,6 +51,10 @@ class RunBenchmarkWorkloadTest {
         return result.firedRules().stream().map(Rule::getRuleName).toList();
     }
 
+    private static int occurrences(String text, String separator) {
+        return (text.length() - text.replace(separator, "").length()) / separator.length();
+    }
+
     @ParameterizedTest(name = "{0}, {1} rules")
     @CsvSource({"mvel, 10", "mvel, 100", "mvel, 1000", "noop, 10", "noop, 100", "noop, 1000"})
     @DisplayName("a first-match run evaluates nine tenths of the list and fires the rule it stops at")
@@ -75,6 +80,41 @@ class RunBenchmarkWorkloadTest {
         assertEquals(0, count(result, RuleEvaluation.Outcome.NOT_EVALUATED));
         assertEquals(rules / 10, result.firedRules().size());
         assertEquals(IntStream.range(matchFrom, rules).mapToObj(i -> "rule" + i).toList(), firedNames(result));
+    }
+
+    @ParameterizedTest(name = "{0} rules")
+    @ValueSource(ints = {100, 500})
+    @DisplayName("every dense rule has the clauses and statements the benchmark says, and all of them compile and load")
+    void denseRulesKeepTheirShapeAndAllLoad(int rules) {
+        List<Rule> ruleList = RunBenchmark.denseRuleList(rules);
+
+        assertEquals(rules, ruleList.size());
+        assertEquals(rules, ruleList.stream().map(Rule::getRuleName).distinct().count());
+        for (Rule rule : ruleList) {
+            // The separators appear nowhere else in a rule's text, so n clauses are joined by n - 1 of them.
+            assertEquals(RunBenchmark.DENSE_CLAUSES - 1, occurrences(rule.getCondition(), "&&"), rule.getRuleName());
+            assertEquals(RunBenchmark.DENSE_STATEMENTS - 1, occurrences(rule.getAction(), ";"), rule.getRuleName());
+        }
+
+        // Loaded the way an iteration of the benchmark loads them, then run once: a rule that didn't compile fails
+        // the load, and one the engine didn't keep is missing from the evaluations.
+        RunBenchmark.LoadDense benchmark = new RunBenchmark.LoadDense();
+        benchmark.rules = rules;
+        benchmark.buildTheEngine();
+        try {
+            RunBenchmark facts = new RunBenchmark();
+            facts.facts = "record";
+            RunResult<Map<String, Object>> result = benchmark.load().runWithResult(facts.newFacts());
+
+            int matchFrom = rules * 9 / 10;
+            assertEquals(rules, result.evaluations().size());
+            assertEquals(0, count(result, RuleEvaluation.Outcome.NOT_EVALUATED));
+            assertEquals(IntStream.range(matchFrom, rules).mapToObj(i -> "rule" + i).toList(), firedNames(result));
+            // Each fired action puts its own keys, one per statement.
+            assertEquals(rules / 10 * RunBenchmark.DENSE_STATEMENTS, result.output().size());
+        } finally {
+            benchmark.closeTheEngine();
+        }
     }
 
     @Test
