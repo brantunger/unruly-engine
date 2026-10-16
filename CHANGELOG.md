@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.31.1](https://github.com/brantunger/unruly-engine/compare/v2.31.0...v2.31.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* have the kit's compilerClosed and sessionClosedWhileAnotherRuns checks report a close() that fails with an InterruptedException cause, and leave the thread uninterrupted, instead of failing with run() was interrupted before rule ([#1232](https://github.com/brantunger/unruly-engine/issues/1232)) ([0179b36](https://github.com/brantunger/unruly-engine/commit/0179b36b0fe2d8b888c5e6563f544a4fff1cecd7))
+
 ## [2.31.0](https://github.com/brantunger/unruly-engine/compare/v2.30.17...v2.31.0) (2026-10-15)
 
 
