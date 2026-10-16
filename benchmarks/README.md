@@ -6,13 +6,14 @@ flaky. Run them by hand when a change could affect speed or allocation, and put 
 pull request.
 
 What `check` does run is `RunBenchmarkWorkloadTest`, which asserts the shape of the workload below — how many rules
-match and how deep the first match sits. Those are counts, not timings, so they can't be flaky.
+match and how deep the first match sits, and that each dense rule has the clauses and statements the benchmark says
+and loads. Those are counts, not timings, so they can't be flaky.
 
 ## 🏃 Running them
 
 ```bash
-# Everything: 72 run configurations, 2 runs with no rules, 6 load configurations and 4 escaping inputs, each in its
-# own JVM.
+# Everything: 72 run configurations, 2 runs with no rules, 6 load configurations, 2 dense load configurations and 4
+# escaping inputs, each in its own JVM.
 ./gradlew :benchmarks:jmh
 
 # One slice, quickly, with allocation figures
@@ -21,8 +22,10 @@ match and how deep the first match sits. Those are counts, not timings, so they 
 # What a run costs before its first rule
 ./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.Empty -f 5"
 
-# Compiling rule lists
-./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.Load"
+# Compiling rule lists. JMH takes the name as a regular expression and matches it anywhere in a benchmark's name, so
+# "RunBenchmark.Load" alone would run LoadDense too.
+./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.Load.load"
+./gradlew :benchmarks:jmh -PjmhArgs="RunBenchmark.LoadDense"
 
 # On another JDK, to compare
 ./gradlew :benchmarks:jmh -PbenchmarkJdk=25 -PjmhArgs="RunBenchmark.run -p rules=100"
@@ -69,6 +72,12 @@ load costs several times more and isn't measured. Over three sweeps with `-f 3`,
 error bars were under 2% for MVEL at 100 and 1,000 rules, and 7% to 23% for the other four configurations, whose
 loads take about a millisecond or less.
 
+`RunBenchmark.LoadDense` is the same measurement, with the same shape (one fork, 100 warm-up shots, 20 measured), of
+100 and 500 MVEL rules whose conditions have eight clauses and whose actions have five statements, so compiling the
+rules is most of each load. It exists for the [load budget](#-the-load-budget): a step added to `load()` for every
+rule shows there first, and `Load`'s short rules and noop language would dilute it. It has no `noop` language
+and no 10- or 1,000-rule list.
+
 `EscapeBenchmark` measures the escaping every failure's message goes through, on 999 characters: plain text, a
 zero-width space or a control character throughout, and Hebrew with a right-to-left mark every twentieth character.
 
@@ -99,3 +108,43 @@ Those are medians of five forks on one machine with JDK 21.0.7. The forks agreed
   with identical flags, and quote the error bar.
 - **The first run after `load()` is not measured here.** It builds the first compiled copy, which costs far more than
   a steady-state run. JMH's warmup absorbs it.
+
+## 📏 The load budget
+
+Load time has crept up by steps that were each intended, and each too small to notice without a number to compare
+with ([#1137](https://github.com/brantunger/unruly-engine/issues/1137)). The budget is a committed baseline in
+`baselines/`: `load-jdk21.json`, the JMH JSON of one `RunBenchmark.Load` and `RunBenchmark.LoadDense` sweep, and
+`load-jdk21.txt`, a header with the date, machine, `java -version`, commands, fork count and a table of the scores.
+Nothing in CI reads them, for the reason at the top of this page; the maintainer compares by hand, as step 3 of
+[The normal flow](../RELEASING.md#-the-normal-flow) says.
+
+To compare, run the same two sweeps on the machine and JDK the header names, with its fork count, and set each
+configuration's score beside the header's table. `OUT` is an existing directory with no spaces in its path:
+
+```bash
+./gradlew :benchmarks:jmh -PbenchmarkJdk=21 -PjmhArgs="RunBenchmark.Load.load -f 5 -rf json -rff OUT/load.json"
+./gradlew :benchmarks:jmh -PbenchmarkJdk=21 -PjmhArgs="RunBenchmark.LoadDense -f 5 -rf json -rff OUT/dense.json"
+```
+
+The noise line is tighter here than the 15% under [Reading the numbers](#-reading-the-numbers), because the two
+steps #1137 found were 15% and 18%: on the MVEL rows at 100 rules and up (`Load` at 100 and 1,000, `LoadDense` at
+100 and 500), whose error is about 1% of the score in the baseline, a difference under **5%** is noise; on the
+10-rule MVEL row (error 6.3%) and the noop rows (about 10%), one under **15%** is.
+
+| The run is | It means | Do this |
+| --- | --- | --- |
+| On another machine or JDK, by any amount | Nothing: the baseline isn't comparable there | Re-run where the header says, or re-record the baseline there first |
+| Under the row's noise line, on the baseline's machine and JDK | Noise | Nothing |
+| Over the row's noise line, on the baseline's machine and JDK | Possibly real: identical configurations have differed by 1.6x between sweeps | Confirm by alternating the two versions before and after the change, several rounds each, as [#1137](https://github.com/brantunger/unruly-engine/issues/1137) did with the published jars, fixed 100- and 500-rule lists and the median of 20 warm reloads |
+| Confirmed, and not intended | A regression | Fix it, or file an issue, before the release |
+| Confirmed, and intended | The new cost of the release | Record it in the release's changelog entry, as below, and re-record the baseline |
+
+The changelog entry is built from PR titles, so an intended increase is recorded by the `feat:` or `fix:` title of
+the PR that made it. For one found only at release time, release-please's README offers a `BEGIN_COMMIT_OVERRIDE`
+block in the merged PR's body, read on its next run (`gh workflow run release.yml --ref main`); it is not yet used in
+this repo, so check that the release PR shows the new text.
+
+To re-record the baseline after an intended increase, run the same two commands, merge the two result files into
+`baselines/load-jdk21.json`, and rewrite `baselines/load-jdk21.txt` with the new date, machine, `java -version`,
+commands, fork count and scores. Both go in the PR that makes the increase, or in one merged before the release PR,
+so the diff shows the step the release takes.

@@ -1,0 +1,51 @@
+Load-time baseline for issue #1137 (JDK 21)
+===========================================
+
+Recorded:   2026-10-16, 14:44-14:47 local time (UTC-07:00)
+Machine:    Microsoft Windows 11 Pro 10.0.26300, 64-bit
+            13th Gen Intel(R) Core(TM) i9-13900K, 24 cores / 32 logical processors, 127.7 GB RAM
+Worktree:   branch test/1137-load-budget, benchmarks module of this repository, built from source
+
+JDK (the toolchain Gradle picked for -PbenchmarkJdk=21; exact `java -version` output):
+    openjdk version "21.0.10" 2026-01-20 LTS
+    OpenJDK Runtime Environment Temurin-21.0.10+7 (build 21.0.10+7-LTS)
+    OpenJDK 64-Bit Server VM Temurin-21.0.10+7 (build 21.0.10+7-LTS, mixed mode, sharing)
+    Location: ~/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2/bin/java.exe
+
+Commands (run one after the other, nothing else building on the machine; JMH 1.37; OUT is a directory whose
+path has no spaces, since build.gradle.kts splits jmhArgs on whitespace):
+    ./gradlew :benchmarks:jmh -PbenchmarkJdk=21 -PjmhArgs="RunBenchmark.Load.load -f 5 -rf json -rff OUT/load.json"
+    ./gradlew :benchmarks:jmh -PbenchmarkJdk=21 -PjmhArgs="RunBenchmark.LoadDense -f 5 -rf json -rff OUT/dense.json"
+    As run: OUT=C:/Workspace/notes-1137, with the files named load-jdk21.json and loaddense-jdk21.json.
+    (The two JMH JSON arrays those write are merged, unchanged, into load-jdk21.json beside this file.
+    Wall time per Gradle's "BUILD SUCCESSFUL in": Load 54 s, LoadDense 1 min 18 s.)
+
+Forks:      5 per configuration (-f 5), each 100 single-shot warm-up loads then 20 measured, so Cnt = 100 per row.
+Mode:       SingleShotTime (ss), scores in ms/op; Error is JMH's 99.9% confidence half-interval over the 100 shots.
+
+How to compare: run the same two commands with -f 5 on this machine with this JDK (Temurin 21.0.10+7, via
+-PbenchmarkJdk=21) and compare configuration by configuration. Numbers from another machine, another JDK or
+another fork count are not comparable with this file; re-record the baseline there first.
+
+Noise: on the MVEL rows at 100 rules and up (Load mvel 100 and 1000, LoadDense 100 and 500), whose error is 0.6% to
+1.5% of the score, a difference under 5% is noise. On Load mvel rules=10 (error 6.3% of the score) and the three noop
+rows (9% to 11%), a difference under 15% is. The two steps #1137 found were +15% and +18%, so the general "under
+about 15%" rule in benchmarks/README.md, "Reading the numbers", would have passed them; "The load budget" there
+owns these thresholds.
+
+Results (score and error copied verbatim from primaryMetric.score / primaryMetric.scoreError in load-jdk21.json;
+benchmark names are shown without their io.github.brantunger.unruly.benchmarks. prefix):
+
+Benchmark                    Params                    Score (ms/op)        Error (ms/op)
+---------------------------  ------------------------  -------------------  --------------------
+RunBenchmark.Load.load       language=mvel, rules=10   1.2645870000000001   0.07950810354888391
+RunBenchmark.Load.load       language=mvel, rules=100  6.193198000000001    0.06934847985479059
+RunBenchmark.Load.load       language=mvel, rules=1000 51.75639700000001    0.32775979999151184
+RunBenchmark.Load.load       language=noop, rules=10   0.114087             0.010342955595986553
+RunBenchmark.Load.load       language=noop, rules=100  0.2784419999999999   0.027375471377804557
+RunBenchmark.Load.load       language=noop, rules=1000 0.7273729999999999   0.0790609460268318
+RunBenchmark.LoadDense.load  rules=100                 19.249697            0.29368706193861416
+RunBenchmark.LoadDense.load  rules=500                 94.23558499999999    0.6169830641004188
+
+Error over 10% of score: Load.load language=noop, rules=1000 (0.079 of 0.727 ms/op, 10.9%). Every other row is
+under 10%; the noop rows are sub-millisecond, so their relative error is wide by nature.
