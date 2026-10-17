@@ -20,8 +20,8 @@ import java.util.Set;
 
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
- * unchanged, and how an exception is described in an error message. Only {@link #fatalInsteadOf},
- * {@link #laterInsteadOf} and {@link #keepAlso} log, and under the engine's logger name,
+ * unchanged, and how an exception is described in an error message. Only {@link #closingInsteadOf},
+ * {@link #insteadOf} and {@link #keepAlso} log, and under the engine's logger name,
  * {@code io.github.brantunger.unruly.engine}, as every failure is logged.
  * <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so that the
  * {@code api} package ({@code Names}, {@code LoggingRuleListener} and {@code language.MessageText}) and the benchmarks
@@ -101,10 +101,18 @@ public final class Failures {
      *     {@link java.util.ServiceConfigurationError}.</li>
      * </ul>
      *
-     * @param thrown One throwable from a cause chain
+     * <p>
+     * It allocates nothing, and is the one check the engine's last-resort code makes, where handling a failure has
+     * itself failed, as it can deep in a stack or with no memory left: ending a run (see {@link Teardown}), closing
+     * a run's values and refusing one whose init ended the run ask it for what they caught, with instanceof checks and
+     * assignments around it. Only an {@link InternalError} has its chain read, as {@link #isOverflow} reads it, so the
+     * call takes one frame more than the checks themselves would (#1164).
+     * </p>
+     *
+     * @param thrown One throwable from a cause chain, or {@code null}, which isn't fatal
      * @return {@code true} if {@code thrown} must be rethrown unchanged
      */
-    private static boolean isFatal(Throwable thrown) {
+    static boolean isFatal(Throwable thrown) {
         // StackOverflowError is a VirtualMachineError, so excluding it needs its own check. Only an InternalError has
         // its chain read, with nothing allocated for it.
         return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError)
@@ -464,6 +472,82 @@ public final class Failures {
     }
 
     /**
+     * What the steps that end a run threw, each kept where it was caught, which can't fail again, and combined last,
+     * as {@link Failures#fatalFirst} combines two: the first fatal {@link Error} wins, or else the first failure,
+     * carrying the rest. The run makes it before it holds anything, a copy of the rules or a value, so that ending a
+     * run that has run out of memory allocates nothing until what the steps threw is combined (#855), and adds what
+     * each step threw, or {@code null}, in order: {@link #add} is assignments and the instanceof checks of
+     * {@link Failures#isFatal} only, so a step that failed never keeps the next from running, as combining what it
+     * threw there could, when it runs out of stack or memory.
+     * {@link #result} combines them once every step has run, and when combining fails, as it can when it allocates,
+     * falls back on the first fatal error the JVM threw, kept by assignment as the steps were added, or else on what
+     * combining threw, the rest being lost: that last resort allocates nothing and calls nothing.
+     */
+    static final class Teardown {
+        // What each step threw, in order, null for one that threw nothing; made for as many steps as there are.
+        private final Throwable[] thrown;
+        private int steps;
+        // The first fatal error the JVM threw while the run ended, kept with instanceof checks and assignments only,
+        // for the last resort of result().
+        private Throwable fatal;
+        // Where combining can be made to fail.
+        private final Faults.Step combining;
+
+        /**
+         * @param steps     How many steps end the run, each added once, with what it threw or {@code null}
+         * @param combining The step a test makes fail where what they threw is combined
+         */
+        Teardown(int steps, Faults.Step combining) {
+            this.thrown = new Throwable[steps];
+            this.combining = combining;
+        }
+
+        /**
+         * Adds what the next step threw, with nothing allocated and no call but {@link Failures#isFatal}.
+         *
+         * @param t What it threw, or {@code null} if it threw nothing
+         */
+        void add(Throwable t) {
+            thrown[steps] = t;
+            steps++;
+            if (fatal == null && isFatal(t)) {
+                fatal = t;
+            }
+        }
+
+        /**
+         * Combines what the steps threw, once every one has run.
+         *
+         * @return What the caller throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error}
+         *         a step threw, or else the first other throwable, either carrying the rest as suppressed exceptions
+         *         (see {@link Failures#fatalFirst}); the fatal error itself when the first failure holds one, carrying
+         *         it (see {@link Failures#fatalError}), as a run that fails with one throws it. If combining them
+         *         fails, the first fatal error met is returned alone, or else what combining threw.
+         */
+        // Any Throwable: combining allocates, and the last resort must return whatever stopped it.
+        Throwable result() {
+            try {
+                Faults.at(combining);
+                Throwable ending = null;
+                for (int i = 0; i < steps; i++) {
+                    ending = fatalFirst(ending, thrown[i]);
+                }
+                // The fatal error itself, not a throwable that carries it.
+                Error carried = fatalError(ending);
+                if (carried != null) {
+                    keepAlso(carried, ending);
+                    return carried;
+                }
+                return ending;
+            } catch (Throwable t) {
+                // The last resort, which can't fail again: the fatal error the JVM threw, if any, and else what
+                // combining threw, the rest being lost.
+                return fatal != null ? fatal : t;
+            }
+        }
+    }
+
+    /**
      * Keeps a failure on the fatal {@link Error} the caller throws in its place, as a suppressed exception, so that
      * every fatal error the engine meets reaches the caller of {@code run()}, {@code load()}, {@code validate()} or
      * {@code close()}, not only the one it throws. Nothing is added when either is {@code null}, when they are the
@@ -529,10 +613,11 @@ public final class Failures {
      * a suppressed exception, or, if it can't carry one, {@code failure} is logged at WARN. A fatal error a language's
      * {@code close()} threw that loses was logged when it was caught; one from elsewhere is kept on what the caller
      * throws, so a caller that must have it logged as well logs it itself, as a failed {@code load()} does for one
-     * retiring threw. The caller throws
-     * {@code failure}, which carries the one that loses as a suppressed exception
+     * retiring threw. The caller throws {@code failure}, which carries the one that loses as a suppressed exception
      * (see {@link #keepAlso}), when its own fatal error is in its cause chain; when that error is only suppressed on
      * it, the caller throws that error itself, carrying {@code closeFatal}, rather than an exception that carries two.
+     * {@code closeFatal} is taken for the fatal error it is, as what closing returns is one, and never searched: the
+     * caller has it in hand.
      *
      * <p>
      * A {@code failure} caused by an interrupt, or carrying one suppressed, sets the thread's interrupt status again
@@ -549,54 +634,65 @@ public final class Failures {
      *         carrying {@code closeFatal}, if the caller throws that; otherwise {@code null}, and the caller throws
      *         {@code failure}, with {@code closeFatal}, if there is one, added to its suppressed exceptions
      */
-    static Error fatalInsteadOf(Throwable failure, Error closeFatal) {
-        if (closeFatal == null) {
-            return null;
-        }
-        List<Throwable> chain = causeChain(failure);
-        Error fatal = fatalErrorIn(chain);
-        if (fatal != null) {
-            return fatalOfFailure(failure, chain, fatal, closeFatal);
-        }
-        keepInterruptStatus(failure);
-        closeFatal.addSuppressed(failure);
-        // A fatal error built with suppression disabled ignores addSuppressed().
-        if (closeFatal.getSuppressed().length == 0) {
-            log.warn("A failure was replaced by the fatal error {}, which can't carry it as a suppressed exception: {}",
-                    describeWithClass(closeFatal), describeWithClass(failure));
-        }
-        return closeFatal;
+    static Error closingInsteadOf(Throwable failure, Error closeFatal) {
+        // Either the fatal error chosen from the failure or closeFatal itself, so what replaced returns is an Error.
+        return closeFatal == null ? null : (Error) replaced(failure, closeFatal, closeFatal);
     }
 
     /**
      * Chooses what the caller throws when cleaning up after a failure, as retiring what a failed {@code load()} left
-     * behind or ending a failed run does, threw something that isn't fatal, as running out of stack is. A fatal
-     * {@link Error} in {@code failure} comes first, as it does against a fatal error from closing (see
-     * {@link #fatalInsteadOf}): when the error is in its cause chain, the caller throws {@code failure}, carrying
-     * {@code later}; only when it's suppressed on it alone does the caller throw that error itself, carrying
-     * {@code later}, with {@code failure} logged at WARN. When {@code failure} holds no fatal error,
-     * {@code later} replaces it, and carries it as a suppressed exception.
+     * behind or ending a failed run does, threw anything: the fatal {@link Error} it holds, if it holds one (see
+     * {@link #fatalError}), as {@link #closingInsteadOf} chooses for one closing threw, and else what it threw as it
+     * is, as running out of stack is. A fatal error in {@code failure} comes first: when the error is in its cause
+     * chain, the caller throws {@code failure}, carrying {@code later}'s error or {@code later}; only when it's
+     * suppressed on it alone does the caller throw that error itself, carrying that, with {@code failure} logged at
+     * WARN. When {@code failure} holds no fatal error, {@code later}'s error or {@code later} replaces it, and carries
+     * it as a suppressed exception, as {@link #closingInsteadOf} keeps it on the error, or as {@link #keepAlso} keeps
+     * it on anything else.
      *
      * @param failure What was being thrown when the cleaning up began
-     * @param later   What cleaning up threw, which holds no fatal error, or {@code null} if it threw nothing
-     * @return {@code later}, carrying {@code failure}, if the caller throws it in place of {@code failure}; the fatal
-     *         error suppressed on {@code failure}, carrying {@code later}, if the caller throws that; otherwise
-     *         {@code null}, and the caller throws {@code failure}, with {@code later}, if there is one, added to its
-     *         suppressed exceptions, or logged at WARN if it can't carry one (see {@link #keepAlso})
+     * @param later   What cleaning up threw, or {@code null} if it threw nothing
+     * @return The fatal error {@code later} holds, with {@code failure} added to its suppressed exceptions, or logged
+     *         if it can't carry one, or else {@code later}, carrying {@code failure}, if the caller throws it in place
+     *         of {@code failure}; the fatal error suppressed on {@code failure}, carrying {@code later}'s error or
+     *         {@code later}, if the caller throws that; otherwise {@code null}, and the caller throws {@code failure},
+     *         with {@code later}'s error or {@code later}, if there is one, added to its suppressed exceptions, or
+     *         logged at WARN if it can't carry one (see {@link #keepAlso})
      */
-    static Throwable laterInsteadOf(Throwable failure, Throwable later) {
-        if (later == null) {
-            return null;
-        }
+    static Throwable insteadOf(Throwable failure, Throwable later) {
+        // A fatal error itself, as ending a run returns one, is read with nothing allocated.
+        return later == null ? null : replaced(failure, later, isFatal(later) ? (Error) later : fatalError(later));
+    }
+
+    /**
+     * Chooses what the caller throws, as {@link #closingInsteadOf} and {@link #insteadOf} choose it.
+     *
+     * @param failure    What was being thrown when the cleaning up began
+     * @param later      What cleaning up threw
+     * @param laterFatal The fatal error it holds, or {@code null} if it holds none
+     * @return {@code laterFatal}, {@code later}, the fatal error suppressed on {@code failure} alone, or {@code null}
+     *         for {@code failure} itself, as those return it
+     */
+    private static Throwable replaced(Throwable failure, Throwable later, Error laterFatal) {
+        Throwable other = laterFatal != null ? laterFatal : later;
         List<Throwable> chain = causeChain(failure);
         Error fatal = fatalErrorIn(chain);
-        if (fatal == null) {
-            // Replaced, so the caller that would have set it again never sees it.
-            keepInterruptStatus(failure);
+        if (fatal != null) {
+            return fatalOfFailure(failure, chain, fatal, other);
+        }
+        // Replaced, so the caller that would have set it again never sees it.
+        keepInterruptStatus(failure);
+        if (laterFatal == null) {
             keepAlso(later, failure);
             return later;
         }
-        return fatalOfFailure(failure, chain, fatal, later);
+        laterFatal.addSuppressed(failure);
+        // A fatal error built with suppression disabled ignores addSuppressed().
+        if (laterFatal.getSuppressed().length == 0) {
+            log.warn("A failure was replaced by the fatal error {}, which can't carry it as a suppressed exception: {}",
+                    describeWithClass(laterFatal), describeWithClass(failure));
+        }
+        return laterFatal;
     }
 
     /**

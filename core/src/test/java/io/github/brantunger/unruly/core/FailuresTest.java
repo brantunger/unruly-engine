@@ -307,4 +307,33 @@ class FailuresTest {
         assertSame(otherFatal, Failures.fatalFirst(later, wrapping));
         assertArrayEquals(new Throwable[] {later}, otherFatal.getSuppressed());
     }
+
+    @Test
+    @DisplayName("#855: a Teardown combines what the steps threw as fatalFirst does, in order, and returns the fatal"
+            + " Error the first failure holds itself, carrying what else was thrown")
+    void teardownCombinesWhatTheStepsThrew() {
+        Failures.Teardown nothing = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        nothing.add(null);
+        nothing.add(null);
+        assertNull(nothing.result());
+
+        StackOverflowError plain = new StackOverflowError("not fatal");
+        OutOfMemoryError fatal = new OutOfMemoryError("fatal");
+        Failures.Teardown fatalLater = new Failures.Teardown(3, Faults.Step.RUN_ENDING_COMBINED);
+        fatalLater.add(plain);
+        fatalLater.add(null);
+        fatalLater.add(fatal);
+        assertSame(fatal, fatalLater.result());
+        assertArrayEquals(new Throwable[] {plain}, fatal.getSuppressed());
+
+        OutOfMemoryError carried = new OutOfMemoryError("carried");
+        IllegalStateException wrapping = new IllegalStateException("wraps a fatal error", carried);
+        StackOverflowError later = new StackOverflowError("later");
+        Failures.Teardown lifted = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        lifted.add(wrapping);
+        lifted.add(later);
+        assertSame(carried, lifted.result());
+        assertArrayEquals(new Throwable[] {later}, wrapping.getSuppressed(), "the first failure carries the later");
+        assertArrayEquals(new Throwable[0], carried.getSuppressed(), "what reaches the error isn't kept on it");
+    }
 }

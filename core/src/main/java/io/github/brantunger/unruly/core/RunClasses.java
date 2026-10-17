@@ -343,9 +343,9 @@ final class RunClasses {
     // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
     // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
     // the JVM's first to read a file could leave every later run of every engine, and every file read on a virtual
-    // thread, failing for the life of the JVM (#1210). Last, OneStepStack's Node, which a load makes for its
-    // compilers, and Walk, which the JVM's first retire() makes to read the copies an earlier call took, are
-    // preloaded too (#1220).
+    // thread, failing for the life of the JVM (#1210). Failures' Teardown is what every run makes as it ends, before it
+    // closes its values. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
+    // first retire() makes to read the copies an earlier call took, are preloaded too (#1220).
     // Initializing a class doesn't load its nested or outer classes, so RuleSet's and RuleEvaluation.Outcome's, in the
     // list above, don't load these.
     private static List<Class<?>> loadAndRunClasses() {
@@ -356,7 +356,7 @@ final class RunClasses {
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
-                OneStepStack.Node.class, OneStepStack.Walk.class);
+                Failures.Teardown.class, OneStepStack.Node.class, OneStepStack.Walk.class);
     }
 
     // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a

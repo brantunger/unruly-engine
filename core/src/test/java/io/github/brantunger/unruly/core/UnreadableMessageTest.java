@@ -760,7 +760,7 @@ class UnreadableMessageTest {
         FatalText failure = new FatalText(new OutOfMemoryError("reading"));
         AtomicReference<Error> result = new AtomicReference<>();
 
-        Outcome<Throwable> outcome = capture(() -> result.set(Failures.fatalInsteadOf(failure, closeFatal)));
+        Outcome<Throwable> outcome = capture(() -> result.set(Failures.closingInsteadOf(failure, closeFatal)));
 
         assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName());
         assertSame(closeFatal, result.get());

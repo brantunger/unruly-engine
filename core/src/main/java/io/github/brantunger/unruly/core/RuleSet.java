@@ -562,7 +562,7 @@ final class RuleSet {
     }
 
     // Uncounts a run whose borrow failed, gives back and closes what the loan still holds, and leaves the rule set,
-    // returning the fatal Error to throw in place of failure, if closing threw one (see Failures.fatalInsteadOf).
+    // returning the fatal Error to throw in place of failure, if closing threw one (see Failures.closingInsteadOf).
     // Uncounted first, with no call, so the run never stays counted. The interrupt status is set again before anything
     // is closed, if an interrupt caused the failure, so that closing sees it. Each step is in a finally of the one
     // before, so one that fails, as one that runs out of stack does, doesn't keep the next from running.
@@ -587,7 +587,7 @@ final class RuleSet {
                 }
             }
         }
-        return Failures.fatalInsteadOf(failure, fatal);
+        return Failures.closingInsteadOf(failure, fatal);
     }
 
     // Closes the sessions a failed borrow took or made and neither lent nor closed, forgetting them first so they are
@@ -1073,7 +1073,7 @@ final class RuleSet {
             try {
                 giveBack(loan);
             } finally {
-                Failures.throwIfPresent(Failures.fatalInsteadOf(t, closeTaken(loan)));
+                Failures.throwIfPresent(Failures.closingInsteadOf(t, closeTaken(loan)));
             }
             throw t;
         }
@@ -1252,7 +1252,7 @@ final class RuleSet {
             addSessions(sessions);
             return sessions;
         } catch (Throwable t) {
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, Closing.sessions(sessions)));
+            Failures.throwIfPresent(Failures.closingInsteadOf(t, Closing.sessions(sessions)));
             throw t;
         }
     }
