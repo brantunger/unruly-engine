@@ -100,13 +100,13 @@ jobs:
       # ~/.m2/toolchains.xml, which Gradle reads. Installed first, so the leg's own JDK stays JAVA_HOME.
       - name: Set up the Java 21 toolchain
         if: matrix.java-version != '21'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: '21'
           distribution: 'temurin'
 
       - name: Set up JDK ${{ matrix.java-version }}
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: ${{ matrix.java-version }}
           distribution: 'temurin'
@@ -154,7 +154,7 @@ jobs:
 
       # Artifact names must be unique within a run, and three jobs run on JDK 21, so the OS is part of each name.
       - name: Upload API Compatibility Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: api-compatibility-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
@@ -167,7 +167,7 @@ jobs:
       # Gradle's report names why each file failed verification, such as a missing signature or a wrong checksum. It
       # lands in the root build directory even when buildSrc's dependencies fail, and goes with the runner otherwise.
       - name: Upload Dependency Verification Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: dependency-verification-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
@@ -178,7 +178,7 @@ jobs:
       # was skipped: the JUnit XML names the skipped tests and says why, which is how a leg proves it ran the
       # lookups that only a case-insensitive file system has.
       - name: Upload Coverage Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.java-version == '21'
         with:
           name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
@@ -196,7 +196,7 @@ jobs:
       # The JDK 25 and 26 legs run only the tests, so they have no coverage, but their test results show what ran and
       # what failed.
       - name: Upload Test Results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.java-version != '21'
         with:
           name: test-results-jdk${{ matrix.java-version }}-${{ matrix.os }}
@@ -229,7 +229,7 @@ jobs:
       # GraalVM Community Edition 21.0.2, the release docs/native-image.md was tested with, as JAVA_HOME; Gradle's
       # Java 21 toolchain finds it too.
       - name: Set up GraalVM
-        uses: graalvm/setup-graalvm@0426e2e191540e8514dff98dc52a5f5146a2a276 # v1.6.6
+        uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173 # v1.6.7
         with:
           java-version: '21.0.2'
           distribution: 'graalvm-community'
@@ -245,7 +245,7 @@ jobs:
 
       # See the same step in the build job.
       - name: Upload Dependency Verification Report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: dependency-verification-report-native-image
@@ -408,7 +408,7 @@ jobs:
         uses: gradle/actions/wrapper-validation@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
 
       - name: Set up JDK 21
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           java-version: '21'
           distribution: 'temurin'
