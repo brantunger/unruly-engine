@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.32.1](https://github.com/brantunger/unruly-engine/compare/v2.32.0...v2.32.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* fail outputNumbersConverted for a converter that saturates an int or long setter, and clear the interrupt a failed load() puts back, in the contract kit ([#1248](https://github.com/brantunger/unruly-engine/issues/1248)) ([6f650b6](https://github.com/brantunger/unruly-engine/commit/6f650b644b042d336fa6fbbbdf296753c429f0e1))
+
 ## [2.32.0](https://github.com/brantunger/unruly-engine/compare/v2.31.1...v2.32.0) (2026-10-16)
 
 
