@@ -119,40 +119,15 @@ final class SessionWatch {
         return session instanceof Watched watched ? watched.session : session;
     }
 
-    // The wrapper holds the language's compiler, and closes it when the engine closes the wrapper.
-    @SuppressWarnings("PMD.CloseResource")
+    /** Wraps a language so that each session its compilers return is watched; every other call is forwarded. */
     ExpressionLanguage watching(ExpressionLanguage language) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
-            // Forwarded, so the language initializes its classes when the engine is built, as it does unwrapped.
-            @Override
-            public void prepare() {
-                language.prepare();
-            }
-
-            // Forwarded, so the engine rejects the fact names the language reserves, and only those.
-            @Override
-            public Set<String> reservedFactNames() {
-                return language.reservedFactNames();
-            }
-
-            // Forwarded, so the engine rejects those names for the same rule lists as it does unwrapped.
-            @Override
-            public boolean reservesForEveryRuleList() {
-                return language.reservesForEveryRuleList();
-            }
-
+        return new ForwardingLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
-                ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
+                return new ForwardingCompiler(super.newCompiler(context)) {
                     @Override
                     public CompiledCondition compileCondition(Expression expression) {
-                        CompiledCondition condition = compiler.compileCondition(expression);
+                        CompiledCondition condition = super.compileCondition(expression);
                         // Not a lambda: that would implement only evaluate(), and drop the language's detail.
                         return new CompiledCondition() {
                             @Override
@@ -171,40 +146,18 @@ final class SessionWatch {
 
                     @Override
                     public CompiledAction compileAction(Expression expression) {
-                        CompiledAction action = compiler.compileAction(expression);
+                        CompiledAction action = super.compileAction(expression);
                         return (actionContext, session) -> action.execute(actionContext, unwrap(session));
                     }
 
                     @Override
                     public Session newSession() {
-                        return watch(compiler.newSession());
+                        return watch(super.newSession());
                     }
 
                     @Override
                     public void warmUp(Session session) throws Exception {
-                        compiler.warmUp(unwrap(session));
-                    }
-
-                    @Override
-                    public void checkFactName(String name) {
-                        compiler.checkFactName(name);
-                    }
-
-                    // Forwarded, so the engine asks the language about the same facts as it does unwrapped.
-                    @Override
-                    public @Nullable Set<String> factNamesRead() {
-                        return compiler.factNamesRead();
-                    }
-
-                    // Forwarded, so the writer converts a wrapped language's values as it does unwrapped (#1127).
-                    @Override
-                    public @Nullable Object convertOutput(Object value, Class<?> target) {
-                        return compiler.convertOutput(value, target);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
+                        super.warmUp(unwrap(session));
                     }
                 };
             }
