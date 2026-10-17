@@ -1420,12 +1420,12 @@ class CloseEverySessionTest {
 
     @Test
     @DisplayName("a fatal Error that replaces a failure caused by an interrupt sets the thread's interrupt status")
-    void fatalInsteadOfAnInterruptKeepsTheInterruptStatus() {
+    void closingInsteadOfAnInterruptKeepsTheInterruptStatus() {
         OutOfMemoryError fatal = new OutOfMemoryError("closing");
         InterruptedException interrupted = new InterruptedException();
         AtomicBoolean status = new AtomicBoolean();
         Thread thread = new Thread(() -> {
-            Failures.fatalInsteadOf(interrupted, fatal);
+            Failures.closingInsteadOf(interrupted, fatal);
             status.set(Thread.currentThread().isInterrupted());
         });
 
@@ -2086,7 +2086,7 @@ class CloseEverySessionTest {
         IllegalStateException failure = new IllegalStateException("the engine is closed");
         AtomicReference<Error> result = new AtomicReference<>();
 
-        String logs = logsOf(() -> result.set(Failures.fatalInsteadOf(failure, fatal)));
+        String logs = logsOf(() -> result.set(Failures.closingInsteadOf(failure, fatal)));
 
         assertSame(fatal, result.get());
         assertEquals(0, fatal.getSuppressed().length);
@@ -2101,7 +2101,7 @@ class CloseEverySessionTest {
         OutOfMemoryError fatal = new OutOfMemoryError("closing");
         IllegalStateException failure = new IllegalStateException("the engine is closed");
 
-        String logs = logsOf(() -> Failures.fatalInsteadOf(failure, fatal));
+        String logs = logsOf(() -> Failures.closingInsteadOf(failure, fatal));
 
         assertArrayEquals(new Throwable[] {failure}, fatal.getSuppressed());
         assertEquals("", logs);

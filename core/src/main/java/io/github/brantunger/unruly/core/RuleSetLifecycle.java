@@ -190,7 +190,7 @@ final class RuleSetLifecycle {
                     copyLimit, copyPermits, stallWindowMillis);
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
+            Failures.throwIfPresent(Failures.closingInsteadOf(t, compilation.closeCompilers()));
             throw t;
         }
         // From here on the rule set owns the compilers, so a failure retires it, which closes the copies made so far,
@@ -276,11 +276,11 @@ final class RuleSetLifecycle {
      * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
      * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
      * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
-     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#fatalInsteadOf}). A
+     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#closingInsteadOf}). A
      * rule set that retiring fails to mark retired, as it can when it runs out of stack, is kept for the next
      * {@code load()} or {@code close()} to retire. What else stopped the retiring, even before it began, is thrown
      * here instead of {@code failure}, carrying it, unless {@code failure} holds a fatal error, which came first: then
-     * that error carries it (see {@link Failures#laterInsteadOf}). What retiring threw that isn't thrown, fatal or
+     * that error carries it (see {@link Failures#insteadOf}). What retiring threw that isn't thrown, fatal or
      * not, is logged at WARN once while it leaves the rule set to a later {@code load()} or {@code close()}, as a
      * {@code load()} that swapped its rules in logs it, so the compilers left open aren't news only to the code that
      * catches the error; one the thrown error can't carry is logged instead (see {@link Failures#keepAlso}).
@@ -305,9 +305,7 @@ final class RuleSetLifecycle {
             // still weighed against it.
             failed = t;
         }
-        Error fatal = Failures.fatalError(failed);
-        Throwable instead = fatal != null ? Failures.fatalInsteadOf(failure, fatal)
-                : Failures.laterInsteadOf(failure, failed);
+        Throwable instead = Failures.insteadOf(failure, failed);
         // What retiring threw says it when it's thrown, and keepAlso logged it when it couldn't be carried. Carried,
         // it's logged once here while the rule set is left for a later load() or close(); a fatal error closing it
         // threw, which leaves it retired, was logged as it was caught. An overflow in the log call loses only the line,

@@ -259,7 +259,7 @@ class SuppressedFatalErrorTest {
         IllegalStateException failure = bodyFailed(oom);
         AtomicReference<Error> thrown = new AtomicReference<>();
 
-        Outcome<Throwable> outcome = capture(() -> thrown.set(Failures.fatalInsteadOf(failure, closeFatal)));
+        Outcome<Throwable> outcome = capture(() -> thrown.set(Failures.closingInsteadOf(failure, closeFatal)));
 
         assertSame(oom, thrown.get());
         assertEquals(List.of(closeFatal), List.of(oom.getSuppressed()));

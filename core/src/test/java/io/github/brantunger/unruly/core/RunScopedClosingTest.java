@@ -635,6 +635,28 @@ class RunScopedClosingTest {
     }
 
     @Test
+    @DisplayName("guard: of two fatal Errors whose handling fails, the one met last is thrown, carrying what handling"
+            + " the first threw")
+    void lastFatalCloseFailureKeptWhenHandlingBothFails() {
+        OutOfMemoryError first = new OutOfMemoryError("c ran out");
+        OutOfMemoryError last = new OutOfMemoryError("b ran out");
+        StackOverflowError handling = new StackOverflowError("handling");
+        try (RulesEngine<Map<String, Object>> engine = engine(context -> {
+            context.runScopedClosing("a", () -> new Value("a"));
+            context.runScopedClosing("b", () -> new Value("b", last));
+            context.runScopedClosing("c", () -> new Value("c", first));
+        })) {
+            // c is closed first: logging, and keeping what that threw, fails for both c and b, so each fatal error is
+            // held by assignment alone, and the last held wins (see Closing.runValues).
+            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+
+            assertSame(last, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertArrayEquals(new Throwable[] {handling}, last.getSuppressed());
+            assertEquals(List.of("afterRun", "c closed", "b closed", "a closed"), events);
+        }
+    }
+
+    @Test
     @DisplayName("#850: the first fatal Error met as the values close wins, whether logging it failed or not, and"
             + " carries the later one")
     void firstFatalCloseFailureWins() {
@@ -734,6 +756,21 @@ class RunScopedClosingTest {
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed", "session closed"), events);
+        }
+    }
+
+    @Test
+    @DisplayName("guard: what fails combining what ending the run threw is thrown as it is, not searched for a fatal"
+            + " Error it holds: the last resort calls nothing")
+    void combiningTheEndingFailsThrowsWhatCombiningThrewUnsearched() {
+        StackOverflowError injected = new StackOverflowError("injected");
+        injected.initCause(new OutOfMemoryError("inside what combining threw"));
+        try (RulesEngine<Map<String, Object>> engine = engine(
+                context -> context.runScopedClosing("a", () -> new Value("a")))) {
+            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+
+            assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
+            assertEquals(List.of("afterRun", "a closed"), events);
         }
     }
 

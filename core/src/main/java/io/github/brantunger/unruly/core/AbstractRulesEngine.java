@@ -403,6 +403,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Deadline enclosingDeadline = Cancellation.current();
         boolean counted = false;
         RuleSet.Copy copy = null;
+        // What ending the run throws is kept in this, made before the run holds anything, so that ending a run that
+        // has run out of memory allocates nothing until what it threw is combined (#855).
+        Failures.Teardown teardown = new Failures.Teardown(4, Faults.Step.RUN_ENDING_COMBINED);
         try {
             Cancellation.enter(deadline);
             LoggedFailures.Runs runs = LoggedFailures.enter();
@@ -460,11 +463,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 try {
                     keepInterruptOfStop(tally);
                 } finally {
-                    Failures.rethrowUnchecked(failedRunEnding(t, endRun(rules, copy, runFacts)));
+                    Failures.rethrowUnchecked(failedRunEnding(t, endRun(rules, copy, runFacts, teardown)));
                 }
                 throw t;
             }
-            Failures.rethrowUnchecked(endRun(rules, copy, runFacts));
+            Failures.rethrowUnchecked(endRun(rules, copy, runFacts, teardown));
             // A run that ran an action of a language has made that language's first calls, so later runs of it need
             // no more room than run() checks for.
             List<String> ranLanguages = tally.firedLanguages();
@@ -522,25 +525,24 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * {@link RunScope#end()}). If handing them over fails, as waiting for that init can when the stack or the heap
      * runs out, nothing is handed over, so it's tried once more, and only once: what that hands over is closed all the
      * same, and what the first try threw is returned all the same. Each step's failure is only stored where it's
-     * caught, which can't fail again; they are combined last.
+     * caught, which can't fail again, in a {@link Failures.Teardown} the run made before it held anything; they are
+     * combined last, so nothing is allocated here before that after a run that has run out of memory (#855).
      *
-     * @param rules The rule set the run borrowed its copy from
-     * @param copy  The run's copy, or {@code null} if its facts were rejected and it holds none
-     * @param facts The run's facts, whose evaluation context holds the run's values
+     * @param rules    The rule set the run borrowed its copy from
+     * @param copy     The run's copy, or {@code null} if its facts were rejected and it holds none
+     * @param facts    The run's facts, whose evaluation context holds the run's values
+     * @param teardown Where each step's failure is kept, made for the four steps and not yet added to
      * @return What the run throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error} closing
      *         the values or the rules threw, or else the first other throwable that escaped them, as logging one can,
      *         either carrying the rest as suppressed exceptions (see {@link Failures#fatalFirst}). Nothing else a
      *         {@code close()} throws is returned: it was logged. If combining them fails, as it can when it runs out
-     *         of memory, the first {@link VirtualMachineError} other than a {@link StackOverflowError}, or an
-     *         {@link InternalError} that wraps one (see {@link Failures#isOverflow}), met is returned alone, or else
-     *         what combining threw.
+     *         of memory, the first fatal error met (see {@link Failures#isFatal}) is returned alone, or else what
+     *         combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
-    private static Throwable endRun(RuleSet rules, RuleSet.Copy copy, RunFacts facts) {
-        // The first fatal error the JVM threw, a VirtualMachineError but a StackOverflowError or an InternalError that
-        // wraps one (see Failures.isOverflow, which allocates nothing), while the run ended, kept with instanceof
-        // checks and assignments only, for the last resort below.
-        Throwable fatal = null;
+    private static Throwable endRun(RuleSet rules, RuleSet.Copy copy, RunFacts facts, Failures.Teardown teardown) {
+        // The four steps, each adding what it threw: ending the scope, taking its values, closing them and giving
+        // back the copy.
         Throwable endFailed = null;
         Throwable taking = null;
         List<AutoCloseable> values = List.of();
@@ -558,24 +560,15 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // The values handed over are closed all the same.
             taking = t;
         }
-        if (endFailed instanceof VirtualMachineError && !(endFailed instanceof StackOverflowError)
-                && !(endFailed instanceof InternalError && Failures.isOverflow(endFailed))) {
-            fatal = endFailed;
-        }
-        if (fatal == null && taking instanceof VirtualMachineError && !(taking instanceof StackOverflowError)
-                && !(taking instanceof InternalError && Failures.isOverflow(taking))) {
-            fatal = taking;
-        }
+        teardown.add(endFailed);
+        teardown.add(taking);
         Throwable closing;
         try {
             closing = Closing.runValues(values);
         } catch (Throwable t) {
             closing = t;
         }
-        if (fatal == null && closing instanceof VirtualMachineError && !(closing instanceof StackOverflowError)
-                && !(closing instanceof InternalError && Failures.isOverflow(closing))) {
-            fatal = closing;
-        }
+        teardown.add(closing);
         Throwable releasing = null;
         try {
             if (copy != null) {
@@ -584,50 +577,28 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         } catch (Throwable t) {
             releasing = t;
         }
-        if (fatal == null && releasing instanceof VirtualMachineError && !(releasing instanceof StackOverflowError)
-                && !(releasing instanceof InternalError && Failures.isOverflow(releasing))) {
-            fatal = releasing;
-        }
-        try {
-            Faults.at(Faults.Step.RUN_ENDING_COMBINED);
-            Throwable ending = Failures.fatalFirst(
-                    Failures.fatalFirst(Failures.fatalFirst(endFailed, taking), closing), releasing);
-            // The fatal error itself, not a throwable that carries it, as a run that fails with one throws it.
-            Error carried = Failures.fatalError(ending);
-            if (carried != null) {
-                Failures.keepAlso(carried, ending);
-                return carried;
-            }
-            return ending;
-        } catch (Throwable t) {
-            // The last resort, which can't fail again: the fatal error the JVM threw, if any, and else what combining
-            // threw, the rest being lost.
-            return fatal != null ? fatal : t;
-        }
+        teardown.add(releasing);
+        return teardown.result();
     }
 
     /**
      * Chooses what a run that failed throws once it has ended: what it failed with, or what ending it threw (see
-     * {@link #endRun}). A fatal {@link Error} is never dropped for a failure that isn't fatal: a fatal error from
-     * ending the run replaces a failure that isn't fatal, as {@link Failures#fatalInsteadOf} decides, and a fatal
-     * failure of the run comes before anything else ending it threw, as {@link Failures#laterInsteadOf} decides: the
-     * failure is thrown when the error is in its cause chain, and the error itself, the failure logged at WARN, when
-     * it's only suppressed on it. Of two that aren't fatal, what ending threw is thrown, as what giving back the copy
-     * threw was before the run's values were closed with it. What is thrown carries the other as a suppressed
-     * exception (see {@link Failures#keepAlso}), except that a fatal error only suppressed on the failure carries what
-     * ending threw, the failure itself being logged at WARN instead.
+     * {@link #endRun}), as {@link Failures#insteadOf} decides. A fatal {@link Error} is never dropped for a failure
+     * that isn't fatal: a fatal error from ending the run replaces a failure that isn't fatal, and a fatal failure of
+     * the run comes before anything else ending it threw: the failure is thrown when the error is in its cause chain,
+     * and the error itself, the failure logged at WARN, when it's only suppressed on it. Of two that aren't fatal,
+     * what ending threw is thrown, as what giving back the copy threw was before the run's values were closed with
+     * it. What is thrown carries the other as a suppressed exception (see {@link Failures#keepAlso}), except that a
+     * fatal error only suppressed on the failure carries what ending threw, the failure itself being logged at WARN
+     * instead.
      *
      * @param failure What the run failed with
      * @param ending  What {@link #endRun} returned, or {@code null}
      * @return What the run throws in place of {@code failure}, or {@code null} if it throws {@code failure}
      */
     private static Throwable failedRunEnding(Throwable failure, Throwable ending) {
-        if (ending == null) {
-            return null;
-        }
         // endRun returns a fatal error itself, never one that carries it.
-        Error fatal = Failures.fatalError(ending);
-        return fatal != null ? Failures.fatalInsteadOf(failure, fatal) : Failures.laterInsteadOf(failure, ending);
+        return Failures.insteadOf(failure, ending);
     }
 
     /**
@@ -891,14 +862,14 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             try {
                 keepInterruptOfStop(facts.tally());
             } finally {
-                Failures.throwIfPresent(Failures.fatalInsteadOf(t, rules.leaveAfterStop()));
+                Failures.throwIfPresent(Failures.closingInsteadOf(t, rules.leaveAfterStop()));
             }
             throw t;
         }
         try {
             keepInterruptOfStop(facts.tally());
         } finally {
-            Failures.throwIfPresent(Failures.fatalInsteadOf(failure, rules.leaveAfterStop()));
+            Failures.throwIfPresent(Failures.closingInsteadOf(failure, rules.leaveAfterStop()));
         }
         return failure;
     }
@@ -1148,7 +1119,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             compilation.compile(RuleListCompiler.withoutNulls(ruleList));
         } catch (Throwable t) {
-            Failures.throwIfPresent(Failures.fatalInsteadOf(t, compilation.closeCompilers()));
+            Failures.throwIfPresent(Failures.closingInsteadOf(t, compilation.closeCompilers()));
             throw t;
         }
         Failures.throwIfPresent(compilation.closeCompilers());

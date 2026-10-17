@@ -91,16 +91,13 @@ final class Closing {
                 try {
                     failed = runValueFailed(thrown, failed);
                 } catch (Throwable t) {
-                    // Only assignments and instanceof checks, which can't fail as handling the failure did, so what
-                    // close() threw isn't lost, a VirtualMachineError but a StackOverflowError, or an InternalError
-                    // that wraps one (see Failures.isOverflow, which allocates nothing), above all, and the next value
-                    // is still closed.
+                    // Only assignments and the instanceof checks of Failures.isFatal, which allocates nothing, so
+                    // they can't fail as handling the failure did: what close() threw isn't lost, a fatal Error above
+                    // all, and the next value is still closed.
                     if (escaped == null) {
                         escaped = t;
                     }
-                    if (held == null || thrown instanceof VirtualMachineError
-                            && !(thrown instanceof StackOverflowError)
-                            && !(thrown instanceof InternalError && Failures.isOverflow(thrown))) {
+                    if (held == null || Failures.isFatal(thrown)) {
                         held = thrown;
                     }
                 }
