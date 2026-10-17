@@ -17,7 +17,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #1046: the wrappers the kit builds engines with forward {@code reservesForEveryRuleList()} and
- * {@code factNamesRead()}, which they implement by hand, so a language that opts in isn't checked as one that doesn't.
+ * {@code factNamesRead()}, which their forwarding bases forward, so a language that opts in isn't checked as one that
+ * doesn't.
  */
 @DisplayName("the kit's wrappers forward reservesForEveryRuleList() and factNamesRead() (#1046)")
 class WrappedLanguageScopingTest {

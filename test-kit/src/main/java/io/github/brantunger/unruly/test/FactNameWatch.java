@@ -1,12 +1,8 @@
 package io.github.brantunger.unruly.test;
 
 import io.github.brantunger.unruly.api.language.CompileContext;
-import io.github.brantunger.unruly.api.language.CompiledAction;
-import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.api.language.Session;
 import org.jspecify.annotations.Nullable;
 
 import java.util.HashSet;
@@ -48,62 +44,16 @@ final class FactNameWatch {
      * Wraps a language as {@link #watchingRejection} does when {@code name} isn't {@code null}, and as
      * {@link #recordingNamesRead} does when {@code answers} isn't.
      */
-    // The wrapper holds the language's compiler, and closes it when the engine closes the wrapper.
-    @SuppressWarnings("PMD.CloseResource")
     private static ExpressionLanguage watching(ExpressionLanguage language, @Nullable String name,
                                                AtomicBoolean rejected, @Nullable List<@Nullable Set<String>> answers) {
-        return new ExpressionLanguage() {
-            @Override
-            public String name() {
-                return language.name();
-            }
-
-            // Forwarded, so the language initializes its classes when the engine is built, as it does unwrapped.
-            @Override
-            public void prepare() {
-                language.prepare();
-            }
-
-            // Forwarded, so the engine rejects the fact names the language reserves, and only those.
-            @Override
-            public Set<String> reservedFactNames() {
-                return language.reservedFactNames();
-            }
-
-            // Forwarded, so the engine rejects those names for the same rule lists as it does unwrapped.
-            @Override
-            public boolean reservesForEveryRuleList() {
-                return language.reservesForEveryRuleList();
-            }
-
+        return new ForwardingLanguage(language) {
             @Override
             public ExpressionCompiler newCompiler(CompileContext context) {
-                ExpressionCompiler compiler = language.newCompiler(context);
-                return new ExpressionCompiler() {
-                    @Override
-                    public CompiledCondition compileCondition(Expression expression) {
-                        return compiler.compileCondition(expression);
-                    }
-
-                    @Override
-                    public CompiledAction compileAction(Expression expression) {
-                        return compiler.compileAction(expression);
-                    }
-
-                    @Override
-                    public Session newSession() {
-                        return compiler.newSession();
-                    }
-
-                    @Override
-                    public void warmUp(Session session) throws Exception {
-                        compiler.warmUp(session);
-                    }
-
+                return new ForwardingCompiler(super.newCompiler(context)) {
                     @Override
                     public void checkFactName(String checked) {
                         try {
-                            compiler.checkFactName(checked);
+                            super.checkFactName(checked);
                         } catch (IllegalArgumentException e) {
                             if (checked.equals(name)) {
                                 rejected.set(true);
@@ -114,7 +64,7 @@ final class FactNameWatch {
 
                     @Override
                     public @Nullable Set<String> factNamesRead() {
-                        Set<String> read = compiler.factNamesRead();
+                        Set<String> read = super.factNamesRead();
                         if (answers != null) {
                             answers.add(read);
                         }
@@ -125,17 +75,6 @@ final class FactNameWatch {
                         Set<String> watched = new HashSet<>(read);
                         watched.add(name);
                         return watched;
-                    }
-
-                    // Forwarded, so the writer converts a wrapped language's values as it does unwrapped (#1127).
-                    @Override
-                    public @Nullable Object convertOutput(Object value, Class<?> target) {
-                        return compiler.convertOutput(value, target);
-                    }
-
-                    @Override
-                    public void close() {
-                        compiler.close();
                     }
                 };
             }

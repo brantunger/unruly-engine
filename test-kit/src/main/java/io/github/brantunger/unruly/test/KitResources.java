@@ -1,15 +1,25 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.RulesEngine;
 import org.jspecify.annotations.Nullable;
+import org.opentest4j.AssertionFailedError;
 
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * How the contract kit's checks close what they create: an engine, a compiler or a session, however the check ends,
- * and the workers a check runs its rules on. And how they keep the thread they run on from staying interrupted once
- * the engine has put back an interrupt that made a {@code close()} fail, whether at the check's end or inside it.
+ * and the workers a check runs its rules on, and how they run a check's run on a thread of its own. And how they keep
+ * the thread they run on from staying interrupted once the engine has put back an interrupt that made a
+ * {@code close()} fail, whether at the check's end or inside it.
  */
 final class KitResources {
 
@@ -115,6 +125,52 @@ final class KitResources {
                 Thread.currentThread().interrupt();
             }
             throw failure;
+        }
+    }
+
+    /**
+     * Closes the engines from {@code from} on, each as {@link #closing} closes one, so that every engine is closed even
+     * when closing another throws: the first failure is thrown, with what closing the others threw attached.
+     */
+    static void closeAll(List<RulesEngine<Map<String, Object>>> engines, int from) throws Exception {
+        if (from < engines.size()) {
+            closing(engines.get(from), engine -> closeAll(engines, from + 1));
+        }
+    }
+
+    /**
+     * Runs a check's run on a thread of its own, which ends with it, and waits for it for up to {@code bound}. The
+     * nested-run checks use it so that per-thread state a language leaves behind when it fails the check can't fail a
+     * later check on JUnit's thread; the run nested in the check's run starts on that thread too, so what the check
+     * checks is unchanged. {@code sessionClosedOnAnotherThread} uses it to make a session on a thread other than the
+     * one that closes it. What the run throws is thrown here as it was; a run still going after {@code bound} fails
+     * the check, and a wait that is interrupted leaves the thread interrupted.
+     *
+     * @param run   The run
+     * @param bound How long the run has
+     * @param <T>   What the run returns
+     * @return What the run returned
+     * @throws Exception What the run threw, or the {@link InterruptedException} that interrupted the wait
+     */
+    // stop() shuts the thread down, and what the run threw is thrown as it was, not wrapped.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.PreserveStackTrace"})
+    static <T> T onItsOwnThread(Callable<T> run, Duration bound) throws Exception {
+        ExecutorService thread = Executors.newSingleThreadExecutor();
+        try {
+            return thread.submit(run).get(bound.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        } catch (TimeoutException e) {
+            throw new AssertionFailedError("the run didn't return within " + bound.toMillis() + " ms", e);
+        } catch (ExecutionException e) {
+            Throwable thrown = e.getCause();
+            if (thrown instanceof Error error) {
+                throw error;
+            }
+            throw (Exception) thrown;
+        } finally {
+            stop(thread);
         }
     }
 

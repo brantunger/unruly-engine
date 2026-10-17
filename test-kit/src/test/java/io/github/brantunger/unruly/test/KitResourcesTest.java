@@ -2,12 +2,14 @@ package io.github.brantunger.unruly.test;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.opentest4j.AssertionFailedError;
 
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,6 +62,55 @@ class KitResourcesTest {
             release.countDown();
             workers.shutdownNow();
             workers.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("onItsOwnThread() on a thread that is interrupted while it waits for the run throws the"
+            + " InterruptedException and leaves the thread interrupted")
+    void onItsOwnThreadInterruptedWhileItWaits() {
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            Thread.currentThread().interrupt();
+
+            assertThrows(InterruptedException.class, () -> KitResources.onItsOwnThread(() -> {
+                release.await();
+                return null;
+            }, Duration.ofSeconds(30)));
+
+            assertTrue(Thread.currentThread().isInterrupted(), "onItsOwnThread() cleared the thread's interrupt");
+        } finally {
+            // Cleared for the tests that run on this thread next, and the run released in case it still waits.
+            Thread.interrupted();
+            release.countDown();
+        }
+    }
+
+    @Test
+    @DisplayName("onItsOwnThread() fails the check when the run is still going at the bound, naming the bound, and"
+            + " stops the run's thread")
+    void onItsOwnThreadFailsAtTheBound() throws InterruptedException {
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch stopped = new CountDownLatch(1);
+        try {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> KitResources.onItsOwnThread(() -> {
+                        try {
+                            release.await();
+                        } catch (InterruptedException e) {
+                            // Stopping the run's thread interrupts the run.
+                            stopped.countDown();
+                            throw e;
+                        }
+                        return null;
+                    }, Duration.ofMillis(50)));
+
+            assertEquals("the run didn't return within 50 ms", failure.getMessage());
+            assertInstanceOf(TimeoutException.class, failure.getCause());
+            assertFalse(Thread.currentThread().isInterrupted(), "onItsOwnThread() left the thread interrupted");
+            assertTrue(stopped.await(5, TimeUnit.SECONDS), "onItsOwnThread() didn't stop the run's thread");
+        } finally {
+            release.countDown();
         }
     }
 
