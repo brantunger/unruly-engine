@@ -75,7 +75,8 @@ final class KitResources {
      * {@code warmUp()} reports as a reload makes a copy of the rules. That interrupt belongs to this check's engine,
      * not to the checks that run on this thread after it. The close at a check's end ({@link #closing}) is one such
      * step (#1120); so are a reload that closes the replaced copy's sessions and compiler, and an explicit
-     * {@code engine.close()}, inside a check (#1223). A step that runs rules uses {@link #runKeepingInterrupt}.
+     * {@code engine.close()}, inside a check (#1223), and a {@code load()} a check expects to fail, which closes the
+     * compilers its compile created. A step that runs rules uses {@link #runKeepingInterrupt}.
      *
      * @param step The step
      * @param <X>  What the step throws

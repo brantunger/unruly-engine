@@ -12,6 +12,7 @@ import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.opentest4j.AssertionFailedError;
 import org.opentest4j.TestAbortedException;
 
@@ -43,6 +44,7 @@ import java.util.function.Function;
 import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -507,6 +509,29 @@ class ContractKitChecksTest {
                             properties.put(key, null);
                             return ActionResult.set(properties);
                         };
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Wraps a language so that a condition that reads a name that is neither a fact nor a variable is refused when
+     * the rule loads, as {@link #unknownNames} with {@code atLoad} refuses an action that does.
+     */
+    private static ExpressionLanguage unknownNamesInConditionsAtLoad(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        // The only name the checks' conditions read that is never a fact is the variable y.
+                        if (expression.text().startsWith("y ")) {
+                            throw new IllegalArgumentException("unknown name 'y'");
+                        }
+                        return compiler.compileCondition(expression);
                     }
                 };
             }
@@ -1428,6 +1453,32 @@ class ContractKitChecksTest {
     }
 
     /**
+     * Runs one of the kit's checks, by name, on a contract test for {@code language}, on this thread, which isn't
+     * interrupted, and requires it to pass and to leave the thread uninterrupted, as {@link #runInterruptedCheck}
+     * does for a check that fails. The thread is left as it was found, for the tests that run on it next.
+     */
+    private static void assertPassesUninterrupted(ExpressionLanguage language, String check) {
+        assertPassesUninterrupted(new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        }, check);
+    }
+
+    /** As {@link #assertPassesUninterrupted(ExpressionLanguage, String)}, on a contract test the caller built. */
+    private static void assertPassesUninterrupted(ExpressionLanguageContractTest test, String check) {
+        assertFalse(Thread.currentThread().isInterrupted(), "the thread was interrupted before the test");
+        try {
+            assertDoesNotThrow(() -> runCheck(test, check), check);
+            assertFalse(Thread.currentThread().isInterrupted(), check + " left the thread interrupted");
+        } finally {
+            // Cleared for the tests that run on this thread next, whatever the check did.
+            Thread.interrupted();
+        }
+    }
+
+    /**
      * Wraps a language so that an action {@code let NAME = FACT ; put KEY NAME} keeps its variable in a map compiled
      * into the action, which every run shares. The first two runs of the action wait for each other between declaring
      * the variable and putting it, each on its own thread, so one of them puts the other's value.
@@ -1831,6 +1882,79 @@ class ContractKitChecksTest {
                         + " interrupted before rule 'b'", check.failure().getMessage()),
                 () -> assertEquals(List.of("run() was interrupted during rule 'a'"),
                         Arrays.stream(check.failure().getSuppressed()).map(Throwable::getMessage).toList()));
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when a load() a check"
+            + " expects to fail closes it doesn't leave the thread interrupted for the checks after it, and the check"
+            + " passes")
+    void interruptedCompilerCloseOnFailedLoadNotLeakedToTheNextCheck() {
+        // A load that fails closes the compilers its compile created, inside the check, and the engine puts back the
+        // interrupt then. No compiler is left for the close at the check's end to close, so nothing else clears it,
+        // and the next check on the thread would fail with "run() was interrupted before rule 'r'", named under that
+        // check. The toy rejects each of these checks' expressions when the rule loads, so every one of them passes.
+        ExpressionLanguage language = interruptedCompilerClose(new ToyExpressionLanguage(), compiler -> true);
+
+        assertAll(Stream.of("conditionAssignmentRejected", "conditionWritesRejected", "outputNotReplaceable",
+                "syntaxErrorAtLoad", "syntaxErrorInActionAtLoad")
+                .map(check -> (Executable) () -> assertPassesUninterrupted(language, check)));
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when the missing-property"
+            + " check's load() fails, for a language that rejects the property when the rule loads, doesn't leave the"
+            + " thread interrupted, and the check passes")
+    void interruptedCompilerCloseOnMissingPropertyAtLoadNotLeakedToTheNextCheck() {
+        // The toy rejects the property when the rule runs, which closes no compiler inside the check; a language that
+        // rejects it when the rule loads has its compilers closed by the failed load, as the checks above do.
+        ExpressionLanguage language = interruptedCompilerClose(missingPropertyAtLoad(new ToyExpressionLanguage()),
+                compiler -> true);
+
+        assertPassesUninterrupted(language, "missingPropertyFailsTheRun");
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when the variable check's"
+            + " load() fails, for a language that refuses the variable when the rule loads, doesn't leave the thread"
+            + " interrupted, and the check passes")
+    void interruptedCompilerCloseOnRefusedVariableAtLoadNotLeakedToTheNextCheck() {
+        // A language that refuses the variable y in an action when the rule loads has the check's second engine's
+        // load refused, which closes its compilers inside the check: the third engine's runs, on a thread left
+        // interrupted, would fail with "run() was interrupted before rule 'declares'". One that refuses it in a
+        // condition too has the third engine's load refused as well, with nothing after it but the next check.
+        ExpressionLanguage inActions = interruptedCompilerClose(unknownNames(new ToyExpressionLanguage(), true),
+                compiler -> true);
+        ExpressionLanguage inConditionsToo = interruptedCompilerClose(
+                unknownNamesInConditionsAtLoad(unknownNames(new ToyExpressionLanguage(), true)), compiler -> true);
+
+        assertAll(
+                () -> assertPassesUninterrupted(inActions, "actionVariablesStayLocal"),
+                () -> assertPassesUninterrupted(inConditionsToo, "actionVariablesStayLocal"));
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when the failed-action"
+            + " check's load() fails, for a language that refuses the variable when the rule loads, doesn't leave the"
+            + " thread interrupted, and the check passes")
+    void interruptedCompilerCloseOnRefusedFailedActionVariableAtLoadNotLeakedToTheNextCheck() {
+        // The refused load is the check's last step, so nothing in it runs on the interrupted thread; only the next
+        // check on the thread would.
+        ExpressionLanguage language = interruptedCompilerClose(unknownNames(new ToyExpressionLanguage(), true),
+                compiler -> true);
+
+        assertPassesUninterrupted(language, "failedActionVariablesStayLocal");
+    }
+
+    @Test
+    @DisplayName("a compiler whose close() fails with an InterruptedException in its cause when the shared-state"
+            + " check's load() fails, for a language that refuses the change when the rule loads, doesn't leave the"
+            + " thread interrupted, and the check passes")
+    void interruptedCompilerCloseOnRefusedSharedStateChangeAtLoadNotLeakedToTheNextCheck() {
+        // As for the failed-action check: the refused load is the check's last step.
+        ExpressionLanguage language = interruptedCompilerClose(
+                sharedBuiltins(new ToyExpressionLanguage(), Builtins.REFUSED_AT_LOAD), compiler -> true);
+
+        assertPassesUninterrupted(new SharedStateContractTest(language), "sharedStateStaysLocal");
     }
 
     @Test

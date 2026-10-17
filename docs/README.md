@@ -64,7 +64,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 📦 [Packaging a language](languages/packaging.md) | Language authors | Declaring a language as a service on the class path and the module path, the exports applications need, and native images |
 | 🧫 [The contract test kit](languages/contract-kit.md) | Language authors | Adding `unruly-engine-test` to a language's tests, and what each of its checks promises |
 | 🔼 [Upgrading the contract test kit](languages/contract-kit-upgrading.md) | Language authors | The checks each kit version added or made stricter, and the defect each new failure means |
-| 🔼 [Upgrading the contract test kit from 2.13 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.14.0 |
+| 🔼 [Upgrading the contract test kit from 2.14 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.15.0 |
 | 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, how each check runs, configuring the checks for your language, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
 | 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: keeping MVEL's JIT off, registering reflection, the errors a missing registration gives, strict metadata, Flight Recorder, and what was tested |

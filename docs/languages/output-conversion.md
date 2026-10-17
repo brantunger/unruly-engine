@@ -78,8 +78,12 @@ private static long whole(double d, long min, long max, Class<?> target) {
 
 With `setCount(long)` beside `setCount(int)`, the writer asks for `int.class` first, then `long.class`: 3.0 reaches
 `setCount(int)`, and 3,000,000,000.0 is refused for `int` and set by `setCount(long)`, as the first refusal only
-counts when nothing is written. The [contract kit](contract-kit.md)'s `outputNumbersConverted` checks a conversion like
-this one once `convertsOutputNumbers()` returns `true`.
+counts when nothing is written.
+
+Once `convertsOutputNumbers()` returns `true`, the [contract kit](contract-kit.md)'s `outputNumbersConverted` feeds an
+`int` setter 1.0, which it must set, then 1.5, 3.0E9, both infinities and `NaN`, which must each fail the rule, and a
+`long` setter 3.0E9, which it must set, then `Infinity` and 2^53 + 2, which must fail it. A conversion that checks
+only that the value is whole and then narrows it with `intValue()` or `longValue()` fails the check.
 
 ## 📋 What to convert
 

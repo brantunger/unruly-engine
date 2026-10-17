@@ -80,8 +80,8 @@ checks table, and where each falls short.
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
 closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, `compilerClosed`
-adds `copiesAtLoad(1)`, and `outputNumbersConverted` adds a writer setting each property on a `WritableApplicant` with
-the default writer.
+adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two, each setting every property on a bean with the default
+writer.
 
 `concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
 `configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
