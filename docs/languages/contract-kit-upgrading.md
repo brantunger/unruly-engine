@@ -10,6 +10,21 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.32.0
+
+In 2.32.1 `outputNumbersConverted` got stricter and no check was added, so a language that passed the 2.32.0 kit may
+now fail. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `outputNumbersConverted` | Returns `true` from `convertsOutputNumbers()`, and sets `setCreditScore(int)`, or fails nothing, from the `Double` 3.0E9, `Infinity`, `-Infinity` or `NaN`; or, on a `long` setter, sets it, or fails nothing, from `Infinity` or 9007199254740994.0, which is 2^53 + 2, or doesn't set it to 3000000000 from 3.0E9 | `convertOutput` narrows a whole `Double` without checking the target's range, as `intValue()` and `longValue()` do, which set the type's extreme instead, or 0 for `NaN`; converts a `Double` beyond 2^53, where it no longer counts by ones; or refuses a whole `Double` a `long` holds |
+
+The 2.32.0 kit fed the `int` setter 1.0 and 1.5 only, so a conversion that checked only `d == Math.rint(d)` or
+`d == Math.floor(d)` before `intValue()` passed it, and set 2147483647 from 3.0E9. The `long` setter is new: the kit
+writes `ExpressionLanguageContractTest.Account`, a new public JavaBean with `getBalance()` and `setBalance(long)`,
+through the same default writer. [Converting values for the output](output-conversion.md) says what to convert and what
+to refuse.
+
 ## 🔼 Upgrading from 2.31
 
 In 2.32.0 `outputNumbersConverted` was added and no check got stricter.
@@ -164,38 +179,6 @@ stay local to the execution "or, for a language that documents it, to the run; t
 Skipped, `sharedStateStaysLocal` counts as aborted, as `nestedRunInsideAnAction` does, so a launcher that expects
 every check found to succeed sees one more aborted check: override the hooks, or count aborted checks as passing.
 
-## 🔼 Upgrading from 2.14
+## 🔼 Upgrading from 2.14 or earlier
 
-In 2.15.0 five checks got stricter and none was added, so a language that passed the 2.14 kit may now fail. Each new
-failure is a real defect:
-
-| Check | Now fails a language that | The defect |
-| --- | --- | --- |
-| `conditionAssignmentRejected` | Fails a condition that assigns to a fact on its first run only | From the second run on, the condition changes the fact |
-| `conditionWritesRejected` | Fails a condition that writes a property or declares a variable on its first run only | From the second run on, the caller's fact changes, or a later expression reads a value no action set |
-| `conditionWritesRejected`, once `propertyAssignment()` returns a condition | Rejects a condition's write to a map fact, but calls a bean's setter | The caller's bean changes |
-| `outputNotReplaceable` | Fails an action that replaces the output on its first run only | From the second run on, the action replaces the output, and nothing throws |
-| `missingPropertyFailsTheRun`, unless `missingFactProperty()` returns `null` | Fails a condition that reads a missing property on its first run only | From the second run on, the property reads as `null`, and the rule silently doesn't fire |
-| `compilerClosed`, unless `configure` sets `copiesAtLoad(1)` or more | Has a compiler whose `close()` throws only once `warmUp` has run | The engine only logs it at WARN, and the compiler has usually leaked what it holds |
-| `compilerClosed`, unless `configure` sets `copiesAtLoad(1)` or more | Has a `warmUp` that throws only for the compiler a reload makes, while the replaced rules' compiler is still open | A reload fails in any engine that makes copies at load; the check fails with `RuleCompilationException: The 'my' expression language failed to warm up a session: ` + what `warmUp` threw |
-
-The four checks that repeat a run keep one copy of the rules, as `conditionDetail` does. When `load()` succeeds and
-the run fails, they run the rule again, which must throw a `RuleExecutionException` naming the rule and its
-`CONDITION`, or its `ACTION` in `outputNotReplaceable`.
-
-A second run that doesn't throw fails the check with `... failed the first run but not the second`. Any other
-`RuntimeException` fails it with `... failed the second run differently, not with a RuleExecutionException naming
-rule r and its condition: ...`, or `action`, carrying what the run threw as the cause.
-
-`compilerClosed` now sets `copiesAtLoad(1)` after `configure`, so the compiler has warmed up a session before it's
-closed. The 2.12 row below, "when `configure` sets `copiesAtLoad(1)` or more", no longer applies. A language whose
-`newSession()` returns `Session.none()` still has nothing warmed up: the engine calls `warmUp` only for other sessions.
-
-A subclass written for the 2.14 kit still compiles, and no hook was added. `conditionWritesRejected` also runs your
-`propertyAssignment()` condition against `ExpressionLanguageContractTest.WritableApplicant`, a new public JavaBean with
-`getCreditScore()` and `setCreditScore(int)`, and requires its score unchanged. The condition must also write a bean's
-property, as MVEL's `applicant.creditScore = 1` does. If your `configure` declares `applicant`, keep it `Object`.
-
-## 🔼 Upgrading from 2.13 or earlier
-
-See [Upgrading the contract test kit from 2.13 or earlier](contract-kit-upgrading-older.md).
+See [Upgrading the contract test kit from 2.14 or earlier](contract-kit-upgrading-older.md).

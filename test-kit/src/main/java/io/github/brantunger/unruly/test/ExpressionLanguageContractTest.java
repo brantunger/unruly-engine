@@ -104,7 +104,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * written for {@code 1} is also run against a {@code Long}, a {@code Short} and a {@code BigDecimal} fact, and must
  * fire for all three and not for a {@code 2L} one. A language that compares whole numbers by type opts out of that
  * one check with {@link #comparesWholeNumbersByValue()}. A language that converts the numbers its actions return for
- * the output's setters, so that a whole double sets an {@code int} property, opts into one more check with
+ * the output's setters, so that a whole double sets an {@code int} or a {@code long} property, and a fraction, an
+ * infinity, NaN or a whole number the setter's type doesn't hold exactly fails the rule, opts into one more check with
  * {@link #convertsOutputNumbers()}.
  * </p>
  *
@@ -334,8 +335,9 @@ public abstract class ExpressionLanguageContractTest {
     /**
      * Whether this language converts the numbers its actions return for the output's setters, in
      * {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#convertOutput convertOutput}, so that a whole
-     * {@link Double} reaches a setter taking an {@code int}, and a fraction fails the rule rather than being rounded.
-     * By default, {@code false}, which skips {@code outputNumbersConverted}: a language whose whole numbers are Java's,
+     * {@link Double} reaches a setter taking an {@code int} or a {@code long}, and a fraction, an infinity, NaN or a
+     * whole number the setter's type doesn't hold exactly fails the rule rather than being rounded or narrowed. By
+     * default, {@code false}, which skips {@code outputNumbersConverted}: a language whose whole numbers are Java's,
      * {@link Integer}s or {@link Long}s, needs no conversion to pass the other checks, and the default writer widens an
      * {@link Integer} for a {@code long} setter by itself. A language whose numbers are all doubles, as JavaScript's
      * and JsonLogic's are, opts in once it converts them; so may any language that converts a whole double its action
@@ -345,8 +347,13 @@ public abstract class ExpressionLanguageContractTest {
      * The check runs {@link #putFact putFact("creditScore", "x")} against a run whose fact {@code x} is the
      * {@link Double} 1.0, which must set the credit score to 1, and then the {@link Double} 1.5, which must fail the
      * rule and leave the score, with a writer that sets each property on a {@link WritableApplicant} through the
-     * default writer, as an application whose output is a bean has it set. Its engine is built as every other check's
-     * is, so {@link #configure} applies.
+     * default writer, as an application whose output is a bean has it set. Then 3.0E9, {@code Infinity},
+     * {@code -Infinity} and {@code NaN}, which must each fail the rule and leave the score too: a language that
+     * narrows a double it has only checked is whole sets {@code Integer.MAX_VALUE} for the first two. Then
+     * {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes a {@code long}: 3.0E9 must
+     * set the balance to 3000000000, and {@code Infinity} and 2<sup>53</sup>&nbsp;+&nbsp;2, the first whole double
+     * past where a double counts by ones, must each fail the rule and leave it. Its engines are built as every other
+     * check's is, so {@link #configure} applies.
      * </p>
      *
      * @return Whether the language converts the numbers its actions return for a setter
@@ -724,6 +731,43 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * An account as a JavaBean with a setter taking a {@code long}, the output {@code outputNumbersConverted} writes a
+     * whole {@link Double} no {@code int} holds to. It's public, with a public setter, so that the default writer can
+     * call it: one it couldn't reach would fail the write, and the check, for that reason.
+     */
+    public static final class Account {
+
+        private long balance;
+
+        /**
+         * Creates the account.
+         *
+         * @param balance The account's balance, the property the contract test writes
+         */
+        public Account(long balance) {
+            this.balance = balance;
+        }
+
+        /**
+         * Returns the account's balance.
+         *
+         * @return The balance
+         */
+        public long getBalance() {
+            return balance;
+        }
+
+        /**
+         * Sets the account's balance.
+         *
+         * @param balance The balance
+         */
+        public void setBalance(long balance) {
+            this.balance = balance;
+        }
+    }
+
+    /**
      * The fact the nested-run checks run their rules against: its {@code value} property starts a run nested inside
      * the run that reads it, on the same thread, as a getter a condition or an action reads, or a function it calls,
      * does when it runs rules. Only {@code nestedRunInsideAnAction}, {@code nestedRunInsideACondition},
@@ -961,10 +1005,12 @@ public abstract class ExpressionLanguageContractTest {
         closing(oneCopyEngine(language()), engine -> {
             // A language may reject the condition when compiling or when running: by refusing it, by failing to
             // write to the read-only facts, or by evaluating to something that isn't a boolean. So loading is inside
-            // the check.
+            // the check, and a load that fails closes the compilers its compile created there: an interrupt the engine
+            // puts back when one of those close() fails is cleared, as closing() clears the one from the close at the
+            // check's end, so the thread isn't left interrupted for the checks after this one.
             AtomicBoolean loaded = new AtomicBoolean();
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(okRule("x"), rule("r", 1, condition, putFact(SEEN, "x"))));
+                keepingInterrupt(() -> engine.load(List.of(okRule("x"), rule("r", 1, condition, putFact(SEEN, "x")))));
                 loaded.set(true);
                 engine.run(facts);
             }, rejected + " was neither rejected by load nor failed by run");
@@ -1065,13 +1111,15 @@ public abstract class ExpressionLanguageContractTest {
     void outputNotReplaceable() throws Exception {
         String reassign = reassignOutput();
         assumeTrue(reassign != null, "the language's actions can't assign the output");
-        // A language may reject the assignment when compiling or when running, so loading is inside the check. One
-        // copy of the rules, so that a second run gets the compiled action, and the session, the first used, and the
-        // valid rule ok, whose action runs first, so that a session the failure left broken fails the second run there.
+        // A language may reject the assignment when compiling or when running, so loading is inside the check, and a
+        // load that fails closes the compilers its compile created there, so the interrupt a failed close() puts back
+        // is cleared, as in assertConditionRejected. One copy of the rules, so that a second run gets the compiled
+        // action, and the session, the first used, and the valid rule ok, whose action runs first, so that a session
+        // the failure left broken fails the second run there.
         closing(oneCopyEngine(language()), engine -> {
             AtomicBoolean loaded = new AtomicBoolean();
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(okRule("x"), rule("r", 1, alwaysTrue(), reassign)));
+                keepingInterrupt(() -> engine.load(List.of(okRule("x"), rule("r", 1, alwaysTrue(), reassign))));
                 loaded.set(true);
                 engine.run(new FactMap<>(new Fact<>("x", 1)));
             });
@@ -1083,7 +1131,8 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("a whole Double an action returns reaches a setter taking an int, and a fraction fails the rule")
+    @DisplayName("a whole Double an action returns reaches a setter taking an int or a long, and a fraction, an"
+            + " infinity, NaN or a whole number the setter's type doesn't hold exactly fails the rule")
     void outputNumbersConverted() throws Exception {
         assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
         // The writer is set after configure(), so configure() can't replace it: the applicant, not the map, is written.
@@ -1099,7 +1148,51 @@ public abstract class ExpressionLanguageContractTest {
                     () -> engine.run(new FactMap<>(new Fact<>("x", 1.5))), "the fraction 1.5 was set on an int");
             assertEquals("r", ex.getRuleName(), describe(ex));
             assertEquals(1, applicant.getCreditScore(), "the fraction 1.5 changed the credit score");
+            // A language that checks only that the double is whole, by Math.rint() or Math.floor(), which an infinity
+            // passes and NaN doesn't, and then narrows it with intValue() sets Integer.MAX_VALUE for 3.0E9 and
+            // Infinity and Integer.MIN_VALUE for -Infinity, and fails nothing but NaN. After the fraction, so that a
+            // language that rounds is reported for that.
+            for (double x : new double[] {3.0E9, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN}) {
+                assertRefused(engine, x, "the Double " + x, "setCreditScore(int)", applicant::getCreditScore, 1);
+            }
         });
+
+        // A long holds 3.0E9, and every whole double up to 2^53 in magnitude, where a double still counts by ones:
+        // 2^53 + 1 isn't a double, so 2^53 + 2 is the first whole double past it, and a language that converts it sets
+        // a long the action may not have meant. A language that narrows with longValue() after checking only that the
+        // double is whole sets Long.MAX_VALUE for Infinity.
+        Account account = new Account(0);
+        closing(builder(language()).outputWriter(new BeanWriter(account)).build(), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact("balance", "x"))));
+
+            engine.run(new FactMap<>(new Fact<>("x", 3.0E9)));
+            assertEquals(3_000_000_000L, account.getBalance(), "the whole Double 3.0E9 didn't reach setBalance(long)");
+            assertRefused(engine, Double.POSITIVE_INFINITY, "the Double Infinity", "setBalance(long)",
+                    account::getBalance, 3_000_000_000L);
+            assertRefused(engine, 0x1p53 + 2, "the Double " + (0x1p53 + 2) + ", which is 2^53 + 2 and so beyond where"
+                    + " a double counts by ones,", "setBalance(long)", account::getBalance, 3_000_000_000L);
+        });
+    }
+
+    /**
+     * Runs rule {@code r} of {@code engine}, whose action puts the fact {@code x} on the property {@code setter} sets,
+     * with {@code x} the {@link Double} {@code value}, which {@code setter}'s type doesn't hold exactly, and requires
+     * the run to fail in {@code r} and the property, read by {@code read}, to still be {@code before}: a language that
+     * narrows the double, as {@code Number.intValue()} or {@code longValue()} does, sets the type's extreme instead.
+     *
+     * @param engine The engine, with rule {@code r} loaded
+     * @param value  The double the setter's type doesn't hold
+     * @param what   What the double is, as the failure's message names it
+     * @param setter The setter the double was put on, as the failure's message names it
+     * @param read   Reads the property the setter sets
+     * @param before What the property held before the run, and must hold after it
+     */
+    private static void assertRefused(RulesEngine<Map<String, Object>> engine, double value, String what,
+            String setter, Supplier<Number> read, long before) {
+        RuleExecutionException ex = assertThrows(RuleExecutionException.class,
+                () -> engine.run(new FactMap<>(new Fact<>("x", value))), what + " was set on " + setter);
+        assertEquals("r", ex.getRuleName(), describe(ex));
+        assertEquals(before, read.get().longValue(), what + " changed what " + setter + " had set");
     }
 
     @Test
@@ -1127,9 +1220,12 @@ public abstract class ExpressionLanguageContractTest {
         boolean lastTheRun = actionVariablesLastTheRun();
         closing(oneCopyEngine(language()), engine -> {
             try {
-                engine.load(List.of(
+                // A load the language may refuse closes the compilers its compile created, inside the check: an
+                // interrupt the engine puts back when one of those close() fails is cleared, as in syntaxErrorAtLoad,
+                // so it doesn't stop the runs of the engine below, nor the checks after this one.
+                keepingInterrupt(() -> engine.load(List.of(
                         rule(DECLARES, 2, factEquals("x", 1), declareOther),
-                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y"))));
+                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y")))));
             } catch (UnrulyException e) {
                 if (lastTheRun) {
                     throw new AssertionFailedError("actionVariablesLastTheRun() returns true, but load() refused the"
@@ -1169,9 +1265,10 @@ public abstract class ExpressionLanguageContractTest {
         // action declares it, so that a language that can't read an unknown name still gets through the first run.
         closing(oneCopyEngine(language()), engine -> {
             try {
-                engine.load(List.of(
+                // The interrupt a refused load may put back is cleared, as above.
+                keepingInterrupt(() -> engine.load(List.of(
                         rule(DECLARES, 2, factEquals("x", 1), declareOther),
-                        rule("readsInCondition", 1, variableEquals("y", 2), putFact(SEEN, "x"))));
+                        rule("readsInCondition", 1, variableEquals("y", 2), putFact(SEEN, "x")))));
             } catch (UnrulyException e) {
                 // The language refuses a name that isn't a fact when it compiles the rule.
                 return;
@@ -1205,9 +1302,10 @@ public abstract class ExpressionLanguageContractTest {
         // One copy of the rules, so that the later run gets the session the failed one used.
         closing(oneCopyEngine(language()), engine -> {
             try {
-                engine.load(List.of(
+                // The interrupt a refused load may put back is cleared, as in actionVariablesStayLocal.
+                keepingInterrupt(() -> engine.load(List.of(
                         rule(DECLARES, 2, factEquals("x", 1), declare),
-                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y"))));
+                        rule(READS, 1, alwaysTrue(), putVariable(SEEN, "y")))));
             } catch (UnrulyException e) {
                 // The language refuses a name that isn't a fact when it compiles the rule.
                 return;
@@ -1251,9 +1349,10 @@ public abstract class ExpressionLanguageContractTest {
         // earlier one used.
         closing(oneCopyEngine(language()), engine -> {
             try {
-                engine.load(List.of(
+                // The interrupt a refused load may put back is cleared, as in actionVariablesStayLocal.
+                keepingInterrupt(() -> engine.load(List.of(
                         rule(CHANGES, 2, factEquals("x", 1), change),
-                        rule(READS, 1, equals, putFact(SEEN, "x"))));
+                        rule(READS, 1, equals, putFact(SEEN, "x")))));
             } catch (RuleCompilationException e) {
                 if (names(CHANGES, ExpressionKind.ACTION, e.getRuleName(), e.getExpressionKind())) {
                     // The language refuses the change when it compiles the rule.
@@ -1324,7 +1423,11 @@ public abstract class ExpressionLanguageContractTest {
         List<Rule> rules = List.of(rule("r", 1, syntaxError(), putFact(SEEN, "x")));
 
         closing(engine(), engine -> {
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+            // The failed load closes the compilers its compile created, inside the check: an interrupt the engine puts
+            // back when one of those close() fails is cleared, as closing() clears the one from the close at the
+            // check's end, so the thread isn't left interrupted for the checks after this one.
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                    () -> keepingInterrupt(() -> engine.load(rules)));
 
             assertEquals("r", ex.getRuleName());
             assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
@@ -1343,8 +1446,10 @@ public abstract class ExpressionLanguageContractTest {
 
         closing(engine(), engine -> {
             // A language that compiles its actions on first use loads this rule without a word, and fails it in
-            // production instead, one run at a time.
-            RuleCompilationException ex = assertThrows(RuleCompilationException.class, () -> engine.load(rules));
+            // production instead, one run at a time. The interrupt a failed close() of the compilers the failed load
+            // closes puts back is cleared, as in syntaxErrorAtLoad.
+            RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                    () -> keepingInterrupt(() -> engine.load(rules)));
 
             assertEquals("r", ex.getRuleName());
             assertEquals(ExpressionKind.ACTION, ex.getExpressionKind());
@@ -1600,7 +1705,8 @@ public abstract class ExpressionLanguageContractTest {
 
         // Silently evaluating to false is the failure this catches: the rule never fires and nothing says why. A
         // language may reject the property when it compiles the rule rather than when it runs it, so loading is
-        // inside the check too, and either failure counts.
+        // inside the check too, and either failure counts; a load that fails closes the compilers its compile created
+        // there, so the interrupt a failed close() puts back is cleared, as in assertConditionRejected.
         //
         // Only the record: a missing key of a map is a different question, and languages answer it differently on
         // purpose. JsonLogic, JEXL and SpEL read a missing key as null or empty, which is what their users expect,
@@ -1612,7 +1718,7 @@ public abstract class ExpressionLanguageContractTest {
         closing(oneCopyEngine(language()), engine -> {
             AtomicBoolean loaded = new AtomicBoolean();
             UnrulyException ex = assertThrows(UnrulyException.class, () -> {
-                engine.load(List.of(okRule(APPLICANT), misspelled));
+                keepingInterrupt(() -> engine.load(List.of(okRule(APPLICANT), misspelled)));
                 loaded.set(true);
                 engine.run(new FactMap<>(new Fact<>(APPLICANT, new Applicant(750))));
             }, "a misspelled property of a record fact didn't fail");

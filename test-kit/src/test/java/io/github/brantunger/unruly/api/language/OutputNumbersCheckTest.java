@@ -6,14 +6,21 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 import org.opentest4j.TestAbortedException;
 
+import java.util.function.Function;
+import java.util.function.Predicate;
+
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.runCheck;
 import static io.github.brantunger.unruly.api.language.DoubleNumbers.doubleNumbers;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The contract test kit's {@code outputNumbersConverted}, which a language opts into with
- * {@code convertsOutputNumbers()}, must fail a language whose doubles never reach an {@code int} setter, and one that
- * rounds a fraction to set one (#1127). Apart from {@link ContractKitChecksTest}, which has to compile without
+ * {@code convertsOutputNumbers()}, must fail a language whose doubles never reach an {@code int} setter, one that
+ * rounds a fraction to set one (#1127), one that narrows a double beyond the setter's type, or an infinity, to the
+ * type's extreme, and one that sets a {@code long} from a whole double past 2<sup>53</sup>, where a double no longer
+ * counts by ones. Each of the int setter's refusals is pinned on its own: a language that mishandles one infinity, or
+ * NaN, and nothing else fails naming it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing
+ * anything. Apart from {@link ContractKitChecksTest}, which has to compile without
  * {@link ExpressionCompiler#convertOutput}.
  */
 @DisplayName("the contract test kit fails a language that opts into converting its numbers and doesn't")
@@ -56,6 +63,44 @@ class OutputNumbersCheckTest {
     @FunctionalInterface
     private interface OutputConversion {
         Object convert(Object value, Class<?> target);
+    }
+
+    /**
+     * A conversion that converts a double for an {@code int} setter only, as {@code narrowing} does once the double is
+     * whole by {@code isWhole}, and refuses a fraction: the two Gotchas of the output-conversion docs, which check
+     * only that the double is whole and then narrow it, so a double beyond an int, or an infinity, saturates.
+     */
+    private static OutputConversion wholeInts(Predicate<Double> isWhole, Function<Double, Object> narrowing) {
+        return (value, target) -> {
+            if (!(value instanceof Double number) || target != int.class) {
+                return value;
+            }
+            if (!isWhole.test(number)) {
+                throw new IllegalArgumentException(number + " isn't whole");
+            }
+            return narrowing.apply(number);
+        };
+    }
+
+    /**
+     * A conversion that converts as {@link DoubleNumbers#convert} does, except for a {@code long} setter, for which
+     * it converts a double as {@code forLong} does: a language whose ints are right and whose longs aren't.
+     */
+    private static OutputConversion exceptForLongs(Function<Double, Object> forLong) {
+        return (value, target) -> value instanceof Double number && target == long.class
+                ? forLong.apply(number) : DoubleNumbers.convert(value, target);
+    }
+
+    /**
+     * A conversion that converts as {@link DoubleNumbers#convert} does, except for the double {@code only} on an
+     * {@code int} setter, which sets {@code extreme}: a language that maps one infinity to an end of the type on
+     * purpose, as one whose {@code Infinity} means "no limit" might, and converts every other double exactly. No
+     * accidental narrowing does this, since {@code intValue()}, a cast and {@code Math.round()} treat the two
+     * infinities alike; {@code only} can't be NaN, which equals nothing.
+     */
+    private static OutputConversion exceptForTheInt(double only, int extreme) {
+        return (value, target) -> value instanceof Double number && target == int.class && number == only
+                ? extreme : DoubleNumbers.convert(value, target);
     }
 
     @Test
@@ -117,5 +162,162 @@ class OutputNumbersCheckTest {
                 () -> runCheck(optingIn(zeroing), CHECK));
 
         assertTrue(failure.getMessage().startsWith("the fraction 1.5 was set on an int"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that narrows a double it has checked is whole with intValue(), which saturates beyond an"
+            + " int, fails, naming the double and the setter")
+    void saturatingFails() {
+        ExpressionLanguage saturating = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                wholeInts(number -> number == Math.rint(number), Double::intValue));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(saturating), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double 3.0E9 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that checks a double is whole with Math.floor() alone, which an infinity passes, and casts"
+            + " it to an int, fails, naming the double and the setter")
+    void floorOnlyFails() {
+        // A cast saturates as intValue() does, and Math.floor() keeps an infinity, so 3.0E9 is the first failure.
+        ExpressionLanguage floorOnly = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                wholeInts(number -> number == Math.floor(number), number -> (int) number.doubleValue()));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(floorOnly), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double 3.0E9 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every double exactly but Infinity, which sets Integer.MAX_VALUE on an int"
+            + " setter, fails, naming the double and the setter")
+    void infinityAloneFails() {
+        ExpressionLanguage noLimit = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForTheInt(Double.POSITIVE_INFINITY, Integer.MAX_VALUE));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(noLimit), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double Infinity was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every double exactly but -Infinity, which sets Integer.MIN_VALUE on an int"
+            + " setter, fails, naming the double and the setter")
+    void negativeInfinityAloneFails() {
+        ExpressionLanguage noFloor = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForTheInt(Double.NEGATIVE_INFINITY, Integer.MIN_VALUE));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(noFloor), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double -Infinity was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a double whose floor is below it, or that is out of an int's range, which NaN"
+            + " is neither, and casts it, so NaN sets 0, fails, naming the double and the setter")
+    void nanAloneFails() {
+        // Checks written as "refuse if", which NaN passes, since every comparison with it is false: a fraction, 3.0E9
+        // and both infinities are refused, and (int) NaN is 0.
+        ExpressionLanguage refuseIf = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> {
+                    if (!(value instanceof Double number) || target != int.class) {
+                        return DoubleNumbers.convert(value, target);
+                    }
+                    if (Math.floor(number) < number) {
+                        throw new IllegalArgumentException(number + " isn't whole");
+                    }
+                    if (number < Integer.MIN_VALUE || number > Integer.MAX_VALUE) {
+                        throw new IllegalArgumentException(number + " is out of an int's range");
+                    }
+                    return (int) number.doubleValue();
+                });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(refuseIf), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double NaN was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose ints are converted exactly, and whose longs are whole doubles cast, so an infinity"
+            + " sets Long.MAX_VALUE, fails, naming the double and the setter")
+    void infinityOnALongFails() {
+        ExpressionLanguage castingLongs = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> {
+                    if (number != Math.floor(number)) {
+                        throw new IllegalArgumentException(number + " isn't whole");
+                    }
+                    return number.longValue();
+                }));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(castingLongs), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double Infinity was set on setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every finite whole double for a long setter, past 2^53 where a double no"
+            + " longer counts by ones, fails, naming the double and the setter")
+    void beyondExactLongFails() {
+        ExpressionLanguage everyWholeDouble = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> {
+                    if (Double.isInfinite(number) || number != Math.rint(number)) {
+                        throw new IllegalArgumentException(number + " isn't a finite whole number");
+                    }
+                    return number.longValue();
+                }));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(everyWholeDouble), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double 9.007199254740994E15, which is 2^53 + 2 and so beyond"
+                + " where a double counts by ones, was set on setBalance(long)"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose ints are converted exactly, and whose longs are whole doubles narrowed with"
+            + " intValue() and widened, so 3.0E9 sets Integer.MAX_VALUE without failing, fails: the whole Double 3.0E9"
+            + " didn't reach the long setter")
+    void wrongLongFails() {
+        // The refusals after the equality would fail this language too, so the message is what proves the equality
+        // caught it first.
+        ExpressionLanguage intsWidened = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> {
+                    if (number != Math.rint(number)) {
+                        throw new IllegalArgumentException(number + " isn't whole");
+                    }
+                    return (long) number.intValue();
+                }));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(intsWidened), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the whole Double 3.0E9 didn't reach setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose ints are converted exactly and whose doubles never reach a long setter fails: the"
+            + " whole Double 3.0E9 never reaches it")
+    void unconvertedLongsFail() {
+        ExpressionLanguage unconvertedLongs = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> number));
+
+        Throwable failure = assertThrows(Throwable.class, () -> runCheck(optingIn(unconvertedLongs), CHECK));
+
+        assertTrue(failure.getMessage().contains("has no public method setBalance that accepts a java.lang.Double"),
+                failure.getMessage());
     }
 }
