@@ -66,7 +66,7 @@ class ContextRecordsTest {
     @DisplayName("an evaluation context's facts reject writes as a condition's do")
     void evaluationFactsReadOnly() {
         Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
-        EngineEvaluationContext context = new EngineEvaluationContext(facts, Deadline.NONE);
+        EngineEvaluationContext context = EngineEvaluationContext.of(facts, Deadline.NONE);
 
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
@@ -79,7 +79,7 @@ class ContextRecordsTest {
     @DisplayName("an action context's facts reject writes as an action's do")
     void actionFactsReadOnly() {
         Map<String, Object> facts = new HashMap<>(Map.of("x", 1));
-        EngineActionContext context = new EngineActionContext(facts, new HashMap<>(), Deadline.NONE);
+        EngineActionContext context = EngineActionContext.of(facts, new HashMap<>(), Deadline.NONE);
 
         UnsupportedOperationException ex = assertThrows(UnsupportedOperationException.class,
                 () -> context.facts().put("y", 2));
@@ -91,7 +91,7 @@ class ContextRecordsTest {
     @DisplayName("an action context needs an output object")
     void actionContextNeedsOutput() {
         NullPointerException ex = assertThrows(NullPointerException.class,
-                () -> new EngineActionContext(Map.of(), null, Deadline.NONE));
+                () -> EngineActionContext.of(Map.of(), null, Deadline.NONE));
 
         assertEquals("output must not be null", ex.getMessage());
     }
@@ -100,9 +100,9 @@ class ContextRecordsTest {
     @DisplayName("an evaluation or action context needs facts")
     void contextsNeedFacts() {
         NullPointerException evaluation = assertThrows(NullPointerException.class,
-                () -> new EngineEvaluationContext(null, Deadline.NONE));
+                () -> EngineEvaluationContext.of(null, Deadline.NONE));
         NullPointerException action = assertThrows(NullPointerException.class,
-                () -> new EngineActionContext(null, new HashMap<>(), Deadline.NONE));
+                () -> EngineActionContext.of(null, new HashMap<>(), Deadline.NONE));
 
         assertEquals("facts must not be null", evaluation.getMessage());
         assertEquals("facts must not be null", action.getMessage());
@@ -142,9 +142,9 @@ class ContextRecordsTest {
     @DisplayName("an evaluation or action context needs a deadline, which is Deadline.NONE for a run without one")
     void contextsNeedADeadline() {
         NullPointerException evaluation = assertThrows(NullPointerException.class,
-                () -> new EngineEvaluationContext(Map.of(), (Deadline) null));
+                () -> EngineEvaluationContext.of(Map.of(), (Deadline) null));
         NullPointerException action = assertThrows(NullPointerException.class,
-                () -> new EngineActionContext(Map.of(), new HashMap<>(), (Deadline) null));
+                () -> EngineActionContext.of(Map.of(), new HashMap<>(), (Deadline) null));
 
         assertEquals("runDeadline must not be null", evaluation.getMessage());
         assertEquals("runDeadline must not be null", action.getMessage());
@@ -160,17 +160,8 @@ class ContextRecordsTest {
     void contextsNeedAStartAndTags() {
         Instant now = Instant.now();
         Map<String, Object> output = new HashMap<>();
-        RunScope scope = new RunScope();
 
         assertAll(
-                () -> assertNullMessage("runStartedAt must not be null",
-                        () -> new EngineEvaluationContext(Map.of(), Deadline.NONE, scope, null, Set.of())),
-                () -> assertNullMessage("runTags must not be null",
-                        () -> new EngineEvaluationContext(Map.of(), Deadline.NONE, scope, now, null)),
-                () -> assertNullMessage("runStartedAt must not be null",
-                        () -> new EngineActionContext(Map.of(), output, Deadline.NONE, scope, null, Set.of())),
-                () -> assertNullMessage("runTags must not be null",
-                        () -> new EngineActionContext(Map.of(), output, Deadline.NONE, scope, now, null)),
                 () -> assertNullMessage("startedAt must not be null",
                         () -> new EngineEvaluationContext(Map.of(), (Instant) null, null, Set.of())),
                 () -> assertNullMessage("tags must not be null",
@@ -206,7 +197,7 @@ class ContextRecordsTest {
                 () -> assertEquals(Map.of("x", 1), evaluation.facts()),
                 () -> assertEquals(Map.of("x", 1), action.facts()),
                 () -> assertSame(output, action.output()),
-                () -> assertNotSame(evaluation.runScope(), action.runScope(), "each is a run of its own"),
+                () -> assertNotSame(evaluation.run().scope(), action.run().scope(), "each is a run of its own"),
                 () -> assertEquals(start, EngineEvaluationContext.startedAt(evaluation)),
                 () -> assertSame(tags, EngineEvaluationContext.tags(action)));
         // The fact names are checked as the other test-kit constructors check them.
@@ -224,11 +215,11 @@ class ContextRecordsTest {
         Instant before = Instant.now();
         Map<String, Object> output = new HashMap<>();
 
-        List<EvaluationContext> contexts = List.of(new EngineEvaluationContext(Map.of(), Deadline.NONE),
-                new EngineEvaluationContext(Map.of(), Deadline.NONE, new RunScope()),
+        List<EvaluationContext> contexts = List.of(EngineEvaluationContext.of(Map.of(), Deadline.NONE),
+                EngineEvaluationContext.of(Map.of(), Deadline.NONE, new RunScope()),
                 new EngineEvaluationContext(Map.of(), (Instant) null),
-                new EngineActionContext(Map.of(), output, Deadline.NONE),
-                new EngineActionContext(Map.of(), output, Deadline.NONE, new RunScope()),
+                EngineActionContext.of(Map.of(), output, Deadline.NONE),
+                EngineActionContext.of(Map.of(), output, Deadline.NONE, new RunScope()),
                 new EngineActionContext(Map.of(), output, (Instant) null));
 
         Instant after = Instant.now();
@@ -246,8 +237,8 @@ class ContextRecordsTest {
         Set<String> tags = Set.of("eu", "retail");
         Map<String, Object> output = new HashMap<>();
         RunScope scope = new RunScope();
-        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("x", 1), Deadline.NONE, scope, start,
-                tags);
+        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("x", 1),
+                new RunState(Deadline.NONE, scope, start, tags));
 
         EngineActionContext action = new EngineActionContext(evaluation, output);
         EngineActionContext next = new EngineActionContext(action, output);
@@ -257,7 +248,7 @@ class ContextRecordsTest {
                 () -> assertSame(tags, action.tags()),
                 () -> assertEquals(start, next.startedAt()),
                 () -> assertSame(tags, next.tags()),
-                () -> assertSame(scope, next.runScope()),
+                () -> assertSame(scope, next.run().scope()),
                 () -> assertEquals(Map.of("x", 1), next.facts()));
     }
 
@@ -326,19 +317,19 @@ class ContextRecordsTest {
         Deadline ahead = Deadline.from(timeout);
         Deadline passed = Deadline.from(Duration.ZERO);
 
-        for (EvaluationContext context : List.of(new EngineEvaluationContext(Map.of(), ahead),
-                new EngineActionContext(Map.of(), new HashMap<>(), ahead))) {
+        for (EvaluationContext context : List.of(EngineEvaluationContext.of(Map.of(), ahead),
+                EngineActionContext.of(Map.of(), new HashMap<>(), ahead))) {
             Duration left = context.timeLeft();
             assertTrue(left.isPositive() && left.compareTo(timeout) <= 0, left.toString());
         }
-        assertEquals(Duration.ZERO, new EngineEvaluationContext(Map.of(), passed).timeLeft());
-        assertEquals(Duration.ZERO, new EngineActionContext(Map.of(), new HashMap<>(), passed).timeLeft());
+        assertEquals(Duration.ZERO, EngineEvaluationContext.of(Map.of(), passed).timeLeft());
+        assertEquals(Duration.ZERO, EngineActionContext.of(Map.of(), new HashMap<>(), passed).timeLeft());
     }
 
     @Test
     @DisplayName("a context without a deadline has the most time left that converts to nanoseconds")
     void timeLeftWithoutADeadline() {
-        for (EvaluationContext context : List.of(new EngineEvaluationContext(Map.of(), Deadline.NONE),
+        for (EvaluationContext context : List.of(EngineEvaluationContext.of(Map.of(), Deadline.NONE),
                 new EngineActionContext(Map.of(), new HashMap<>(), (Instant) null))) {
             assertEquals(Duration.ofNanos(Long.MAX_VALUE), context.timeLeft());
             assertNull(context.deadline());
@@ -374,8 +365,8 @@ class ContextRecordsTest {
                 throw new IllegalStateException("a fact's hashCode");
             }
         };
-        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("boom", boom), Deadline.NONE);
-        EngineActionContext action = new EngineActionContext(Map.of("boom", boom), boom, Deadline.NONE);
+        EngineEvaluationContext evaluation = EngineEvaluationContext.of(Map.of("boom", boom), Deadline.NONE);
+        EngineActionContext action = EngineActionContext.of(Map.of("boom", boom), boom, Deadline.NONE);
 
         assertEquals(System.identityHashCode(evaluation), assertDoesNotThrow(evaluation::hashCode));
         assertEquals(System.identityHashCode(action), assertDoesNotThrow(action::hashCode));

@@ -17,57 +17,23 @@ import java.util.Set;
  * and neither the facts nor the output object is compared or hashed.
  * </p>
  *
- * @param facts        The run's facts, read-only
- * @param output       The output object the action changes
- * @param runDeadline  When the run must stop, which decides whether it has to
- * @param runScope     The values the run's languages keep, shared with the run's evaluation context
- * @param runStartedAt When the run started, by the engine's clock, as the run's evaluation context has it
- * @param runTags      The run's tags, sorted and read-only, or none if the run uses every rule; the set the run's
- *                     evaluation context has, not a copy
+ * @param facts  The run's facts, read-only
+ * @param output The output object the action changes
+ * @param run    The run's state, which the run's evaluation context has: when the run must stop, which decides
+ *               whether it has to; the values its languages keep; when it started, by the engine's clock; and its tags
  */
-public record EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline, RunScope runScope,
-                                  Instant runStartedAt, Set<String> runTags) implements ActionContext {
+public record EngineActionContext(Map<String, Object> facts, Object output, RunState run)
+        implements ActionContext, BoundToRun {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about actions.
      *
-     * @throws NullPointerException if {@code facts}, {@code output}, {@code runDeadline}, {@code runScope},
-     *                              {@code runStartedAt} or {@code runTags} is {@code null}
+     * @throws NullPointerException if {@code facts}, {@code output} or {@code run} is {@code null}
      */
     public EngineActionContext {
         facts = ReadOnlyFacts.forActions(Objects.requireNonNull(facts, "facts must not be null"));
         Objects.requireNonNull(output, "output must not be null");
-        Objects.requireNonNull(runDeadline, "runDeadline must not be null");
-        Objects.requireNonNull(runScope, "runScope must not be null");
-        Objects.requireNonNull(runStartedAt, "runStartedAt must not be null");
-        Objects.requireNonNull(runTags, "runTags must not be null");
-    }
-
-    /**
-     * Creates the context for a run that started now, by the system clock, without tags.
-     *
-     * @param facts       The run's facts
-     * @param output      The output object the action changes
-     * @param runDeadline When the run must stop
-     * @param runScope    The values the run's languages keep
-     * @throws NullPointerException if {@code facts}, {@code output}, {@code runDeadline} or {@code runScope} is
-     *                              {@code null}
-     */
-    public EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline, RunScope runScope) {
-        this(facts, output, runDeadline, runScope, Instant.now(), Set.of());
-    }
-
-    /**
-     * Creates the context for a run of its own, whose values no other context shares, that started now, by the system
-     * clock, without tags.
-     *
-     * @param facts       The run's facts
-     * @param output      The output object the action changes
-     * @param runDeadline When the run must stop
-     * @throws NullPointerException if {@code facts}, {@code output} or {@code runDeadline} is {@code null}
-     */
-    public EngineActionContext(Map<String, Object> facts, Object output, Deadline runDeadline) {
-        this(facts, output, runDeadline, new RunScope());
+        Objects.requireNonNull(run, "run must not be null");
     }
 
     /**
@@ -85,7 +51,7 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
      */
     public EngineActionContext(Map<String, Object> facts, Object output, Instant deadline) {
         this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), output,
-                Deadline.at(deadline));
+                RunState.startingNow(Deadline.at(deadline), new RunScope()));
     }
 
     /**
@@ -108,8 +74,9 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
     public EngineActionContext(Map<String, Object> facts, Object output, Instant deadline, Instant startedAt,
                                Set<String> tags) {
         this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), output,
-                Deadline.at(deadline), new RunScope(), Objects.requireNonNull(startedAt, "startedAt must not be null"),
-                Objects.requireNonNull(tags, "tags must not be null"));
+                new RunState(Deadline.at(deadline), new RunScope(),
+                        Objects.requireNonNull(startedAt, "startedAt must not be null"),
+                        Objects.requireNonNull(tags, "tags must not be null")));
     }
 
     /**
@@ -123,18 +90,47 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
      */
     public EngineActionContext(EvaluationContext sameRun, Object output) {
         this(Objects.requireNonNull(sameRun, "sameRun must not be null").facts(), output,
-                EngineEvaluationContext.runDeadlineOf(sameRun), EngineEvaluationContext.runScopeOf(sameRun),
-                EngineEvaluationContext.startedAt(sameRun), EngineEvaluationContext.tags(sameRun));
+                EngineEvaluationContext.runOf(sameRun));
+    }
+
+    /**
+     * Creates the context for a run of its own, whose values no other context shares, that started now, by the system
+     * clock, without tags. Core's tests create contexts with it.
+     *
+     * @param facts       The run's facts
+     * @param output      The output object the action changes
+     * @param runDeadline When the run must stop
+     * @return The context
+     * @throws NullPointerException if {@code facts}, {@code output} or {@code runDeadline} is {@code null}
+     */
+    static EngineActionContext of(Map<String, Object> facts, Object output, Deadline runDeadline) {
+        return of(facts, output, runDeadline, new RunScope());
+    }
+
+    /**
+     * Creates the context for a run that started now, by the system clock, without tags. Core's tests create contexts
+     * with it.
+     *
+     * @param facts       The run's facts
+     * @param output      The output object the action changes
+     * @param runDeadline When the run must stop
+     * @param runScope    The values the run's languages keep
+     * @return The context
+     * @throws NullPointerException if {@code facts}, {@code output}, {@code runDeadline} or {@code runScope} is
+     *                              {@code null}
+     */
+    static EngineActionContext of(Map<String, Object> facts, Object output, Deadline runDeadline, RunScope runScope) {
+        return new EngineActionContext(facts, output, RunState.startingNow(runDeadline, runScope));
     }
 
     @Override
     public boolean isCancelled() {
-        return Cancellation.isCancelled(runDeadline);
+        return Cancellation.isCancelled(run.deadline());
     }
 
     @Override
     public Instant deadline() {
-        return runDeadline.instant();
+        return run.deadline().instant();
     }
 
     /**
@@ -161,6 +157,7 @@ public record EngineActionContext(Map<String, Object> facts, Object output, Dead
      */
     @Override
     public String toString() {
+        Deadline runDeadline = run.deadline();
         return "ActionContext(output=" + output.getClass().getName() + ", deadline="
                 + (runDeadline.isSet() ? runDeadline.instant() : "none") + ")";
     }

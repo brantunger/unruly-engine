@@ -28,52 +28,22 @@ import java.util.function.Supplier;
  * and change when a fact changes during the run.
  * </p>
  *
- * @param facts        The run's facts, read-only
- * @param runDeadline  When the run must stop, which decides whether it has to
- * @param runScope     The values the run's languages keep, which the run's action contexts share
- * @param runStartedAt When the run started, by the engine's clock, which judged every rule's validity window
- * @param runTags      The run's tags, sorted and read-only, or none if the run uses every rule; the set the run's
- *                     {@link EngineRunContext} has, not a copy
+ * @param facts The run's facts, read-only
+ * @param run   The run's state: when it must stop, which decides whether it has to; the values its languages keep,
+ *              which the run's action contexts share; when it started, by the engine's clock, which judged every
+ *              rule's validity window; and its tags
  */
-public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline, RunScope runScope,
-                                      Instant runStartedAt, Set<String> runTags) implements EvaluationContext {
+public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
+        implements EvaluationContext, BoundToRun {
 
     /**
      * Wraps the facts in a read-only view, whose writes fail with a message about conditions.
      *
-     * @throws NullPointerException if {@code facts}, {@code runDeadline}, {@code runScope}, {@code runStartedAt} or
-     *                              {@code runTags} is {@code null}
+     * @throws NullPointerException if {@code facts} or {@code run} is {@code null}
      */
     public EngineEvaluationContext {
         facts = ReadOnlyFacts.forConditions(Objects.requireNonNull(facts, "facts must not be null"));
-        Objects.requireNonNull(runDeadline, "runDeadline must not be null");
-        Objects.requireNonNull(runScope, "runScope must not be null");
-        Objects.requireNonNull(runStartedAt, "runStartedAt must not be null");
-        Objects.requireNonNull(runTags, "runTags must not be null");
-    }
-
-    /**
-     * Creates the context for a run that started now, by the system clock, without tags.
-     *
-     * @param facts       The run's facts
-     * @param runDeadline When the run must stop
-     * @param runScope    The values the run's languages keep
-     * @throws NullPointerException if {@code facts}, {@code runDeadline} or {@code runScope} is {@code null}
-     */
-    public EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline, RunScope runScope) {
-        this(facts, runDeadline, runScope, Instant.now(), Set.of());
-    }
-
-    /**
-     * Creates the context for a run of its own, whose values no other context shares, that started now, by the system
-     * clock, without tags.
-     *
-     * @param facts       The run's facts
-     * @param runDeadline When the run must stop
-     * @throws NullPointerException if {@code facts} or {@code runDeadline} is {@code null}
-     */
-    public EngineEvaluationContext(Map<String, Object> facts, Deadline runDeadline) {
-        this(facts, runDeadline, new RunScope());
+        Objects.requireNonNull(run, "run must not be null");
     }
 
     /**
@@ -89,7 +59,8 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      *                                  message
      */
     public EngineEvaluationContext(Map<String, Object> facts, Instant deadline) {
-        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), Deadline.at(deadline));
+        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")),
+                RunState.startingNow(Deadline.at(deadline), new RunScope()));
     }
 
     /**
@@ -108,19 +79,47 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      *                                  message
      */
     public EngineEvaluationContext(Map<String, Object> facts, Instant deadline, Instant startedAt, Set<String> tags) {
-        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")), Deadline.at(deadline),
-                new RunScope(), Objects.requireNonNull(startedAt, "startedAt must not be null"),
-                Objects.requireNonNull(tags, "tags must not be null"));
+        this(FactNames.requireRunNames(Objects.requireNonNull(facts, "facts must not be null")),
+                new RunState(Deadline.at(deadline), new RunScope(),
+                        Objects.requireNonNull(startedAt, "startedAt must not be null"),
+                        Objects.requireNonNull(tags, "tags must not be null")));
+    }
+
+    /**
+     * Creates the context for a run of its own, whose values no other context shares, that started now, by the system
+     * clock, without tags. Core's tests create contexts with it.
+     *
+     * @param facts       The run's facts
+     * @param runDeadline When the run must stop
+     * @return The context
+     * @throws NullPointerException if {@code facts} or {@code runDeadline} is {@code null}
+     */
+    static EngineEvaluationContext of(Map<String, Object> facts, Deadline runDeadline) {
+        return of(facts, runDeadline, new RunScope());
+    }
+
+    /**
+     * Creates the context for a run that started now, by the system clock, without tags. Core's tests create contexts
+     * with it.
+     *
+     * @param facts       The run's facts
+     * @param runDeadline When the run must stop
+     * @param runScope    The values the run's languages keep
+     * @return The context
+     * @throws NullPointerException if {@code facts}, {@code runDeadline} or {@code runScope} is {@code null}
+     */
+    static EngineEvaluationContext of(Map<String, Object> facts, Deadline runDeadline, RunScope runScope) {
+        return new EngineEvaluationContext(facts, RunState.startingNow(runDeadline, runScope));
     }
 
     @Override
     public boolean isCancelled() {
-        return Cancellation.isCancelled(runDeadline);
+        return Cancellation.isCancelled(run.deadline());
     }
 
     @Override
     public Instant deadline() {
-        return runDeadline.instant();
+        return run.deadline().instant();
     }
 
     /**
@@ -144,8 +143,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * @return The instant the run started at
      */
     public static Instant startedAt(EvaluationContext context) {
-        return context instanceof EngineEvaluationContext evaluation ? evaluation.runStartedAt
-                : ((EngineActionContext) context).runStartedAt();
+        return runOf(context).startedAt();
     }
 
     /**
@@ -157,8 +155,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * @return The run's tags, sorted and read-only, or none if the run uses every rule
      */
     public static Set<String> tags(EvaluationContext context) {
-        return context instanceof EngineEvaluationContext evaluation ? evaluation.runTags
-                : ((EngineActionContext) context).runTags();
+        return runOf(context).tags();
     }
 
     /**
@@ -317,14 +314,24 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
     }
 
     /**
+     * Returns the state of a context's run. The cast is total: the context interfaces are sealed to the engine's two
+     * records, and both are {@link BoundToRun}.
+     *
+     * @param context A context the engine created: this record, or an {@link EngineActionContext}
+     * @return The run's state
+     */
+    static RunState runOf(EvaluationContext context) {
+        return ((BoundToRun) context).run();
+    }
+
+    /**
      * Returns when a context's run must stop.
      *
      * @param context A context the engine created: this record, or an {@link EngineActionContext}
      * @return The run's deadline
      */
     static Deadline runDeadlineOf(EvaluationContext context) {
-        return context instanceof EngineEvaluationContext evaluation ? evaluation.runDeadline
-                : ((EngineActionContext) context).runDeadline();
+        return runOf(context).deadline();
     }
 
     /**
@@ -334,8 +341,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      * @return The run's values
      */
     static RunScope runScopeOf(EvaluationContext context) {
-        return context instanceof EngineEvaluationContext evaluation ? evaluation.runScope
-                : ((EngineActionContext) context).runScope();
+        return runOf(context).scope();
     }
 
     /**
@@ -362,6 +368,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, Deadline runDea
      */
     @Override
     public String toString() {
+        Deadline runDeadline = run.deadline();
         return "EvaluationContext(deadline=" + (runDeadline.isSet() ? runDeadline.instant() : "none") + ")";
     }
 }

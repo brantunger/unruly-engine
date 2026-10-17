@@ -170,9 +170,9 @@ class RunScopedTest {
     @DisplayName("an action context the engine creates for a run shares the run's values, as its evaluation does")
     void actionContextSharesTheEvaluationContextsValues() {
         RunScope scope = new RunScope();
-        EvaluationContext evaluation = new EngineEvaluationContext(Map.of(), Deadline.NONE, scope);
-        EvaluationContext action = new EngineActionContext(Map.of(), new HashMap<>(), Deadline.NONE, scope);
-        EvaluationContext otherRun = new EngineActionContext(Map.of(), new HashMap<>(), Deadline.NONE);
+        EvaluationContext evaluation = EngineEvaluationContext.of(Map.of(), Deadline.NONE, scope);
+        EvaluationContext action = EngineActionContext.of(Map.of(), new HashMap<>(), Deadline.NONE, scope);
+        EvaluationContext otherRun = EngineActionContext.of(Map.of(), new HashMap<>(), Deadline.NONE);
 
         Object value = evaluation.runScoped("key", Object::new);
 
@@ -186,16 +186,16 @@ class RunScopedTest {
     @DisplayName("an action context created in the same run as another context takes that run's deadline and values")
     void actionContextInTheSameRun() {
         Deadline deadline = Deadline.from(Duration.ofMinutes(1));
-        EngineEvaluationContext evaluation = new EngineEvaluationContext(Map.of("x", 1), deadline);
+        EngineEvaluationContext evaluation = EngineEvaluationContext.of(Map.of("x", 1), deadline);
         Map<String, Object> output = new HashMap<>();
 
         EngineActionContext action = new EngineActionContext(evaluation, output);
         EngineActionContext next = new EngineActionContext(action, output);
 
-        assertSame(deadline, action.runDeadline());
-        assertSame(evaluation.runScope(), action.runScope());
-        assertSame(evaluation.runScope(), next.runScope());
-        assertSame(deadline, next.runDeadline());
+        assertSame(deadline, action.run().deadline());
+        assertSame(evaluation.run().scope(), action.run().scope());
+        assertSame(evaluation.run().scope(), next.run().scope());
+        assertSame(deadline, next.run().deadline());
         assertEquals(Map.of("x", 1), next.facts());
         assertEquals("sameRun must not be null", assertThrows(NullPointerException.class,
                 () -> new EngineActionContext((EvaluationContext) null, output)).getMessage());
@@ -204,7 +204,7 @@ class RunScopedTest {
     @Test
     @DisplayName("a null key, supplier or value is rejected with a message that names it")
     void nullsRejected() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         Supplier<Object> none = () -> null;
 
         assertEquals("key must not be null",
@@ -219,7 +219,7 @@ class RunScopedTest {
     @Test
     @DisplayName("what the supplier throws reaches the caller, and nothing is kept, so the next call makes the value")
     void supplierFailurePropagatesAndKeepsNothing() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IllegalStateException failure = new IllegalStateException("conversion failed");
 
         assertSame(failure, assertThrows(IllegalStateException.class, () -> context.runScoped("key", () -> {
@@ -231,7 +231,7 @@ class RunScopedTest {
     @Test
     @DisplayName("a supplier can ask for another key of the same run")
     void supplierCanAskForAnotherKey() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
 
         String outer = context.runScoped("outer", () -> context.runScoped("inner", () -> "inner") + " and outer");
 
@@ -242,7 +242,7 @@ class RunScopedTest {
     @Test
     @DisplayName("an init that asks for its own key fails, rather than recursing or making the value twice")
     void initAskingForItsOwnKeyFails() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         Supplier<String> recursive = () -> context.runScoped("key", () -> "inner") + " and outer";
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
@@ -276,7 +276,7 @@ class RunScopedTest {
     @Test
     @DisplayName("a value asked for as another type fails with a ClassCastException in the caller")
     void sameKeyAnotherType() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScoped("key", () -> "text");
 
         assertThrows(ClassCastException.class, () -> {
@@ -289,8 +289,8 @@ class RunScopedTest {
     @DisplayName("a context needs the run's values")
     void contextsNeedARunScope() {
         assertEquals("runScope must not be null", assertThrows(NullPointerException.class,
-                () -> new EngineEvaluationContext(Map.of(), Deadline.NONE, null)).getMessage());
+                () -> EngineEvaluationContext.of(Map.of(), Deadline.NONE, null)).getMessage());
         assertEquals("runScope must not be null", assertThrows(NullPointerException.class,
-                () -> new EngineActionContext(Map.of(), new HashMap<>(), Deadline.NONE, null)).getMessage());
+                () -> EngineActionContext.of(Map.of(), new HashMap<>(), Deadline.NONE, null)).getMessage());
     }
 }
