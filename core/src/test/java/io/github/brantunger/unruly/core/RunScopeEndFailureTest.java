@@ -79,7 +79,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052 item 1: a value whose init ended the run is closed when building its refusal fails, and what"
             + " that threw is thrown")
     void refusedValueIsClosedWhenBuildingTheRefusalFails() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
         Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
 
@@ -95,7 +95,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052 item 1: a fatal Error from the close() of a value whose init ended the run is thrown when"
             + " building the refusal fails")
     void fatalCloseFailureWinsOverAFailureBuildingTheRefusal() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close failed");
         Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, new StackOverflowError("building the refusal"));
 
@@ -110,7 +110,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052 item 1: what building the refusal threw is thrown over a close() failure that isn't fatal,"
             + " a StackOverflowError included")
     void failureBuildingTheRefusalWinsOverACloseFailureThatIsNotFatal() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
         Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
 
@@ -125,7 +125,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1141: an InternalError around an overflow from the close() of a value whose init ended the run isn't"
             + " fatal: what building the refusal threw is thrown over it")
     void failureBuildingTheRefusalWinsOverAnInternalErrorAroundAnOverflow() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
         Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
 
@@ -135,7 +135,7 @@ class RunScopeEndFailureTest {
         })));
         assertEquals(List.of("key closed"), closed);
 
-        EvaluationContext again = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext again = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         InternalError fatal = new InternalError("close failed");
         Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, new StackOverflowError("building the refusal"));
 
@@ -296,7 +296,7 @@ class RunScopeEndFailureTest {
      * ending the run threw.
      */
     private Throwable testKitEndingWhileAnotherThreadHoldsTheTurn(Error first, Error second) throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScopedClosing("kept", () -> new Value("kept"));
         CountDownLatch inInit = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -338,7 +338,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052: when the test kit fails to keep what a value's close() threw on what it throws, it still"
             + " closes every value, and what it throws carries that failure")
     void testKitClosesEveryValueWhenKeepingAFailureFails() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException aFailure = new IOException("a failed to close");
         IOException cFailure = new IOException("c failed to close");
         context.runScopedClosing("a", () -> new Value("a", aFailure));
@@ -356,7 +356,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052: when the test kit fails to keep two close() failures, it closes every value, and what it"
             + " throws carries the first failure to keep them")
     void testKitKeepsTheFirstFailureToKeepAFailure() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException cFailure = new IOException("c failed to close");
         context.runScopedClosing("a", () -> new Value("a", new IOException("a failed to close")));
         context.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
@@ -422,7 +422,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052: when the test kit fails to keep what failed before on what it throws, once every value is"
             + " closed, it still throws the first close() failure as it is")
     void testKitThrowsTheFirstFailureWhenKeepingTheRestFails() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
         Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new StackOverflowError("keeping the rest"));
@@ -436,7 +436,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052: when keeping what failed before on what it throws fails with a fatal Error, once every value"
             + " is closed, the test kit throws that error in place of the first close() failure")
     void testKitThrowsAFatalErrorFromKeepingTheRest() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScopedClosing("a", () -> new Value("a", new IOException("a failed to close")));
         context.runScopedClosing("b", () -> new Value("b"));
         OutOfMemoryError keeping = new OutOfMemoryError("keeping the rest");
@@ -451,7 +451,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1141: when keeping what failed before on what it throws fails with an InternalError around an"
             + " overflow, the test kit still throws the first close() failure as it is")
     void testKitThrowsTheFirstFailureWhenKeepingTheRestFailsWithAnInternalErrorAroundAnOverflow() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
         Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new InternalError(new StackOverflowError()));
@@ -459,7 +459,7 @@ class RunScopeEndFailureTest {
         assertSame(failure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("a closed"), closed);
 
-        EvaluationContext again = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext again = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         again.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
         InternalError fatal = new InternalError("keeping the rest");
         Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, fatal);
@@ -472,7 +472,7 @@ class RunScopeEndFailureTest {
     @DisplayName("#1052: when keeping what failed before on what it throws fails with an Error that isn't fatal, once"
             + " every value is closed, the test kit still throws the first close() failure as it is")
     void testKitThrowsTheFirstFailureWhenKeepingTheRestFailsWithAnErrorThatIsNotFatal() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
         Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new AssertionError("keeping the rest"));

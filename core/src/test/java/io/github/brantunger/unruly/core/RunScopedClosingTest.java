@@ -355,7 +355,7 @@ class RunScopedClosingTest {
     @Test
     @DisplayName("a key is either closing or not: asking for it the other way fails, and keeps the value")
     void keyKindClash() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         Object plain = context.runScoped("plain", Object::new);
         Value closing = context.runScopedClosing("closing", () -> new Value("closing"));
 
@@ -395,7 +395,7 @@ class RunScopedClosingTest {
     @Test
     @DisplayName("an init that asks for its own closing key fails, rather than recursing or making the value twice")
     void closingInitAskingForItsOwnKeyFails() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> context.runScopedClosing("key", () -> context.runScopedClosing("key", () -> new Value("inner"))));
@@ -1118,7 +1118,7 @@ class RunScopedClosingTest {
     @DisplayName("#1020: a closing init that ends the run keeps nothing: its value is closed with the run's, and"
             + " refused as one asked for after the run is")
     void initThatEndsTheRunHasItsValueClosedAndRefused() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScopedClosing("early", () -> new Value("early"));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
@@ -1142,7 +1142,7 @@ class RunScopedClosingTest {
     @Test
     @DisplayName("#1020: when a nested closing init ends the run, each level's value is closed and refused")
     void nestedInitsThatEndTheRunAreEachClosedAndRefused() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         AtomicReference<IllegalStateException> inner = new AtomicReference<>();
 
         IllegalStateException outer = assertThrows(IllegalStateException.class,
@@ -1164,7 +1164,7 @@ class RunScopedClosingTest {
         assertEquals(List.of(), EngineEvaluationContext.runScopeOf(context).end());
 
         // An init that lets the refusal through makes no value of its own.
-        EvaluationContext other = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext other = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IllegalStateException through = assertThrows(IllegalStateException.class,
                 () -> other.runScopedClosing("outer", () -> other.runScopedClosing("inner", () -> {
                     endRun(other);
@@ -1180,7 +1180,7 @@ class RunScopedClosingTest {
     @DisplayName("#1020: what the close() of a value refused for its init ending the run throws is suppressed on the"
             + " refusal, and the scope's turn is let go")
     void closeFailureOfAValueRefusedForEndingTheRunIsSuppressed() throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("close failed");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class,
@@ -1199,7 +1199,7 @@ class RunScopedClosingTest {
     @DisplayName("#1020: a fatal error from the close() of a value refused for its init ending the run is thrown"
             + " itself, carrying the refusal, and the scope's turn is let go")
     void fatalCloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close failed");
 
         OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class,
@@ -1221,7 +1221,7 @@ class RunScopedClosingTest {
     @DisplayName("#1048: a fatal error other than OutOfMemoryError from the close() of a value refused for its init"
             + " ending the run is thrown itself too, carrying the refusal")
     void otherFatalCloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         InternalError fatal = new InternalError("close hit an internal error");
 
         InternalError thrown = assertThrows(InternalError.class,
@@ -1242,7 +1242,7 @@ class RunScopedClosingTest {
     @DisplayName("#1020: a fatal error carried by what the close() of a value refused for its init ending the run"
             + " throws is thrown itself, carrying the refusal, and the scope's turn is let go")
     void fatalErrorCarriedByACloseFailureOfAValueRefusedForEndingTheRunIsThrown() throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close ran out");
         IOException failure = new IOException("close failed", fatal);
 
@@ -1266,7 +1266,7 @@ class RunScopedClosingTest {
     @DisplayName("#1020: once a closing init has ended the run, a closing key kept before it is still refused to"
             + " runScoped")
     void closingKeysKeptWhenAnInitEndsTheRun() {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScopedClosing("early", () -> new Value("early"));
         IllegalStateException refused = endTheRunFromAnInit(context);
 
@@ -1281,7 +1281,7 @@ class RunScopedClosingTest {
     @Test
     @DisplayName("#1020: once a closing init has ended the run, ending it again closes nothing")
     void endingAgainAfterAnInitEndedTheRunDoesNothing() throws Exception {
-        EvaluationContext context = new EngineEvaluationContext(Map.of(), Deadline.NONE);
+        EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         context.runScopedClosing("early", () -> new Value("early"));
         IllegalStateException refused = endTheRunFromAnInit(context);
         List<String> closedByTheInit = List.copyOf(events);

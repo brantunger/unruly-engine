@@ -353,7 +353,7 @@ final class RunClasses {
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
                 OutputConverter.class, LanguageOutputConverter.class, AbstractRulesEngine.RunBody.class,
                 RuleSet.Copy.class,
-                RunFacts.class, RunResult.class, RuleSelection.class, ReadOnlyFacts.class,
+                RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
                 OneStepStack.Node.class, OneStepStack.Walk.class);

@@ -284,14 +284,14 @@ class DeadlineTest {
     @DisplayName("a context has time left exactly until it's cancelled")
     void timeLeftAndCancelledAgree() {
         for (int i = 0; i < 100; i++) {
-            EvaluationContext cancelled = new EngineEvaluationContext(Map.of(),
+            EvaluationContext cancelled = EngineEvaluationContext.of(Map.of(),
                     Deadline.from(Duration.ofNanos(100_000)));
             while (!cancelled.isCancelled()) {
                 Thread.onSpinWait();
             }
             assertEquals(Duration.ZERO, cancelled.timeLeft(), "cancelled with time left");
 
-            EvaluationContext runOut = new EngineEvaluationContext(Map.of(), Deadline.from(Duration.ofNanos(100_000)));
+            EvaluationContext runOut = EngineEvaluationContext.of(Map.of(), Deadline.from(Duration.ofNanos(100_000)));
             while (runOut.timeLeft().isPositive()) {
                 Thread.onSpinWait();
             }
