@@ -13,7 +13,6 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -266,18 +265,26 @@ class InlineImportLimitsTest {
                 new Imports.ImportRejected("p", "'"));
         assertEquals(1, unspaced.issues().get(0).line(), "line");
         assertEquals(7, unspaced.issues().get(0).column(), "column");
-        // An import that ends the text has no name after it.
-        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importRejected("x = 1; // import",
-                new Imports.ImportRejected("p", "'")));
+        // An import that ends the text has no name after it, so the error has no position.
+        InvalidExpressionException unnamed = MvelCompileErrors.importRejected("x = 1; // import",
+                new Imports.ImportRejected("p", "'"));
+        assertEquals(0, unnamed.issues().get(0).line(), "line");
+        assertEquals(0, unnamed.issues().get(0).column(), "column");
     }
 
-    // MVEL never passes a name that isn't in the text; were it to, the scan fails as a stream's orElseThrow() did.
+    // MVEL never passes a name that isn't in the text; were it to, the error is reported with no line or column, as
+    // the scan would otherwise read before the text's start.
     @Test
-    @DisplayName("with no import of the name in the text, the scan throws NoSuchElementException")
-    void noImportOfTheNameThrows() {
+    @DisplayName("with no import of the name in the text, the error is reported without a position")
+    void noImportOfTheNameReportedWithoutPosition() {
         Imports.ImportRejected rejected = new Imports.ImportRejected("p", "'");
 
-        assertThrows(NoSuchElementException.class, () -> MvelCompileErrors.importRejected("x = 1", rejected));
+        InvalidExpressionException e = MvelCompileErrors.importRejected("x = 1", rejected);
+
+        assertEquals("failed to compile: Can't import 'p'", e.getMessage());
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 0,
+                0, "Can't import 'p'")), e.issues());
+        assertSame(rejected, e.getCause());
     }
 
     @Test

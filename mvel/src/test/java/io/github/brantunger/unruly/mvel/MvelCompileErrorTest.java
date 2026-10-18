@@ -19,6 +19,7 @@ import org.mvel2.ParserContext;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -686,6 +687,19 @@ class MvelCompileErrorTest {
     void runtimeExceptionSubclassFromMvel() {
         assertFalse(MvelCompileErrors.rejectedPlainly(thrownFrom(new IllegalStateException("bad state"),
                 "org.mvel2.util.ParseTools")));
+    }
+
+    // #1243: the compiler throws what translate returns, so the engine reports the overflow from MVEL's own exception,
+    // with its stack trace, not from a wrapper the translation made.
+    @Test
+    @DisplayName("a compile error an overflow caused is returned as it is, for the engine to report the overflow")
+    void overflowReturnedAsItIs() {
+        CompileException mvel = withMessage("[Error: null]");
+        mvel.initCause(new StackOverflowError());
+        MvelAnalysis analysis = new MvelAnalysis("1 + 1",
+                new Imports(Set.of(), Set.of(), MvelCompileErrorTest.class.getClassLoader()));
+
+        assertSame(mvel, MvelCompileErrors.translate(mvel, analysis));
     }
 
     private static final String PACKAGE_IMPORT_TOO_FAR = "the '.' before the '*' of an import of a whole package "

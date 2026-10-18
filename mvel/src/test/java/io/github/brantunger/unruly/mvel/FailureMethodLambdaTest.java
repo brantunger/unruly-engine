@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,28 +19,36 @@ import static org.junit.jupiter.api.Assertions.*;
  * as the overflow, without MVEL's description, line or column. {@link ExceptionReadsLambdaTest} checks
  * {@link MvelCompileErrors} whole. {@link MvelAnalysis} links a lambda when it's initialized, which preparing MVEL
  * does, so this reads its class file, as core's {@code ClassFiles} does, and checks only the methods a compile error
- * goes through: that none has an {@code invokedynamic} instruction. The test fails too if a method named here isn't
+ * goes through: that none has an {@code invokedynamic} instruction. It checks {@link MvelCompileErrors#translate}, the
+ * one method every compile error goes through, the same way, by name. The test fails too if a method named here isn't
  * there.
  */
-@DisplayName("MVEL's analysis links no lambda when compiling fails (#1097)")
+@DisplayName("MVEL's analysis and its compile-error translator link no lambda when compiling fails (#1097)")
 class FailureMethodLambdaTest {
 
-    private static final List<String> FAILURE_METHODS = List.of("compile", "typeNamed", "throwIfLooped");
+    private static final Map<Class<?>, List<String>> FAILURE_METHODS = Map.of(
+            MvelAnalysis.class, List.of("compile", "typeNamed", "throwIfLooped"),
+            MvelCompileErrors.class, List.of("translate"));
 
     @Test
-    @DisplayName("MvelAnalysis' methods that read a compile error have no invokedynamic")
+    @DisplayName("the methods that read a compile error have no invokedynamic")
     void noLambdaLinked() throws IOException, URISyntaxException {
-        ClassFiles.Methods read = ClassFiles.invokeDynamicMethods(ClassFiles.classFile(MvelAnalysis.class));
         List<String> missing = new ArrayList<>();
         List<String> linking = new ArrayList<>();
-        for (String method : FAILURE_METHODS) {
-            if (!read.names().contains(method)) {
-                missing.add(method);
+        for (Map.Entry<Class<?>, List<String>> methods : FAILURE_METHODS.entrySet()) {
+            ClassFiles.Methods read = ClassFiles.invokeDynamicMethods(ClassFiles.classFile(methods.getKey()));
+            for (String method : methods.getValue()) {
+                String named = methods.getKey().getSimpleName() + "." + method;
+                if (!read.names().contains(method)) {
+                    missing.add(named);
+                }
+                for (String descriptor : read.linking(method)) {
+                    linking.add(methods.getKey().getSimpleName() + "." + descriptor);
+                }
             }
-            linking.addAll(read.linking(method));
         }
 
-        assertEquals(List.of(), missing, "methods not in MvelAnalysis");
-        assertEquals(List.of(), linking, "methods of MvelAnalysis with an invokedynamic");
+        assertEquals(List.of(), missing, "methods not in their class");
+        assertEquals(List.of(), linking, "methods with an invokedynamic");
     }
 }

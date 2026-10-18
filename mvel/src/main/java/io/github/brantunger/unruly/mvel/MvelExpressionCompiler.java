@@ -7,7 +7,6 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 import org.jspecify.annotations.Nullable;
-import org.mvel2.CompileException;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
@@ -70,43 +69,13 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
         MvelExpression expression;
         try {
             expression = MvelExpression.compile(analysis);
-        } catch (CompileException e) {
-            if (MvelCompileErrors.looped(e)) {
-                throw MvelCompileErrors.analysisLoop(e);
-            }
-            // The engine reports an overflow by its cause: an expression too long for MVEL's recursive parser, or a
-            // compile called too deep in the stack or on a thread with a small one. A class an overflow left unusable
-            // isn't one, and is reported as MVEL's compile error, as on JDK 21, whose NoClassDefFoundError has no
-            // cause (#1116).
-            if (ExceptionReads.isOverflow(e)) {
-                throw e;
-            }
-            throw MvelCompileErrors.compileError(e, analysis.rejectedType());
-        } catch (Imports.ImportRejected e) {
-            throw MvelCompileErrors.importRejected(source.text(), e);
-        } catch (IndexOutOfBoundsException e) {
-            // MVEL's parser reads out of bounds for some malformed expressions, such as a . or ? it can't read past or
-            // blank parentheses, instead of reporting them. One from other code, such as the application's class
-            // loader, is reported as is.
-            if (!MvelCompileErrors.thrownInMvel(e)) {
-                throw e;
-            }
-            throw MvelCompileErrors.malformed(e);
         } catch (RuntimeException e) {
-            // An imported class called like a method, such as ArrayList(y), fails MVEL's cast to a static method.
-            if (MvelCompileErrors.calledLikeMethod(e)) {
-                throw MvelCompileErrors.classCalledLikeMethod(e);
-            }
-            // MVEL throws a plain RuntimeException, with no cause and no position, for some expressions it rejects,
-            // such as int in = 1 or an ambiguous class name. Any other is reported as is.
-            if (!MvelCompileErrors.rejectedPlainly(e)) {
-                throw e;
-            }
-            throw MvelCompileErrors.plainRejection(e);
+            // Described as a compile error when it is one the engine describes, or else thrown as it is.
+            throw MvelCompileErrors.translate(e, analysis);
         }
         compiled.add(expression);
         // Outside the try, which covers only MVEL's compile, so nothing the scan throws, such as an SLF4J provider
-        // failing in its logging, reaches the arms that classify MVEL's failures.
+        // failing in its logging, reaches the translation of MVEL's failures.
         Set<String> imported = analysis.inlineImportedNames();
         if (namesKnown || !imported.isEmpty()) {
             namesAdded(source, imported);
