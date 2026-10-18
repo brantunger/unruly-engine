@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.0](https://github.com/brantunger/unruly-engine/compare/v2.32.1...v2.33.0) (2026-10-18)
+
+
+### Features
+
+* a Throwables and an ImportLimits class in the language API, so a language reads what it catches and bounds an inline import as the engine does, and an unexported internal package for what api and core share ([#1257](https://github.com/brantunger/unruly-engine/issues/1257)) ([29abc54](https://github.com/brantunger/unruly-engine/commit/29abc54f264b2c1f91aee186fec62490dbd46014))
+
 ## [2.32.1](https://github.com/brantunger/unruly-engine/compare/v2.32.0...v2.32.1) (2026-10-17)
 
 
