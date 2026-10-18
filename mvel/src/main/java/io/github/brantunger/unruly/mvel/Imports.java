@@ -12,7 +12,6 @@ import java.net.URLClassLoader;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,22 +19,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * The imports a rule list is compiled with: whole packages ({@code java.util}) and single classes
  * ({@code java.time.LocalDate}), the class loader their classes are looked up with, and the names every compilation of
  * the rule list has found not to be classes, and the first parts of the names of the classes its compilations found,
- * and the names of those with no package.
- *
- * @param packages       Package names, imported with all their classes
- * @param classes        Classes imported one by one
- * @param classLoader    The class loader that finds the classes in {@code packages}, as an
- *                       {@link ExactNameClassLoader}
- * @param notClasses     Names found not to be a class in any of {@code packages}, shared by the configurations
- *                       created with {@link #newConfiguration()}
- * @param inputs         The type of each name an expression may refer to, for compiling with strong typing, or an
- *                       empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
- * @param classNameRoots The first part of the name of each class {@code classLoader} found while the rule list's
- *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, and the name of
- *                       each such class with no package, which {@link FactNames} rejects as a fact's name
+ * and the names of those with no package. A plain class, not a record: nothing compares or prints one, and a
+ * record's own methods would link through {@code ObjectMethods}, which can fail for good when first called deep in
+ * the stack (#996).
  */
-record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
-               Map<String, Class<?>> inputs, ClassNameRoots classNameRoots) {
+// Each accessor is named after the field it returns, as a record's are.
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+final class Imports {
+    private final Set<String> packages;
+    private final Set<Class<?>> classes;
+    private final ClassLoader classLoader;
+    private final Set<String> notClasses;
+    private final Map<String, Class<?>> inputs;
+    private final ClassNameRoots classNameRoots;
 
     // The most characters and dot-separated parts an import in an expression's own text may have, as the engine's
     // core.ImportResolver allows an engine's imports, which the mvel package may not use. ExactNameClassLoader bounds
@@ -78,6 +74,62 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
                     ClassNameRoots classNameRoots) {
         this(packages, classes, new ExactNameClassLoader(classLoader, classNameRoots), ConcurrentHashMap.newKeySet(),
                 Map.copyOf(inputs), classNameRoots);
+    }
+
+    /**
+     * Creates the imports from each part as it is: the other constructors wrap the class loader first, and a test
+     * that gives the wrapped loader and the names found not to be classes itself calls this one.
+     *
+     * @param packages       Package names, imported with all their classes
+     * @param classes        Classes imported one by one
+     * @param classLoader    The class loader that finds the classes in {@code packages}, as an
+     *                       {@link ExactNameClassLoader}
+     * @param notClasses     Names found not to be a class in any of {@code packages}, shared by the configurations
+     *                       created with {@link #newConfiguration()}
+     * @param inputs         The type of each name an expression may refer to, for compiling with strong typing, or an
+     *                       empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
+     * @param classNameRoots The first part of the name of each class {@code classLoader} found while the rule list's
+     *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, and the name of
+     *                       each such class with no package, which {@link FactNames} rejects as a fact's name
+     */
+    Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
+            Map<String, Class<?>> inputs, ClassNameRoots classNameRoots) {
+        this.packages = packages;
+        this.classes = classes;
+        this.classLoader = classLoader;
+        this.notClasses = notClasses;
+        this.inputs = inputs;
+        this.classNameRoots = classNameRoots;
+    }
+
+    /** Package names, imported with all their classes. */
+    Set<String> packages() {
+        return packages;
+    }
+
+    /** Classes imported one by one. */
+    Set<Class<?>> classes() {
+        return classes;
+    }
+
+    /** The class loader that finds the classes in {@link #packages()}, as an {@link ExactNameClassLoader}. */
+    ClassLoader classLoader() {
+        return classLoader;
+    }
+
+    /** Names found not to be a class in any of {@link #packages()}, shared by the configurations created. */
+    Set<String> notClasses() {
+        return notClasses;
+    }
+
+    /** The type of each name an expression may refer to, or an empty map to compile as MVEL does by default. */
+    Map<String, Class<?>> inputs() {
+        return inputs;
+    }
+
+    /** The first part of the name of each class found while the rule list's expressions compiled, and the rest. */
+    ClassNameRoots classNameRoots() {
+        return classNameRoots;
     }
 
     /**
@@ -880,32 +932,5 @@ record Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoa
         String rejectedName() {
             return name;
         }
-    }
-
-    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
-    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
-    // ObjectMethods does.
-    @Override
-    public final boolean equals(@Nullable Object other) {
-        return this == other || other instanceof Imports that && Objects.equals(classNameRoots, that.classNameRoots)
-                && Objects.equals(inputs, that.inputs)
-                && Objects.equals(notClasses, that.notClasses) && Objects.equals(classLoader, that.classLoader)
-                && Objects.equals(classes, that.classes) && Objects.equals(packages, that.packages);
-    }
-
-    @Override
-    public final int hashCode() {
-        int hash = Objects.hashCode(packages);
-        hash = hash * 31 + Objects.hashCode(classes);
-        hash = hash * 31 + Objects.hashCode(classLoader);
-        hash = hash * 31 + Objects.hashCode(notClasses);
-        hash = hash * 31 + Objects.hashCode(inputs);
-        return hash * 31 + Objects.hashCode(classNameRoots);
-    }
-
-    @Override
-    public final String toString() {
-        return "Imports[packages=" + packages + ", classes=" + classes + ", classLoader=" + classLoader
-                + ", notClasses=" + notClasses + ", inputs=" + inputs + ", classNameRoots=" + classNameRoots + "]";
     }
 }

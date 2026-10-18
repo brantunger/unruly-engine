@@ -237,7 +237,7 @@ final class RuleSetLifecycle {
         }
         Failures.throwIfPresent(Failures.fatalError(failed));
         if (failed != null) {
-            Failures.logWarn(log, RETIRE_AGAIN, Failures.describe(failed));
+            Failures.logWarn(log, RETIRE_AGAIN, NestedFailures.describe(failed));
         }
     }
 
@@ -265,7 +265,7 @@ final class RuleSetLifecycle {
             RuleCompilationException failure = LoggedFailures.builtByEngine(
                     new RuleCompilationException(e.getMessage(), e.getCause()));
             // Logged as the language's failure unless it held a nested run's or load's, which that one logged.
-            if (Failures.nestedRunFailure(e.getCause()) == null) {
+            if (NestedFailures.nestedRunFailure(e.getCause()) == null) {
                 LoggedFailures.loggedByLoad(failure);
             }
             throw failure;
@@ -311,7 +311,7 @@ final class RuleSetLifecycle {
         // threw, which leaves it retired, was logged as it was caught. An overflow in the log call loses only the line,
         // as after a swap (#1217).
         if (Failures.carries(instead != null ? instead : failure, failed) && !loaded.retiredForGood()) {
-            Failures.logWarn(log, RETIRE_AGAIN, Failures.describe(failed));
+            Failures.logWarn(log, RETIRE_AGAIN, NestedFailures.describe(failed));
         }
         Failures.rethrowUnchecked(instead);
     }

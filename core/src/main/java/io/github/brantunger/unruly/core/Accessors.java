@@ -167,8 +167,8 @@ public final class Accessors {
         Failures.keepInterruptStatus(cause);
         Error fatal = Failures.fatalError(cause);
         boolean nested = fatal != null
-                ? loggedBelow(fatal) && Failures.newsAbove(cause, fatal) == null
-                : Failures.nestedRunFailure(cause) != null;
+                ? loggedBelow(fatal) && NestedFailures.newsAbove(cause, fatal) == null
+                : NestedFailures.nestedRunFailure(cause) != null;
         if (nested) {
             return LoggedFailures.builtByEngineIfInProgress(new IllegalStateException(what, cause));
         }

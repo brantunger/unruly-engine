@@ -473,7 +473,7 @@ class UnreadableMessageTest {
     void describedAsTheRootCause() {
         assertEquals("java.lang.RuntimeException (caused by " + Nasty.class.getName()
                         + ": (message unavailable: java.lang.NullPointerException))",
-                Failures.describe(new RuntimeException(null, new Nasty())));
+                NestedFailures.describe(new RuntimeException(null, new Nasty())));
     }
 
     @Test
@@ -483,7 +483,7 @@ class UnreadableMessageTest {
         Nasty nasty = new Nasty(new IllegalStateException("boom"));
         String described = nasty() + " (caused by java.lang.IllegalStateException: boom)";
 
-        assertEquals(described, Failures.describe(nasty));
+        assertEquals(described, NestedFailures.describe(nasty));
         assertEquals(described, Failures.describeWithClass(nasty));
     }
 
@@ -492,7 +492,7 @@ class UnreadableMessageTest {
     void describedInTheMiddleOfAChain() {
         RuntimeException top = new RuntimeException("top", new Nasty(new IllegalStateException("boom")));
 
-        assertEquals("top (caused by java.lang.IllegalStateException: boom)", Failures.describe(top));
+        assertEquals("top (caused by java.lang.IllegalStateException: boom)", NestedFailures.describe(top));
     }
 
     /** An exception whose {@code getMessage()} and {@code toString()} throw {@code failure}, such as a fatal error. */
@@ -774,7 +774,7 @@ class UnreadableMessageTest {
     void describedAboveAnotherUnreadableMessage() {
         assertEquals(Nasty.class.getName() + UNAVAILABLE + " (caused by " + OtherNasty.class.getName()
                 + ": (message unavailable: java.lang.NullPointerException))",
-                Failures.describe(new Nasty(new OtherNasty())));
+                NestedFailures.describe(new Nasty(new OtherNasty())));
     }
 
     @Test
@@ -782,7 +782,7 @@ class UnreadableMessageTest {
     void describedUnderAWrapperWithItsMessage() {
         assertEquals(Delegating.class.getName() + UNAVAILABLE + " (caused by " + Nasty.class.getName()
                 + ": (message unavailable: java.lang.NullPointerException))",
-                Failures.describe(new Delegating(new Nasty())));
+                NestedFailures.describe(new Delegating(new Nasty())));
     }
 
     @Test

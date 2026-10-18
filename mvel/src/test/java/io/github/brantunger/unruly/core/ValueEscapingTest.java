@@ -276,7 +276,7 @@ public class ValueEscapingTest {
     void shortenedBeforeEscaping() {
         String text = "\n".repeat(Failures.MAX_DESCRIPTION_LENGTH + 5);
 
-        String described = Failures.describe(new IllegalStateException(text));
+        String described = NestedFailures.describe(new IllegalStateException(text));
 
         assertEquals("\\n".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (5 more characters)", described);
     }

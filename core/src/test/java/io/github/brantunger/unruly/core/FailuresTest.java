@@ -173,7 +173,7 @@ class FailuresTest {
                 new RuntimeException((String) null, root));
 
         assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (510 more characters) (caused by "
-                + "java.lang.IllegalStateException: disk full)", Failures.describe(first));
+                + "java.lang.IllegalStateException: disk full)", NestedFailures.describe(first));
     }
 
     @Test
@@ -187,7 +187,7 @@ class FailuresTest {
 
         assertEquals("failed: " + "r".repeat(992) + "... (208 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "r".repeat(1000) + "... (200 more characters))",
-                Failures.describe(first));
+                NestedFailures.describe(first));
     }
 
     @Test
@@ -197,7 +197,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("no room: " + "x".repeat(1500),
                 new RuntimeException((String) null, root));
 
-        assertEquals("no room: " + "x".repeat(991) + "... (509 more characters)", Failures.describe(first));
+        assertEquals("no room: " + "x".repeat(991) + "... (509 more characters)", NestedFailures.describe(first));
     }
 
     @Test
@@ -207,7 +207,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("x".repeat(1500), new RuntimeException((String) null, root));
 
         assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (caused by "
-                + "java.lang.IllegalStateException: more characters)", Failures.describe(first));
+                + "java.lang.IllegalStateException: more characters)", NestedFailures.describe(first));
     }
 
     @Test
@@ -218,7 +218,7 @@ class FailuresTest {
                 new RuntimeException((String) null, root));
 
         assertEquals("a".repeat(998) + "x... (6 more characters) (caused by java.lang.IllegalStateException: "
-                + "x\\ud83d)", Failures.describe(first));
+                + "x\\ud83d)", NestedFailures.describe(first));
     }
 
     @Test
@@ -265,7 +265,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("a".repeat(1200), new RuntimeException((String) null, root));
 
         assertEquals("a".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (200 more characters) (caused by "
-                + "java.lang.IllegalStateException: " + "a".repeat(600) + "b)", Failures.describe(first));
+                + "java.lang.IllegalStateException: " + "a".repeat(600) + "b)", NestedFailures.describe(first));
     }
 
     @Test
@@ -280,7 +280,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("a".repeat(2 * length),
                 new RuntimeException((String) null, root));
 
-        String description = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Failures.describe(first));
+        String description = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(first));
 
         assertEquals("a".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (799000 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "a".repeat(1000) + "... (399001 more characters))",

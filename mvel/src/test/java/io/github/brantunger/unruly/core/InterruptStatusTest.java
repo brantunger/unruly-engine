@@ -404,7 +404,7 @@ class InterruptStatusTest {
                 "suppressed on a suppressed exception");
         assertFalse(statusAfter(suppressing(new RuntimeException("top"), new SocketTimeoutException("Read timed out"))),
                 "an InterruptedIOException");
-        ReportedFailure stop = new ReportedFailure("stopped", null);
+        ReportedFailure stop = NestedFailures.report("stopped", null);
         stop.addSuppressedByEngine(new InterruptedException("kept by the engine"));
         assertFalse(statusAfter(stop), "one the engine added with addSuppressedByEngine");
     }

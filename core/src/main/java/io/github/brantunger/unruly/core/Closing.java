@@ -13,7 +13,7 @@ import java.util.Map;
  * run with {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScopedClosing}. Whatever a
  * {@code close()} throws, any {@link Throwable}, is logged at WARN, and the rest are still closed; unless it's the
  * failure of a {@code run()} or a {@code load()} the {@code close()} started, or a fatal {@link Error} that run logged,
- * which that run or load logged already (see {@link LoggedFailures#logged}). A fatal error (see
+ * which that run or load logged already (see {@link NestedFailures#logged}). A fatal error (see
  * {@link Failures#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once it
  * has closed the rest of what it closes: the first, if several were thrown, carrying the others as suppressed
  * exceptions (see {@link Failures#first}). Nothing else a {@code close()} throws reaches the caller.
@@ -168,13 +168,13 @@ final class Closing {
      */
     private static Error failedToClose(Throwable e, String language, String what) {
         Failures.keepInterruptStatus(e);
-        if (!LoggedFailures.logged(e)) {
+        if (!NestedFailures.logged(e)) {
             if (language == null) {
                 Failures.logWarn(log, "A value a language kept for the run failed to close: {}",
-                        Failures.describe(e));
+                        NestedFailures.describe(e));
             } else {
                 Failures.logWarn(log, "The '{}' expression language failed to close {}: {}",
-                        Failures.quote(language), what, Failures.describe(e));
+                        Failures.quote(language), what, NestedFailures.describe(e));
             }
         }
         return Failures.fatalError(e);

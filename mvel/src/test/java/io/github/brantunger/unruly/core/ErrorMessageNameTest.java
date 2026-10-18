@@ -42,7 +42,7 @@ public class ErrorMessageNameTest {
     @Test
     @DisplayName("describe falls back to the class name when there is no message")
     void describeFallsBackToClassName() {
-        assertEquals("java.lang.IllegalStateException", Failures.describe(new IllegalStateException()));
-        assertEquals("boom", Failures.describe(new IllegalStateException("boom")));
+        assertEquals("java.lang.IllegalStateException", NestedFailures.describe(new IllegalStateException()));
+        assertEquals("boom", NestedFailures.describe(new IllegalStateException("boom")));
     }
 }

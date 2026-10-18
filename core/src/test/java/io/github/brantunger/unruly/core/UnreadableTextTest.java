@@ -210,13 +210,13 @@ class UnreadableTextTest {
         RuntimeException top = new RuntimeException("top",
                 new ThrowingMessage(new OutOfMemoryError("reading"), new IllegalStateException("boom")));
 
-        assertEquals("top (caused by java.lang.IllegalStateException: boom)", Failures.describe(top));
+        assertEquals("top (caused by java.lang.IllegalStateException: boom)", NestedFailures.describe(top));
     }
 
     @Test
     @DisplayName("guard: describe ends for a getCause() that throws a new exception whose own getCause() throws too")
     void describeEndsForCausesThatThrowForEver() {
-        assertEquals(EndlessCause.class.getName(), Failures.describe(new EndlessCause()));
+        assertEquals(EndlessCause.class.getName(), NestedFailures.describe(new EndlessCause()));
     }
 
     @Test
@@ -228,7 +228,7 @@ class UnreadableTextTest {
         next.thrown = top;
 
         assertEquals(LoopingCause.class.getName() + " (caused by " + LoopingCause.class.getName() + ")",
-                Failures.describe(top));
+                NestedFailures.describe(top));
     }
 
     @Test
@@ -240,7 +240,7 @@ class UnreadableTextTest {
         Throwable root = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Failures.rootCause(top));
 
         assertEquals(Failures.MAX_CAUSE_CHAIN_LENGTH - 1, assertInstanceOf(EndlessCauses.class, root).depth);
-        assertEquals("level 0", assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Failures.describe(top)));
+        assertEquals("level 0", assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(top)));
     }
 
     @Test

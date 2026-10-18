@@ -279,7 +279,7 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(suppressed);
 
         assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, Failures.errorInChain(top));
+        assertSame(oom, NestedFailures.errorInChain(top));
     }
 
     @Test
@@ -294,7 +294,7 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(suppressed);
 
         assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, Failures.errorInChain(top));
+        assertSame(oom, NestedFailures.errorInChain(top));
     }
 
     @Test
@@ -313,7 +313,7 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(suppressed);
 
         assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, Failures.errorInChain(top));
+        assertSame(oom, NestedFailures.errorInChain(top));
     }
 
     /** Returns an exception carrying as many suppressed exceptions as the engine reads. */
@@ -335,7 +335,7 @@ class SuppressedFatalErrorTest {
         cause.addSuppressed(carryingAsManyAsRead("x", null));
 
         assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, Failures.errorInChain(top));
+        assertSame(oom, NestedFailures.errorInChain(top));
     }
 
     @Test
@@ -347,7 +347,7 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(oom);
 
         assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, Failures.errorInChain(top));
+        assertSame(oom, NestedFailures.errorInChain(top));
     }
 
     @Test
@@ -368,7 +368,7 @@ class SuppressedFatalErrorTest {
             + " on each other")
     void reachedThroughWhatTheEngineKept() {
         OutOfMemoryError winner = new OutOfMemoryError("winner");
-        ReportedFailure loser = new ReportedFailure("loser", null);
+        ReportedFailure loser = NestedFailures.report("loser", null);
         loser.addSuppressedByEngine(winner);
 
         Failures.keepAlso(winner, loser);
@@ -415,7 +415,7 @@ class SuppressedFatalErrorTest {
             assertTrue(LoggedFailures.unloggedFatal(oom));
 
             assertEquals("body failed (with suppressed java.lang.OutOfMemoryError: OOM in close(), already logged)",
-                    Failures.describe(bodyFailed(oom)));
+                    NestedFailures.describe(bodyFailed(oom)));
         } finally {
             LoggedFailures.leave();
         }
@@ -450,7 +450,7 @@ class SuppressedFatalErrorTest {
             assertTrue(LoggedFailures.unloggedFatal(oom));
 
             assertEquals("outer (caused by java.lang.OutOfMemoryError: logged, already logged)",
-                    Failures.describe(new CauseEveryOtherRead(oom)));
+                    NestedFailures.describe(new CauseEveryOtherRead(oom)));
         } finally {
             LoggedFailures.leave();
         }
@@ -477,7 +477,7 @@ class SuppressedFatalErrorTest {
         NewCauseEachRead thrown = new NewCauseEachRead();
         thrown.addSuppressed(new IllegalStateException("not it"));
 
-        assertNull(Failures.newsAbove(thrown, new OutOfMemoryError("gone")));
+        assertNull(NestedFailures.newsAbove(thrown, new OutOfMemoryError("gone")));
     }
 
     @Test

@@ -14,7 +14,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
@@ -223,14 +222,39 @@ final class RuleSet {
     }
 
     /**
-     * A copy of the rules lent to one run.
-     *
-     * @param sessions The sessions of the languages the rules use, by language name
-     * @param kind     What happens to it when it's given back
-     * @param loan     What the run holds with it, given back with it, once, and the count of runs in progress on the
-     *                 thread that borrowed it, which giving it back lowers without a call that could fail first
+     * A copy of the rules lent to one run. A plain class, not a record: nothing compares or prints one, and a
+     * record's own methods would link through {@code ObjectMethods}, which can fail for good when first called deep
+     * in the stack (#996).
      */
-    record Copy(Map<String, Session> sessions, Kind kind, Loan loan) {
+    // Each accessor is named after the field it returns, as a record's are.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    static final class Copy {
+        private final Map<String, Session> sessions;
+        private final Kind kind;
+        private final Loan loan;
+
+        /**
+         * @param sessions The sessions of the languages the rules use, by language name
+         * @param kind     What happens to it when it's given back
+         * @param loan     What the run holds with it, given back with it, once, and the count of runs in progress on
+         *                 the thread that borrowed it, which giving it back lowers without a call that could fail
+         *                 first
+         */
+        Copy(Map<String, Session> sessions, Kind kind, Loan loan) {
+            this.sessions = sessions;
+            this.kind = kind;
+            this.loan = loan;
+        }
+
+        /** The sessions of the languages the rules use, by language name. */
+        Map<String, Session> sessions() {
+            return sessions;
+        }
+
+        /** What happens to the copy when it's given back. */
+        Kind kind() {
+            return kind;
+        }
 
         /**
          * Returns what the run still holds with the copy: nothing once it has given it back.
@@ -248,27 +272,6 @@ final class RuleSet {
          */
         boolean kept() {
             return kind == Kind.KEPT;
-        }
-
-        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
-        // which can fail for good when first called deep in the stack (#996). equals compares the components last
-        // first, as ObjectMethods does.
-        @Override
-        public final boolean equals(Object other) {
-            return this == other || other instanceof Copy that && Objects.equals(loan, that.loan)
-                    && Objects.equals(kind, that.kind) && Objects.equals(sessions, that.sessions);
-        }
-
-        @Override
-        public final int hashCode() {
-            int hash = Objects.hashCode(sessions);
-            hash = hash * 31 + Objects.hashCode(kind);
-            return hash * 31 + Objects.hashCode(loan);
-        }
-
-        @Override
-        public final String toString() {
-            return "Copy[sessions=" + sessions + ", kind=" + kind + ", loan=" + loan + "]";
         }
     }
 
@@ -653,9 +656,9 @@ final class RuleSet {
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
-                    + Failures.describeCallOut(e, true);
+                    + NestedFailures.describeCallOut(e, true);
             AbstractRulesEngine.reportCalledCodeFailure(msg, e);
-            throw new ReportedFailure(msg, e);
+            throw NestedFailures.report(msg, e);
         }
     }
 
@@ -723,7 +726,7 @@ final class RuleSet {
             Error closeFatal = Closing.sessions(sessions);
             Failures.keepInterruptStatus(t);
             Failures.logWarn(log, "A copy of the rules couldn't be kept for a later run, so its sessions were closed:"
-                    + " {}", Failures.describe(t));
+                    + " {}", NestedFailures.describe(t));
             return Failures.first(Failures.fatalError(t), closeFatal);
         }
         return null;
@@ -1284,14 +1287,14 @@ final class RuleSet {
             session = compiler.newSession();
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = failed + "failed to create a session: " + Failures.describeCallOut(e, false);
+            String msg = failed + "failed to create a session: " + NestedFailures.describeCallOut(e, false);
             AbstractRulesEngine.reportCalledCodeFailure(msg, e);
-            throw new ReportedFailure(msg, e);
+            throw NestedFailures.report(msg, e);
         }
         if (session == null) {
             String msg = failed + "returned no session";
             Failures.logError(log, msg);
-            throw new ReportedFailure(msg, null);
+            throw NestedFailures.report(msg, null);
         }
         return session;
     }

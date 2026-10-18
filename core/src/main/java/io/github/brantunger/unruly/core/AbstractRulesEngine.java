@@ -666,7 +666,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 Failures.keepInterruptStatus(t);
                 String msg = "The run failed with " + Failures.describeWithClass(t);
                 log.error(msg);
-                RuleExecutionException failure = new ReportedFailure(msg, t);
+                RuleExecutionException failure = NestedFailures.report(msg, t);
                 Error fatal = Failures.fatalError(t);
                 notifier.notifyRunError(facts.runs(), run, failure, fatal != null ? fatal : failure, facts.tally());
                 Failures.throwIfPresent(fatal);
@@ -755,7 +755,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     static RuleExecutionException failedRun(String msg) {
         Failures.logError(log, msg);
-        return new ReportedFailure(msg, null);
+        return NestedFailures.report(msg, null);
     }
 
     /**
@@ -919,7 +919,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             tally.markInterrupted();
         }
         Failures.logWarn(log, msg);
-        RuleExecutionException failure = ReportedFailure.stop(msg, cause, passed);
+        RuleExecutionException failure = NestedFailures.stop(msg, cause, passed);
         // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
         // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
         // from any other callback of a run that stopped.
@@ -1128,31 +1128,34 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * What evaluating the conditions found: the rules that matched, in evaluation order, and every rule's outcome.
-     *
-     * @param matched     The rules whose condition was true, in evaluation order. The list is the engine's own and
-     *                    isn't published, so it isn't copied.
-     * @param evaluations One evaluation for every rule, in evaluation order; immutable, for the run's result
+     * What evaluating the conditions found: the rules that matched, in evaluation order, and every rule's outcome. A
+     * plain class, not a record: nothing compares or prints one, and a record's own methods would link through
+     * {@code ObjectMethods}, which can fail for good when first called deep in the stack (#996).
      */
-    record Matches(List<CompiledRule> matched, List<RuleEvaluation> evaluations) {
+    // Each accessor is named after the field it returns, as a record's are.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    static final class Matches {
+        private final List<CompiledRule> matched;
+        private final List<RuleEvaluation> evaluations;
 
-        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
-        // which can fail for good when first called deep in the stack (#996). equals compares the components last
-        // first, as ObjectMethods does.
-        @Override
-        public final boolean equals(Object other) {
-            return this == other || other instanceof Matches that && Objects.equals(evaluations, that.evaluations)
-                    && Objects.equals(matched, that.matched);
+        /**
+         * @param matched     The rules whose condition was true, in evaluation order. The list is the engine's own
+         *                    and isn't published, so it isn't copied.
+         * @param evaluations One evaluation for every rule, in evaluation order; immutable, for the run's result
+         */
+        Matches(List<CompiledRule> matched, List<RuleEvaluation> evaluations) {
+            this.matched = matched;
+            this.evaluations = evaluations;
         }
 
-        @Override
-        public final int hashCode() {
-            return Objects.hashCode(matched) * 31 + Objects.hashCode(evaluations);
+        /** The rules whose condition was true, in evaluation order. */
+        List<CompiledRule> matched() {
+            return matched;
         }
 
-        @Override
-        public final String toString() {
-            return "Matches[matched=" + matched + ", evaluations=" + evaluations + "]";
+        /** One evaluation for every rule, in evaluation order; immutable, for the run's result. */
+        List<RuleEvaluation> evaluations() {
+            return evaluations;
         }
     }
 
@@ -1270,8 +1273,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Reports a condition or action that threw as its rule's failure. An overflow (see {@link Failures#isOverflow}),
      * bare or wrapped, as in an {@link InternalError} the JDK wraps one in, says the stack overflowed, unless what it
-     * threw holds a nested {@code run()}'s or {@code load()}'s failure, which is described as {@link Failures#describe}
-     * describes it, naming that run's or load's rule.
+     * threw holds a nested {@code run()}'s or {@code load()}'s failure, which is described as
+     * {@link NestedFailures#describe} describes it, naming that run's or load's rule.
      *
      * @param rule   The rule whose expression threw
      * @param kind   Whether the condition or the action threw
@@ -1280,8 +1283,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     private RuleExecutionException expressionFailure(CompiledRule rule, ExpressionKind kind, Throwable thrown) {
         String what = kind == ExpressionKind.CONDITION ? "Failed to evaluate condition" : "Failed to execute action";
-        String why = Failures.below(thrown).logged() != null ? Failures.describe(thrown)
-                : Failures.describeCallOut(thrown, false);
+        String why = NestedFailures.below(thrown).logged() != null ? NestedFailures.describe(thrown)
+                : NestedFailures.describeCallOut(thrown, false);
         return notifier.failure(rule, kind, what + " for rule '" + rule.displayName() + "': " + why, thrown);
     }
 
@@ -1302,13 +1305,13 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param thrown   What the expression threw
      * @return The exception to throw for a stopped run, or {@code null} if the caller reports the rule's failure: when
      *         the run wasn't cancelled or {@code thrown} has an {@link Error} anywhere in its cause chain, or one
-     *         suppressed on it at any depth (see {@link Failures#errorInChain})
+     *         suppressed on it at any depth (see {@link NestedFailures#errorInChain})
      */
     private RuleExecutionException stopped(CompiledRule rule, Deadline deadline, Throwable thrown) {
         // An interrupt the expression caught and wrapped, or left suppressed, is put back first, so it counts as one
         // here too, and an Error inside what it threw is the rule's failure as it always is, cancelled or not.
         Failures.keepInterruptStatus(thrown);
-        ReportedFailure stop = Failures.errorInChain(thrown) == null
+        ReportedFailure stop = NestedFailures.errorInChain(thrown) == null
                 ? cancellation(rule, DURING_RULE, deadline, thrown) : null;
         if (stop == null) {
             return null;
@@ -1352,10 +1355,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw, which belongs to no rule
      */
     private ReportedFailure cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
-        if (!Failures.nestedRunStopped(thrown, deadline)) {
+        if (!NestedFailures.nestedRunStopped(thrown, deadline)) {
             Failures.logWarn(log, msg);
         }
-        return ReportedFailure.stop(msg, cause, deadline);
+        return NestedFailures.stop(msg, cause, deadline);
     }
 
     /**
@@ -1398,8 +1401,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                neither is logged again, as that run or load logged it; nor is a fatal error that
      *                                run logged (see {@link LoggedFailures}). A nested failure wrapped by the factory
      *                                in an exception with a message of its own reads {@code Output factory threw: },
-     *                                that message and the nested failure as a note (see {@link Failures#describe}), and
-     *                                is logged; a fatal error wrapped so is still rethrown.
+     *                                that message and the nested failure as a note (see
+     *                                {@link NestedFailures#describe}), and is logged; a fatal error wrapped so is
+     *                                still rethrown.
      */
     O createOutput(RunFacts facts) {
         O output;
@@ -1412,12 +1416,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // for the first time.
             String msg = outputFailureMessage(e);
             reportCalledCodeFailure(msg, e);
-            throw new ReportedFailure(msg, e);
+            throw NestedFailures.report(msg, e);
         }
         if (output == null) {
             String msg = "Output factory returned null. It must return a new output object on every call.";
             Failures.logError(log, msg);
-            throw new ReportedFailure(msg, null);
+            throw NestedFailures.report(msg, null);
         }
         return output;
     }
@@ -1436,8 +1440,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         String plain = "Output factory threw " + e.getClass().getName();
         try {
             Faults.at(Faults.Step.FAILURE_DESCRIBING);
-            return Failures.below(e).logged() != null || Failures.wrapsLoggedFatal(e)
-                    ? "Output factory threw: " + Failures.describe(e)
+            return NestedFailures.below(e).logged() != null || NestedFailures.wrapsLoggedFatal(e)
+                    ? "Output factory threw: " + NestedFailures.describe(e)
                     : "Output factory threw " + Failures.describeWithClass(e);
         } catch (Throwable unreadable) {
             return plain;
@@ -1456,7 +1460,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param e   What the called code threw
      */
     static void reportCalledCodeFailure(String msg, Throwable e) {
-        if (LoggedFailures.unlogged(e)) {
+        if (NestedFailures.unlogged(e)) {
             Failures.logError(log, msg);
         }
         Failures.throwIfPresent(Failures.fatalError(e));
@@ -1635,6 +1639,6 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     private RuleExecutionException propertyFailure(CompiledRule rule, String property, Throwable cause) {
         return notifier.failure(rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
-                + "' on the output for rule '" + rule.displayName() + "': " + Failures.describe(cause), cause);
+                + "' on the output for rule '" + rule.displayName() + "': " + NestedFailures.describe(cause), cause);
     }
 }
