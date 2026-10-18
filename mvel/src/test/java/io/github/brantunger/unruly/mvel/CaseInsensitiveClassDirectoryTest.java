@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -83,29 +84,29 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("only the JVM's wrong-name message for the name looked up counts, and only on a NoClassDefFoundError")
     void wrongNameRecognized() {
-        assertTrue(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("applicant (wrong name: Applicant)"),
+        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("applicant (wrong name: Applicant)"),
                 "applicant"));
-        assertTrue(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("pkg/a$B (wrong name: pkg/A$B)"),
+        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("pkg/a$B (wrong name: pkg/A$B)"),
                 "pkg.a$B"));
         // OpenJ9 names the class in the file first, and the class asked for last.
-        assertTrue(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a"));
-        assertTrue(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("pkg/A$B (wrong name: pkg/a$B)"),
+        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a"));
+        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("pkg/A$B (wrong name: pkg/a$B)"),
                 "pkg.a$B"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("com/example/Missing"), "applicant"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError(), "applicant"));
-        assertFalse(ExactNameClassLoader.isWrongName(new LinkageError("applicant (wrong name: Applicant)"),
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("com/example/Missing"), "applicant"));
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError(), "applicant"));
+        assertFalse(Throwables.isWrongName(new LinkageError("applicant (wrong name: Applicant)"),
                 "applicant"));
     }
 
     @Test
     @DisplayName("a wrong-name message about another class, such as a superclass, doesn't count (#993)")
     void wrongNameOfAnotherClassNotRecognized() {
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("Base (wrong name: BASE)"), "applicant"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("p/SubX (wrong name: p/SUBX)"), "p.Sub"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("p/Sub$In (wrong name: p/SUB$In)"),
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("Base (wrong name: BASE)"), "applicant"));
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("p/SubX (wrong name: p/SUBX)"), "p.Sub"));
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("p/Sub$In (wrong name: p/SUB$In)"),
                 "p.Sub"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("p/BASE (wrong name: p/Base)"), "p.Sub"));
-        assertFalse(ExactNameClassLoader.isWrongName(new NoClassDefFoundError("p/SUB$In (wrong name: p/Sub$In)"),
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("p/BASE (wrong name: p/Base)"), "p.Sub"));
+        assertFalse(Throwables.isWrongName(new NoClassDefFoundError("p/SUB$In (wrong name: p/Sub$In)"),
                 "p.Sub"));
     }
 
@@ -122,7 +123,7 @@ class CaseInsensitiveClassDirectoryTest {
     @Test
     @DisplayName("a NoClassDefFoundError whose message can't be read isn't a wrong-name error")
     void unreadableMessageIsNotWrongName() {
-        assertFalse(ExactNameClassLoader.isWrongName(new UnreadableNoClassDefFoundError(), "applicant"));
+        assertFalse(Throwables.isWrongName(new UnreadableNoClassDefFoundError(), "applicant"));
     }
 
     @Test

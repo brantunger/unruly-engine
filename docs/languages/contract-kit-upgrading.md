@@ -10,6 +10,25 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.33.0
+
+In the release after 2.33.0 no check was added and none got stricter. The kit now finds a
+[fatal error](../glossary.md#fatal-error), and the interrupt that stopped a run, with the engine's own search,
+`Throwables` in `io.github.brantunger.unruly.api.language`. So, like the engine, it skips the suppressed exceptions
+the engine added itself to a failure it reported. Earlier kits read them: from 2.20.3 for a fatal error, and from
+2.31.1 for an interrupt.
+
+A language that passed the 2.33.0 kit passes as it is. The engine adds such an exception in two places: to the
+failure a listener's `onError` or `onRunError` gets, and to the stop a cancelled run throws. A stop's additions hold
+no `Error`, and an interrupt among them is already the stop's cause. A fatal error added for a listener is the one
+the run rethrows, or a second one beside it.
+
+So the kit sees a difference only when a listener or the language keeps a reported failure and throws it again: a
+fatal error the engine kept there, beside the one it rethrew, is no longer rethrown by the kit.
+
+The kit and `unruly-engine` now call API added in core 2.33.0, so they need a core at least that new. Keep every
+module at one version, as [Testing with the contract kit](contract-kit.md#-testing-with-the-contract-kit) says.
+
 ## 🔼 Upgrading from 2.32.0
 
 In 2.32.1 `outputNumbersConverted` got stricter and no check was added, so a language that passed the 2.32.0 kit may
@@ -130,7 +149,8 @@ any action runs, missing a session broken for actions only.
 In 2.20.3 one check got stricter and none was added. The kit now finds a
 [fatal error](../glossary.md#fatal-error) where the engine finds it: thrown, or carried as a cause or a suppressed
 exception at any depth. It also reads the suppressed exceptions the engine added itself, which the engine skips, so
-it can find one the engine doesn't.
+it can find one the engine doesn't; the kit skips them too after 2.33.0 (see
+[Upgrading from 2.33.0](#-upgrading-from-2330)).
 
 | Check | Now fails a language that | The defect |
 | --- | --- | --- |

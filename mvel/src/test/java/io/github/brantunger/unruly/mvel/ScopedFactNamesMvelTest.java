@@ -15,6 +15,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.core.EngineLogs;
@@ -339,18 +340,18 @@ class ScopedFactNamesMvelTest {
     }
 
     static Stream<Arguments> wordsAtTheLimits() {
-        String ends = "a" + ",a".repeat(Imports.MAX_IMPORT_PARTS - 2);
-        String chars = "a".repeat(Imports.MAX_IMPORT_LENGTH - 2);
+        String ends = "a" + ",a".repeat(ImportLimits.MAX_IMPORT_PARTS - 2);
+        String chars = "a".repeat(ImportLimits.MAX_IMPORT_LENGTH - 2);
         // The # just after isdef counts twice: with the quotes, the commas make the word's count the limit.
-        String isdef = "isdef#a" + ",a".repeat(Imports.MAX_IMPORT_PARTS - 4);
+        String isdef = "isdef#a" + ",a".repeat(ImportLimits.MAX_IMPORT_PARTS - 4);
         return Stream.of(
-                Arguments.of(Imports.MAX_IMPORT_PARTS + " ends", "'" + ends + "' != null", true),
-                Arguments.of(Imports.MAX_IMPORT_PARTS + 1 + " ends", "'" + ends + ",a' != null", false),
-                Arguments.of(Imports.MAX_IMPORT_PARTS + " ends, one after isdef", "'" + isdef + "' != null", true),
-                Arguments.of(Imports.MAX_IMPORT_PARTS + 1 + " ends, one after isdef", "'" + isdef + ",a' != null",
+                Arguments.of(ImportLimits.MAX_IMPORT_PARTS + " ends", "'" + ends + "' != null", true),
+                Arguments.of(ImportLimits.MAX_IMPORT_PARTS + 1 + " ends", "'" + ends + ",a' != null", false),
+                Arguments.of(ImportLimits.MAX_IMPORT_PARTS + " ends, one after isdef", "'" + isdef + "' != null", true),
+                Arguments.of(ImportLimits.MAX_IMPORT_PARTS + 1 + " ends, one after isdef", "'" + isdef + ",a' != null",
                         false),
-                Arguments.of(Imports.MAX_IMPORT_LENGTH + " characters", "'" + chars + "' != null", true),
-                Arguments.of(Imports.MAX_IMPORT_LENGTH + 1 + " characters", "'" + chars + "a' != null", false));
+                Arguments.of(ImportLimits.MAX_IMPORT_LENGTH + " characters", "'" + chars + "' != null", true),
+                Arguments.of(ImportLimits.MAX_IMPORT_LENGTH + 1 + " characters", "'" + chars + "a' != null", false));
     }
 
     /**
@@ -378,14 +379,14 @@ class ScopedFactNamesMvelTest {
     @Test
     @DisplayName("a word past the limits is logged at DEBUG once for the rule list, naming the rule and the limit")
     void wordPastTheLimitsLogged() {
-        String word = "'" + "a".repeat(Imports.MAX_IMPORT_LENGTH) + "'";
+        String word = "'" + "a".repeat(ImportLimits.MAX_IMPORT_LENGTH) + "'";
         try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
                 HashMap::new).language(new MvelExpressionLanguage()).build()) {
             String logs = TestLogs.logsOf(() -> engine.load(List.of(Rule.builder().ruleName("m\n")
                     .condition(word + " != null").action("output.put('r', " + word + ")").build())));
 
             String line = "DEBUG " + EngineLogs.ENGINE_LOGGER + "MVEL checks every fact for this rule list: the"
-                    + " condition of rule 'm\\n' has a word of more than " + Imports.MAX_IMPORT_LENGTH
+                    + " condition of rule 'm\\n' has a word of more than " + ImportLimits.MAX_IMPORT_LENGTH
                     + " characters, too long to scan for the names it reads";
             assertTrue(logs.contains(line), logs);
             assertEquals(logs.indexOf("MVEL checks every fact"), logs.lastIndexOf("MVEL checks every fact"), logs);

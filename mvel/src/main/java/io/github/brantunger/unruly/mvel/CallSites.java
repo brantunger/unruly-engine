@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.Throwables;
+
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -168,7 +170,7 @@ final class CallSites {
      * Counts a call for the class loader, from the site a function tells, which is asked only for a call that is
      * walked. Only for tests, which give each call's site: {@link #counted()} reads it from the stack. If the function
      * throws {@link StackOverflowError}, as a walk of the stack with no room does, or an {@link InternalError} with one
-     * in its cause chain and no {@link LinkageError} before it (see {@link ExceptionReads#isOverflow}), as such a walk
+     * in its cause chain and no {@link LinkageError} before it (see {@link Throwables#isOverflow}), as such a walk
      * may on JDK 25 and 26, the walk is skipped: the calls it would have counted count at no site, and the next walk
      * comes where it would have (#1102). Any other {@link InternalError} is thrown as it is, one around a
      * {@link NoClassDefFoundError} an overflow caused too, which says a class was left unusable (#1116).
@@ -213,7 +215,7 @@ final class CallSites {
             // On JDK 25 and 26, and 24 by its source, the JDK creates the frames it reads reflectively, usually as the
             // walk starts, sometimes as it fetches more, and wraps an overflow there in an InternalError, as the cause
             // of its cause. Anything else is thrown as it is, a class an overflow left unusable too (#1116).
-            if (ExceptionReads.isOverflow(wrapped)) {
+            if (Throwables.isOverflow(wrapped)) {
                 return false;
             }
             throw wrapped;

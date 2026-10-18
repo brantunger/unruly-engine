@@ -1,35 +1,19 @@
 package io.github.brantunger.unruly.test;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.jspecify.annotations.Nullable;
 import org.opentest4j.AssertionFailedError;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
-import java.util.function.Predicate;
 
 /**
  * How the contract kit's checks report what a language threw: which of it the engine rethrows, how it's described in
  * a check's failure message, and how what closing a resource threw is attached to a check's failure.
  */
 final class KitFailures {
-
-    /** How many links of an exception's cause chain the engine reads first, when it looks for a fatal error. */
-    static final int MAX_CAUSE_CHAIN_LENGTH = 100;
-
-    /**
-     * How many different exceptions, through causes and suppressed exceptions, the engine reads to find a fatal error
-     * (see {@link #fatalError}); one past that many isn't found.
-     */
-    static final int MAX_EXCEPTIONS_READ = 10_000;
 
     private KitFailures() {
     }
@@ -89,166 +73,37 @@ final class KitFailures {
     }
 
     /**
-     * Finds the fatal error in what a language threw, as the engine finds the one it rethrows: a
-     * {@link VirtualMachineError} other than a {@link StackOverflowError}, and other than an {@link InternalError} that
-     * wraps one (see {@link #isOverflow}), that is the throwable itself or one of its causes, or failing that one
-     * suppressed on any of them, or among the causes and suppressed exceptions of those, at any depth, as a
-     * {@code try}-with-resources whose {@code close()} hits an {@link OutOfMemoryError} while its body throws leaves
-     * it. The kit keeps a copy of the engine's search, reading in the engine's order: the first
-     * {@value #MAX_CAUSE_CHAIN_LENGTH} links of the cause chain, then the direct suppressed exceptions of each link,
-     * from the top, before what any of them leads to, depth first. A {@code getCause()} that throws ends that chain.
-     * Each exception is read once, and at most {@value #MAX_EXCEPTIONS_READ} are, so a fatal error past that many is
-     * missed, as the engine misses it. Unlike the engine, it reads every suppressed exception, those a failure the
-     * engine reported marks as its own ({@code ReportedFailure.addSuppressedByEngine}) too: the kit can't tell them
-     * apart.
+     * Finds the fatal error in what a language threw, as the engine finds the one it rethrows, with the engine's own
+     * search ({@link Throwables#fatalError}): an error {@link Throwables#isFatal} tells, so not a
+     * {@link StackOverflowError} nor an {@link InternalError} that wraps one, that is the throwable itself or one of
+     * its causes, or failing that one suppressed on any of them, or among the causes and suppressed exceptions of
+     * those, at any depth, as a {@code try}-with-resources whose {@code close()} hits an {@link OutOfMemoryError} while
+     * its body throws leaves it. The cause chain is read first, then the direct suppressed exceptions of each link,
+     * from the top, before what any of them leads to, depth first, each exception once and at most 10,000 of them, so
+     * a fatal error past that many is missed, as the engine misses it. A suppressed exception the engine itself added
+     * to a failure it reported isn't read, as the engine doesn't read it: the engine keeps there a fatal error a
+     * listener threw, beside the one it rethrows.
      *
      * @param thrown What the language threw
      * @return The first fatal error found, or {@code null} if there is none among the exceptions read
      */
     static @Nullable Error fatalError(Throwable thrown) {
-        return (Error) new Search(KitFailures::isFatalItself).find(thrown);
-    }
-
-    /** Whether one throwable, not what it carries, is an error the engine rethrows. */
-    private static boolean isFatalItself(Throwable thrown) {
-        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError)
-                && !(thrown instanceof InternalError && isOverflow(thrown));
+        return Throwables.fatalError(thrown);
     }
 
     /**
-     * Tells whether a throwable is an overflow, as the engine tells it: walking its cause chain from the top, a
-     * {@link StackOverflowError} comes before any {@link LinkageError}, such as the {@link NoClassDefFoundError} of a
-     * class an overflow left unusable. So an {@link InternalError} the JDK wraps an overflow in, deep in a stack, isn't
-     * fatal. The kit keeps a copy of the engine's reader: up to {@value #MAX_CAUSE_CHAIN_LENGTH} links, a
-     * {@code getCause()} that throws ending the chain. The kit's {@code KitOverflowCopyTest} checks it against the
-     * engine's.
-     *
-     * @param thrown The throwable
-     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
-     */
-    static boolean isOverflow(Throwable thrown) {
-        Throwable link = thrown;
-        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
-            if (link instanceof LinkageError) {
-                return false;
-            }
-            if (link instanceof StackOverflowError) {
-                return true;
-            }
-            link = causeOf(link);
-        }
-        return false;
-    }
-
-    /**
-     * Tells whether a run stopped because its thread was interrupted, as the engine reports the stop: an
-     * {@link InterruptedException} is what was thrown, one of its causes, or suppressed on any of them, or among the
-     * causes and suppressed exceptions of those, read as {@link #fatalError} reads them, with the same limits. The
-     * engine's stop carries the interrupt as its cause; when ending the stopped run throws too, the engine throws that
-     * instead, with the stop suppressed on it, as the engine itself reads an interrupt it puts back
-     * ({@code Failures.keepInterruptStatus}).
+     * Tells whether a run stopped because its thread was interrupted, as the engine reports the stop, with the
+     * engine's own search ({@link Throwables#isInterrupt}): an {@link InterruptedException} is what was thrown, one of
+     * its causes, or suppressed on any of them, or among the causes and suppressed exceptions of those, read as
+     * {@link #fatalError} reads them, with the same limits. The engine's stop carries the interrupt as its cause; when
+     * ending the stopped run throws too, the engine throws that instead, with the stop suppressed on it, as the engine
+     * itself reads an interrupt it puts back.
      *
      * @param thrown What the run threw
      * @return {@code true} if an {@link InterruptedException} is among the exceptions read
      */
     static boolean isInterrupt(Throwable thrown) {
-        return new Search(t -> t instanceof InterruptedException).find(thrown) != null;
-    }
-
-    /** Reads an exception's cause, or {@code null} when {@code getCause()} throws, as the engine reads it. */
-    private static @Nullable Throwable causeOf(Throwable thrown) {
-        try {
-            return thrown.getCause();
-        } catch (Throwable unreadable) {
-            // What a cause that can't be read is to the engine: none.
-            return null;
-        }
-    }
-
-    /**
-     * One search of {@link #fatalError} or {@link #isInterrupt}, for the first exception that matches: what it read, by
-     * identity, and the suppressed exceptions it read and has still to go into, a list for each exception it went
-     * into, the next on top.
-     */
-    private static final class Search {
-        private final Predicate<Throwable> match;
-        private final Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        private final Deque<Iterator<Throwable>> deeper = new ArrayDeque<>();
-        private @Nullable Throwable found;
-        private boolean stopped;
-
-        Search(Predicate<Throwable> match) {
-            this.match = match;
-        }
-
-        @Nullable Throwable find(Throwable thrown) {
-            List<Throwable> chain = new ArrayList<>();
-            for (Throwable link = thrown; link != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && read(link);
-                    link = causeOf(link)) {
-                chain.add(link);
-            }
-            deeper.push(readSuppressed(chain).iterator());
-            while (!stopped && !deeper.isEmpty()) {
-                Iterator<Throwable> next = deeper.peek();
-                if (next.hasNext()) {
-                    List<Throwable> into = goInto(next.next());
-                    if (!into.isEmpty()) {
-                        deeper.push(into.iterator());
-                    }
-                } else {
-                    deeper.pop();
-                }
-            }
-            return found;
-        }
-
-        /** Counts and checks an exception; {@code true} if it was read for the first time, and doesn't match. */
-        private boolean read(Throwable thrown) {
-            if (seen.size() >= MAX_EXCEPTIONS_READ) {
-                stopped = true;
-                return false;
-            }
-            if (!seen.add(thrown)) {
-                return false;
-            }
-            if (match.test(thrown)) {
-                found = thrown;
-                stopped = true;
-                return false;
-            }
-            return true;
-        }
-
-        /**
-         * Reads the causes of an exception read already, then the direct suppressed exceptions of it and of each. One
-         * with neither returns no list to go into.
-         */
-        private List<Throwable> goInto(Throwable thrown) {
-            Throwable cause = causeOf(thrown);
-            if (cause == null && thrown.getSuppressed().length == 0) {
-                return List.of();
-            }
-            List<Throwable> chain = new ArrayList<>();
-            chain.add(thrown);
-            for (Throwable link = cause; link != null && read(link); link = causeOf(link)) {
-                chain.add(link);
-            }
-            return readSuppressed(chain);
-        }
-
-        /** Reads the direct suppressed exceptions of each link, in order, returning those read for the first time. */
-        private List<Throwable> readSuppressed(List<Throwable> chain) {
-            List<Throwable> read = new ArrayList<>();
-            for (int i = 0; i < chain.size() && !stopped; i++) {
-                Throwable[] suppressed = chain.get(i).getSuppressed();
-                for (int j = 0; j < suppressed.length && !stopped; j++) {
-                    if (read(suppressed[j])) {
-                        read.add(suppressed[j]);
-                    }
-                }
-            }
-            return read;
-        }
+        return Throwables.isInterrupt(thrown);
     }
 
     /**

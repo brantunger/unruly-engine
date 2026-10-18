@@ -39,7 +39,7 @@ class FactNamesEscapeWithinTest {
             assertTrue(cut.length() <= within, within + ": " + cut);
             assertFalse(CUT_ESCAPE.matcher(cut).find(), within + ": " + cut);
             String kept = cut.substring(0, cut.lastIndexOf("... ("));
-            assertEquals(kept + FactNames.leftOut(refusal.length() - kept.length()), cut, within + ": " + cut);
+            assertEquals(kept + MessageText.leftOut(refusal.length() - kept.length()), cut, within + ": " + cut);
             assertTrue(refusal.startsWith(kept), within + ": " + cut);
         }
     }

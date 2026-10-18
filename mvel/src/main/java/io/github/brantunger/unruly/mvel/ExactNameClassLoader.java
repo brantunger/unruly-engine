@@ -1,6 +1,8 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.mvel2.MVEL;
 
 import java.util.Iterator;
@@ -123,7 +125,7 @@ final class ExactNameClassLoader extends ClassLoader {
      * The most characters a name looked up with this loader may have: as many as an import may have, for a package,
      * and as many again for a class in it.
      */
-    static final int MAX_NAME_LENGTH = 2 * Imports.MAX_IMPORT_LENGTH;
+    static final int MAX_NAME_LENGTH = 2 * ImportLimits.MAX_IMPORT_LENGTH;
 
     /**
      * The most parts a name looked up with this loader may have, counting its dot-separated parts and one more for a
@@ -131,7 +133,7 @@ final class ExactNameClassLoader extends ClassLoader {
      * that one, and one more for a member read through the innermost, such as {@code pkg.Outer.Inner.FIELD}, which
      * MVEL looks up as a class first.
      */
-    static final int MAX_NAME_PARTS = Imports.MAX_IMPORT_PARTS + 17;
+    static final int MAX_NAME_PARTS = ImportLimits.MAX_IMPORT_PARTS + 17;
 
     /**
      * The most dot-separated parts a name with a {@code $} looked up with this loader may have: one fewer than
@@ -161,9 +163,6 @@ final class ExactNameClassLoader extends ClassLoader {
     // runs, and linking one makes a class. The first refused name with a '$' may be looked up deep in a stack, where
     // that could overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads it.
     private static final Function<Stream<StackWalker.StackFrame>, Boolean> NESTED_LOOKUP = new NestedLookup();
-
-    // What a native image built with strict reachability metadata throws for a name it has no metadata for.
-    private static final String MISSING_REGISTRATION = "org.graalvm.nativeimage.MissingReflectionRegistrationError";
 
     // The start of every name in a package only the JDK may define classes in: the JVM lets no class loader but the
     // platform class loader define one there.
@@ -290,12 +289,16 @@ final class ExactNameClassLoader extends ClassLoader {
             }
             return loaded;
         } catch (NoClassDefFoundError e) {
-            if (isWrongName(e, name)) {
+            // HotSpot cuts the message at 1023 bytes of UTF-8, so for a name over about 1,000 ASCII characters, or 500
+            // two-byte ones, the "wrong name" error isn't recognised, and MAX_NAME_LENGTH is past the cut even for an
+            // ASCII name: the class then can't be loaded rather than being missing, an error, never a wrong answer
+            // (#1001).
+            if (Throwables.isWrongName(e, name)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
         } catch (Error e) {
-            if (isMissingRegistration(e)) {
+            if (Throwables.isMissingRegistration(e)) {
                 throw new ClassNotFoundException(name, e);
             }
             throw e;
@@ -438,45 +441,6 @@ final class ExactNameClassLoader extends ClassLoader {
      */
     private static boolean inNestedLookup() {
         return StackWalker.getInstance().walk(NESTED_LOOKUP);
-    }
-
-    /**
-     * Tells whether a linkage error only means that a class file was found for the name looked up in a different
-     * case, so there is no class by that name. The message names the class asked for, in internal form, on one side:
-     * first on HotSpot, last on OpenJ9. One about a class that one depends on, such as its superclass, names it on
-     * neither, so it isn't taken for it. HotSpot cuts the message at 1023 bytes of UTF-8, so for a name over about
-     * 1,000 ASCII characters, or 500 two-byte ones, {@code " (wrong name: "} is cut off and the error isn't
-     * recognised; written last, as on OpenJ9, the name would be cut off itself. The class then can't be loaded rather
-     * than being missing: an error, never a wrong answer (#1001). {@value #MAX_NAME_LENGTH} characters, the most a
-     * name may have, is past the cut even for an ASCII name.
-     *
-     * @param error The error a class lookup threw
-     * @param name  The binary name the lookup asked for
-     * @return {@code true} for the JVM's "wrong name" {@code NoClassDefFoundError} for {@code name}
-     */
-    // core.ImportResolver.isWrongName(NoClassDefFoundError, String) keeps a copy of this: the mvel package may not use
-    // that one. Fix both together. The error may come from a context class loader of the application's own, so its
-    // message is read as core reads it.
-    static boolean isWrongName(LinkageError error, String name) {
-        String message = ExceptionReads.messageOf(error);
-        String internal = name.replace('.', '/');
-        return error instanceof NoClassDefFoundError && message != null
-                && (message.startsWith(internal + " (wrong name: ")
-                || message.endsWith(" (wrong name: " + internal + ")"));
-    }
-
-    /**
-     * Tells whether an error is the one a native image built with strict reachability metadata throws for a name it
-     * has no metadata for: GraalVM's {@code MissingReflectionRegistrationError}, an {@link Error} in GraalVM for JDK 21
-     * and a {@link LinkageError} in GraalVM for JDK 25, told by its class's name, so the module needs no dependency on
-     * GraalVM's SDK.
-     *
-     * @param error The error a class lookup threw
-     * @return {@code true} for GraalVM's {@code MissingReflectionRegistrationError}
-     */
-    // core.MissingRegistration keeps a copy of this: the mvel package may not use that one. Fix both together.
-    static boolean isMissingRegistration(Throwable error) {
-        return MISSING_REGISTRATION.equals(error.getClass().getName());
     }
 
     /**

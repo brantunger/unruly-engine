@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
@@ -129,7 +130,7 @@ final class MvelCompileErrors {
      * Returns what to throw for what compiling an expression threw: the {@link InvalidExpressionException} that
      * describes it when it's a compile error the engine describes, or else the exception itself, to be thrown as it
      * is. A {@link CompileException} is reported by {@link #analysisLoop} when MVEL's analysis went round in a loop
-     * (see {@link #looped}), returned as it is when an overflow is its cause (see {@link ExceptionReads#isOverflow}),
+     * (see {@link #looped}), returned as it is when an overflow is its cause (see {@link Throwables#isOverflow}),
      * and otherwise reported by {@link #compileError(CompileException, String)}; an {@link Imports.ImportRejected} by
      * {@link #importRejected}; an {@link IndexOutOfBoundsException} by {@link #malformed} when MVEL's own code threw
      * it (see {@link #thrownInMvel}); and any other by {@link #classCalledLikeMethod} when an imported class was
@@ -152,7 +153,7 @@ final class MvelCompileErrors {
             // compile called too deep in the stack or on a thread with a small one. A class an overflow left unusable
             // isn't one, and is reported as MVEL's compile error, as on JDK 21, whose NoClassDefFoundError has no
             // cause (#1116).
-            if (ExceptionReads.isOverflow(compileError)) {
+            if (Throwables.isOverflow(compileError)) {
                 return e;
             }
             return compileError(compileError, analysis.rejectedType());
@@ -314,7 +315,7 @@ final class MvelCompileErrors {
      */
     static boolean calledLikeMethod(RuntimeException e) {
         // A loop rather than a stream and a method reference, as in looped() (#1097).
-        for (Throwable link : ExceptionReads.causeChain(e)) {
+        for (Throwable link : Throwables.causeChain(e)) {
             if (link instanceof Imports.ClassCalledLikeMethod) {
                 return true;
             }
@@ -445,7 +446,7 @@ final class MvelCompileErrors {
         // A loop rather than a stream and a method reference: every compile error comes here first, and the JVM's
         // first, maybe deep in a stack, would link the method reference and first use the JDK's stream classes there,
         // either of which can overflow, and the compile error would be reported as the overflow (#1097).
-        for (Throwable link : ExceptionReads.causeChain(e)) {
+        for (Throwable link : Throwables.causeChain(e)) {
             if (link instanceof Imports.AnalysisLoop) {
                 return true;
             }
@@ -589,7 +590,7 @@ final class MvelCompileErrors {
      * @return The exception to throw
      */
     static InvalidExpressionException compileError(CompileException e, String rejectedType) {
-        String message = String.valueOf(ExceptionReads.messageOf(e));
+        String message = String.valueOf(Throwables.messageOf(e));
         int line = 0;
         int column = 0;
         Matcher position = POSITION.matcher(message);
@@ -600,7 +601,7 @@ final class MvelCompileErrors {
         int room = roomAfter(messageStart(line, column));
         List<ErrorDetail> errors = e.getErrors();
         String description;
-        List<Throwable> chain = ExceptionReads.causeChain(e);
+        List<Throwable> chain = Throwables.causeChain(e);
         Throwable root = chain.get(chain.size() - 1);
         if (!errors.isEmpty()) {
             description = oneLine(errors, room);
@@ -655,7 +656,7 @@ final class MvelCompileErrors {
      * @return The description, not escaped
      */
     private static String described(CompileException e) {
-        String message = String.valueOf(ExceptionReads.messageOf(e));
+        String message = String.valueOf(Throwables.messageOf(e));
         int near = message.lastIndexOf(NEAR);
         String description;
         if (message.startsWith(ERROR_START) && near >= ERROR_START.length()) {
@@ -786,7 +787,7 @@ final class MvelCompileErrors {
      */
     private static boolean outOfBoundsInMvel(Throwable root, String description) {
         return root instanceof IndexOutOfBoundsException
-                && description.equals(String.valueOf(ExceptionReads.messageOf(root))) && thrownInMvel(root);
+                && description.equals(String.valueOf(Throwables.messageOf(root))) && thrownInMvel(root);
     }
 
     /**
@@ -834,14 +835,14 @@ final class MvelCompileErrors {
             return "";
         }
         Throwable root = chain.get(chain.size() - 1);
-        String rootMessage = ExceptionReads.messageOf(root);
+        String rootMessage = Throwables.messageOf(root);
         String className = root.getClass().getName();
         if (rootMessage == null) {
             return " (caused by " + MessageText.quoteWithin(className, room - " (caused by )".length()) + ")";
         }
         // The class name leaves room for the message, or for its count alone if that's shorter. Escaped, a message is
         // never shorter than it is raw, so only one shorter raw than its count is escaped to measure it.
-        int count = FactNames.leftOut(rootMessage.length()).length();
+        int count = MessageText.leftOut(rootMessage.length()).length();
         int least = ": ".length() + (rootMessage.length() < count
                 ? Math.min(MessageText.escape(rootMessage).length(), count) : count);
         String named = " (caused by " + MessageText.quoteWithin(className, room - " (caused by )".length() - least);

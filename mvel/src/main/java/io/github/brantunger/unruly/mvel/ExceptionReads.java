@@ -1,121 +1,26 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.mvel2.MVEL;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Set;
-
 /**
- * Reads the message, causes and stack trace of an exception the module didn't create, such as one a class's static
- * initializer or the application's class loader threw, without letting what those accessors throw escape. None of
- * them is final, and a failure to read one says nothing about the failure being reported, which is still reported as
- * it would be. Each accessor is called in a {@code try} of its own rather than through a lambda or method reference, so
- * the JVM's first failure links no call site, which could overflow deep in a stack (#1093).
- * {@code core.Failures} keeps the engine's copy of these readers: the mvel package may not use that one.
- * mvel's {@code ExceptionReadsCopiesTest} checks {@link #messageOf}, {@link #rootCause}, {@link #causeChain} and
- * {@link #isOverflow}, and the private readers they go through, against it.
+ * Reads the stack trace of an exception the module didn't create, such as one a class's static initializer or the
+ * application's class loader threw, without letting what its accessor throws escape. It isn't final, and a failure to
+ * read it says nothing about the failure being reported, which is still reported as it would be. The accessor is
+ * called in a {@code try} of its own rather than through a lambda or method reference, so the JVM's first failure links
+ * no call site, which could overflow deep in a stack (#1093). The module reads an exception's message and causes, and
+ * tells an overflow, with the engine's readers in {@link Throwables}, which read them the same way.
  */
 final class ExceptionReads {
 
     /** The package of MVEL's classes, taken from MVEL itself so that a relocated copy is matched too. */
     static final String MVEL_PACKAGE = MVEL.class.getPackageName() + ".";
 
-    // As core.Failures.MAX_CAUSE_CHAIN_LENGTH. CalledCodeFailures.MAX_DEPTH bounds a different walk.
-    private static final int MAX_CAUSE_CHAIN_LENGTH = 100;
-
     private ExceptionReads() {
     }
 
     /**
-     * Reads an exception's message. Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the
-     * message unavailable.
-     *
-     * @param e The exception
-     * @return Its message, or {@code null} if it has none, or {@code (message unavailable: ...)}, naming the class of
-     *         what {@code getMessage()} threw, if it can't be read
-     */
-    static String messageOf(Throwable e) {
-        try {
-            return e.getMessage();
-        } catch (Throwable thrown) {
-            return "(message unavailable: " + thrown.getClass().getName() + ")";
-        }
-    }
-
-    /**
-     * Finds the last exception in {@code e}'s cause chain (see {@link #causeChain}).
-     *
-     * @param e The exception
-     * @return The last link of its cause chain that could be read, which is {@code e} if it has no cause
-     */
-    static Throwable rootCause(Throwable e) {
-        List<Throwable> chain = causeChain(e);
-        return chain.get(chain.size() - 1);
-    }
-
-    /**
-     * Tells whether {@code e} is a {@link StackOverflowError}, or what was thrown in place of one: walking its cause
-     * chain from the top, a {@link StackOverflowError} comes before any {@link LinkageError}. A
-     * {@link NoClassDefFoundError} or an {@link ExceptionInInitializerError} above the overflow says a class was left
-     * unusable, by an overflow in its static initializer, maybe in an earlier load, which no change to the rule or the
-     * stack's depth helps, as JDK 25 and 26 make one with the overflow as its cause (#1116). An {@link InternalError}
-     * around one, as the JDK wraps an overflow it hits defining a hidden class, is (#1141). The chain is read link by
-     * link, with nothing allocated: up to {@value #MAX_CAUSE_CHAIN_LENGTH} links, which may repeat in a chain that
-     * loops back on itself, so it answers as {@link #causeChain}'s links read in order would.
-     *
-     * @param e The exception
-     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
-     */
-    static boolean isOverflow(Throwable e) {
-        Throwable link = e;
-        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
-            if (link instanceof LinkageError) {
-                return false;
-            }
-            if (link instanceof StackOverflowError) {
-                return true;
-            }
-            link = causeOf(link);
-        }
-        return false;
-    }
-
-    /**
-     * Lists {@code e} and its causes, stopping if the chain loops back on itself, at a link whose {@code getCause()}
-     * throws, or after {@value #MAX_CAUSE_CHAIN_LENGTH} links: a {@code getCause()} of its own that returns a new
-     * exception every time would otherwise make a chain that never ends.
-     *
-     * @param e The exception
-     * @return {@code e} and the causes that could be read, in order
-     */
-    static List<Throwable> causeChain(Throwable e) {
-        List<Throwable> chain = new ArrayList<>();
-        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable t = e; t != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && seen.add(t); t = causeOf(t)) {
-            chain.add(t);
-        }
-        return chain;
-    }
-
-    /**
-     * Reads an exception's cause as {@link #messageOf} reads its message.
-     *
-     * @param e The exception
-     * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
-     */
-    private static Throwable causeOf(Throwable e) {
-        try {
-            return e.getCause();
-        } catch (Throwable thrown) {
-            return null;
-        }
-    }
-
-    /**
-     * Reads an exception's stack trace as {@link #messageOf} reads its message.
+     * Reads an exception's stack trace as {@link Throwables#messageOf} reads its message.
      *
      * @param e The exception
      * @return Its stack trace, which is empty if {@code getStackTrace()} throws or returns {@code null}
