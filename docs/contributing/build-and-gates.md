@@ -23,8 +23,8 @@ usual fix for each.
 
 ## ✅ What build runs
 
-`build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build, local, CI and
-release alike (`org.gradle.warning.mode=fail` in `gradle.properties`). The build has six projects. Four are
+`build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build
+(`org.gradle.warning.mode=fail` in `gradle.properties`). The build has six projects. Four are
 published: `core` (`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests
 that need MVEL or the test kit, and those that check the whole build), `test-kit` (`unruly-engine-test`), and `bom`
 (`unruly-engine-bom`, a [BOM](../glossary.md#artifacts) pinning the other three; its `checkBomCoverage` fails unless
@@ -72,17 +72,20 @@ Checkstyle reads every file as UTF-8.
 | `AvoidUsingVolatile` | The engine's and a rule list's shared fields are written by `load()`, `close()` or the run that finds no language keeps state, and read by every run without a lock |
 | `AvoidSynchronizedStatement` | Every synchronized block is short and never parks, so no run waits long on a monitor or pins its virtual thread while parked |
 
-**The build never runs PMD on test sources, by decision.** On them the rule set found 2,885 violations (measured at
+**The build never runs PMD on test sources, by decision.** On them the rule set found 2,885 violations (at
 `0367bb2`), 2,576 of them an assertion without a message, a test with several assertions, or a resource a test doesn't
 close. Its multithreading rules found none, but `AvoidSynchronizedAtMethodLevel`, excluded then, would flag the tests'
 `synchronized getCause()` overrides. The decision is recorded in
 `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`, and `check` runs `pmdMain` only.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
-so a test that never returns fails the build rather than holding CI until the `build` job's own 20-minute cap. Gradle
+so a test that never returns fails the build within the `build` job's 20-minute cap. Gradle
 logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout`, stops the test worker, and
 fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
 report, where the test that never returned shows as skipped.
+
+Three `windows-latest` jobs stalled past that cap with no log, so there a watchdog thread-dumps every JVM into
+`build/reports/hang/` at 14 minutes, then kills them: [Windows CI hangs](windows-ci-hangs.md).
 
 A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. The test fixtures'
 `junit-platform.properties`, which the tests of `core`, `mvel` and `test-kit` share, sets
@@ -95,7 +98,7 @@ ran on. One method in it asks for `SEPARATE_THREAD` by name, to test a wait that
 
 The `benchmarks` project's main sources are the exception to the javac gate: they compile JMH's generated code, so
 `compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle.kts`). Its test sources are hand-written, so
-`compileTestJava` keeps `-Xlint:all -Werror` like everything else.
+`compileTestJava` keeps `-Xlint:all -Werror`.
 
 The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unruly/` in the source set named:
 
@@ -115,7 +118,7 @@ The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unru
 
 | Task | Report |
 | --- | --- |
-| `:core:test`, `:mvel:test`, `:test-kit:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html`, for `core`, `mvel`, `test-kit` and `benchmarks` |
+| `:core:test`, `:mvel:test`, `:test-kit:test`, `:benchmarks:test` | `<project>/build/reports/tests/test/index.html` |
 | `jacocoTestReport`, `jacocoTestCoverageVerification` | `build/reports/jacoco/html/index.html`, the aggregate of every artifact; `build/reports/jacoco/report.xml` for tools |
 | `checkstyleMain`, `checkstyleTest`, `checkstyleTestFixtures` | `<project>/build/reports/checkstyle/main.html` and `test.html`, and `core`'s `testFixtures.html`, with `.xml` twins |
 | `pmdMain` | `<project>/build/reports/pmd/main.html`, with an `.xml` twin |
@@ -158,9 +161,8 @@ and `native-image`. A release PR, a new `version=` in `gradle.properties` plus d
 `native-image`. `changes` decides; if it fails, everything runs, as on a push.
 
 A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
-the next push to `main` waits for it, so a run isn't cut off before its cache save. It isn't a queue: GitHub keeps
-one waiting run per branch, so a later push to `main` replaces a waiting one, whose commit gets a cancelled run and
-no build.
+the next push to `main` waits for it, so a run isn't cut off before its cache save. GitHub keeps one waiting run per
+branch, so a later push to `main` replaces a waiting one, whose commit gets a cancelled run and no build.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: a page
 written before the style guide may have findings in lines you didn't touch. Steps after a failed one still run.
@@ -240,6 +242,6 @@ broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in 
   `-notimestamp`, so no page carries its generation date and a rebuild of the same sources gives the same files.
 
 `./gradlew javadoc` runs every project's `javadoc` task, `benchmarks` included, and the site: an unqualified task
-name runs the task of that name in every project. `./gradlew :javadoc` builds the site alone. The site is
+name runs in every project; `./gradlew :javadoc` builds the site alone. The site is
 published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as
 [RELEASING.md](../../RELEASING.md#-the-javadoc-site) describes.
