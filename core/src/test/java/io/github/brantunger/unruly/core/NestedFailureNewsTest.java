@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -74,7 +75,7 @@ class NestedFailureNewsTest {
     void wrapperMessageShortened() {
         IllegalStateException wrapper = new IllegalStateException("x".repeat(1_500), inner);
 
-        assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after " + NAMED + ")",
+        assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after " + NAMED + ")",
                 NestedFailures.describe(wrapper));
     }
 
@@ -92,7 +93,7 @@ class NestedFailureNewsTest {
                 LoggedFailures.leave();
             }
 
-            assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after a nested run()"
+            assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after a nested run()"
                     + " failed: java.lang.OutOfMemoryError: nested oom)",
                     NestedFailures.describe(new IllegalStateException("x".repeat(1_500), oom)));
         } finally {

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.mvel.ExceptionReadsCopies;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -43,8 +44,8 @@ class ExceptionReadsCopiesTest {
     }
 
     private static final List<Copy> COPIES = List.of(
-            new Copy("core.Failures", new Readers(Failures::messageOf, Failures::rootCause, Failures::causeChain,
-                    Failures::isOverflow)),
+            new Copy("internal.Causes", new Readers(Causes::messageOf, Causes::rootCause, Causes::causeChain,
+                    Causes::isOverflow)),
             new Copy("mvel.ExceptionReads", new Readers(ExceptionReadsCopies::messageOf,
                     ExceptionReadsCopies::rootCause, ExceptionReadsCopies::causeChain,
                     ExceptionReadsCopies::isOverflow)));
@@ -253,12 +254,12 @@ class ExceptionReadsCopiesTest {
     @DisplayName("a cause chain that never ends is read to the same number of links")
     void endlessChainsStopAlike(String name, Readers readers) {
         List<Throwable> chain = readers.causeChain().apply(new Endless(0));
-        assertEquals(Failures.MAX_CAUSE_CHAIN_LENGTH, chain.size(), name);
+        assertEquals(Causes.MAX_CAUSE_CHAIN_LENGTH, chain.size(), name);
         for (int i = 0; i < chain.size(); i++) {
             assertEquals(i, ((Endless) chain.get(i)).depth, name);
         }
         Endless root = (Endless) readers.rootCause().apply(new Endless(0));
-        assertEquals(Failures.MAX_CAUSE_CHAIN_LENGTH - 1, root.depth, name);
+        assertEquals(Causes.MAX_CAUSE_CHAIN_LENGTH - 1, root.depth, name);
     }
 
     /** A throwable whose cause is {@code cause}. */

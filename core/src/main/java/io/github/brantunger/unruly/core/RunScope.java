@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.RandomAccess;
 import java.util.concurrent.locks.LockSupport;
+import io.github.brantunger.unruly.internal.Causes;
 import java.util.function.Supplier;
 
 /**
@@ -299,9 +300,9 @@ final class RunScope {
             Faults.at(Faults.Step.RUN_VALUE_REFUSING);
             refused = endedFailure(method, key);
         } catch (Throwable t) {
-            // Only the instanceof checks of Failures.isFatal, which allocates nothing, so they can't fail as building
+            // Only the instanceof checks of Causes.isFatal, which allocates nothing, so they can't fail as building
             // did: the fatal Error close() threw itself wins, but not an InternalError that wraps an overflow.
-            if (Failures.isFatal(closing)) {
+            if (Causes.isFatal(closing)) {
                 throw (Error) closing;
             }
             throw t;

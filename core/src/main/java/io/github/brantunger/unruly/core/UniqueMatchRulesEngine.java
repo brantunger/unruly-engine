@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RunResult;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.internal.Text;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,7 +61,7 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
                 names.add(rule.rule().getRuleName());
             }
             throw failedRun(matched.size() + " rules matched, but a unique-match engine allows one: "
-                    + Failures.quoteJoined(names));
+                    + Text.quoteJoined(names));
         }
         return super.fire(matches, ruleSet, copy, facts);
     }

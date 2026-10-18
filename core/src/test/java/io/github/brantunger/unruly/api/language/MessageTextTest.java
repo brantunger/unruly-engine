@@ -149,6 +149,18 @@ class MessageTextTest {
     }
 
     @Test
+    @DisplayName("leftOut writes the note that follows shortened text, as truncate and quote end it (#1241)")
+    void leftOutWritesTheNote() {
+        assertEquals("... (1 more characters)", MessageText.leftOut(1));
+        assertEquals("... (801 more characters)", MessageText.leftOut(801));
+        assertEquals("... (0 more characters)", MessageText.leftOut(0));
+        assertEquals("... (-1 more characters)", MessageText.leftOut(-1));
+        String text = "x".repeat(MAX_TEXT_LENGTH + 801);
+        assertEquals("x".repeat(MAX_TEXT_LENGTH) + MessageText.leftOut(801), MessageText.truncate(text));
+        assertEquals("x".repeat(MAX_NAME_LENGTH) + MessageText.leftOut(1), MessageText.quote("x".repeat(201)));
+    }
+
+    @Test
     @DisplayName("every code point on its own is kept, or, if it is a control, line or paragraph separator, space "
             + "separator other than U+0020, format, surrogate or default-ignorable one, escaped as String.format "
             + "writes each of its UTF-16 units")

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.test.KitFailuresCopies;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -15,10 +16,10 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The test kit keeps its own copy of the engine's overflow reader, {@code core.Failures.isOverflow}, in
+ * The test kit keeps its own copy of the engine's overflow reader, {@code internal.Causes.isOverflow}, in
  * {@code test.KitFailures}, which tells an {@link InternalError} around an overflow apart from a fatal one, as the
- * engine does (#1141). The kit may not use {@code core}'s internals, and {@code Failures.isOverflow} is
- * package-private, so this test is in {@code core}'s package to reach it. A change to one copy that misses the other
+ * engine does (#1141). The kit may not use the engine's {@code internal} package, which its module doesn't export;
+ * this test, on the class path, reads both copies. A change to one copy that misses the other
  * makes the kit rethrow as fatal what the engine reports as a rule's failure, or the other way round. Every case here
  * runs on both.
  */
@@ -30,7 +31,7 @@ class KitOverflowCopyTest {
     }
 
     private static final List<Copy> COPIES = List.of(
-            new Copy("core.Failures", Failures::isOverflow),
+            new Copy("internal.Causes", Causes::isOverflow),
             new Copy("test.KitFailures", KitFailuresCopies::isOverflow));
 
     /** The kinds of throwable a {@code getCause()} may throw. */

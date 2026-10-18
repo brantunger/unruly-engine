@@ -1,9 +1,9 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.core.Failures;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collection;
+import io.github.brantunger.unruly.internal.Text;
 import java.util.List;
 
 /**
@@ -19,13 +19,13 @@ final class Names {
     }
 
     /**
-     * Shortens one name to 200 characters, then escapes it, as {@link Failures#quote} does.
+     * Shortens one name to 200 characters, then escapes it, as {@link Text#quote} does.
      *
      * @param name The name, or {@code null}
      * @return The name, shortened to 200 characters, then escaped, or {@code null} as string concatenation shows it
      */
     static String quote(@Nullable String name) {
-        return name == null ? "null" : Failures.quote(name);
+        return name == null ? "null" : Text.quote(name);
     }
 
     /**
@@ -39,13 +39,13 @@ final class Names {
     }
 
     /**
-     * Shows a list of names in a message, as {@link Failures#quoteAll} does: each name shortened, the list shortened
+     * Shows a list of names in a message, as {@link Text#quoteAll} does: each name shortened, the list shortened
      * to 1,000 characters, and the whole escaped.
      *
      * @param names The names; a {@code null} one is shown as {@code null}
      * @return The list, such as {@code [eu, retail]}
      */
     static String quoteAll(Collection<? extends @Nullable String> names) {
-        return Failures.quoteAll(names);
+        return Text.quoteAll(names);
     }
 }

@@ -139,9 +139,10 @@ public sealed interface EvaluationContext
      * is logged and ignored: at ERROR if it is, or carries, a fatal {@link Error}, as defined next, and at WARN
      * otherwise. If the deadline has already passed, the action runs on this thread before this method returns, and a
      * fatal {@link Error} it throws, a {@link VirtualMachineError} such as {@link OutOfMemoryError} but not a
-     * {@link StackOverflowError} nor an {@link InternalError} that wraps one, or an exception that carries one, is
-     * thrown from this method instead. A run without a deadline registers nothing: the registration returned does
-     * nothing when closed. Passing the deadline stops the
+     * {@link StackOverflowError} nor an {@link InternalError} that wraps one (what {@link Throwables#isFatal} tells,
+     * leaving out what {@link Throwables#isOverflow} reads as an overflow), or an exception that carries one (what
+     * {@link Throwables#fatalError} finds), is thrown from this method instead. A run without a deadline registers
+     * nothing: the registration returned does nothing when closed. Passing the deadline stops the
      * run as {@link #isCancelled()} describes, and never interrupts its thread, so neither does the action unless it
      * interrupts it itself. An interrupt never runs the action: {@link #isCancelled()} still answers for both.
      * </p>

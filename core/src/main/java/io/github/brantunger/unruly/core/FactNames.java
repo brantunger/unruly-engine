@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.internal.Text;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
@@ -122,12 +123,12 @@ final class FactNames {
         for (Map.Entry<String, ExpressionLanguage> language : new TreeMap<>(languages).entrySet()) {
             Set<String> names = language.getValue().reservedFactNames();
             if (names == null) {
-                throw new IllegalStateException("The '" + Failures.quote(language.getKey())
+                throw new IllegalStateException("The '" + Text.quote(language.getKey())
                         + "' expression language returned null from reservedFactNames()");
             }
             for (String name : names) {
                 if (name == null) {
-                    throw new IllegalStateException("The '" + Failures.quote(language.getKey())
+                    throw new IllegalStateException("The '" + Text.quote(language.getKey())
                             + "' expression language returned a null name from reservedFactNames()");
                 }
             }
@@ -201,7 +202,7 @@ final class FactNames {
         if (ActionContext.OUTPUT_NAME.equals(name)) {
             return outputMessage(declared);
         }
-        return "'" + Failures.quote(name) + "' is reserved by the '" + Failures.quote(language)
+        return "'" + Text.quote(name) + "' is reserved by the '" + Text.quote(language)
                 + "' expression language and cannot be " + (declared ? "declared as a fact" : "used as a fact name");
     }
 }

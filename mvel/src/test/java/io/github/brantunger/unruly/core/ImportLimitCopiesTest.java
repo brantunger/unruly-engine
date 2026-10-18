@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.mvel.ImportsCopies;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,9 +14,9 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code mvel.Imports} keeps its own copy of {@code core.ImportResolver.checkSize}, which bounds an import in a rule's
- * own text as the engine bounds its own imports, because the {@code mvel} package may not use
- * {@code core.ImportResolver}, which isn't public either: this test is in {@code core}'s package to reach it. The
+ * {@code mvel.Imports} keeps its own copy of {@code internal.ImportSize.checkSize}, which bounds an import in a rule's
+ * own text as the engine bounds its own imports, because the {@code mvel} package may not use the engine's
+ * {@code internal} package, which its module doesn't export: this test, on the class path, reads both copies. The
  * copies reject the same imports with the same message, so a change to one that misses the other makes an engine
  * import and an inline one bounded differently. Every case here runs on both.
  */
@@ -24,14 +25,14 @@ class ImportLimitCopiesTest {
 
     private static Stream<Arguments> copies() {
         return Stream.of(
-                Arguments.of("core.ImportResolver", (Consumer<String>) ImportResolver::checkSize),
+                Arguments.of("internal.ImportSize", (Consumer<String>) ImportSize::checkSize),
                 Arguments.of("mvel.Imports", (Consumer<String>) ImportsCopies::checkSize));
     }
 
     /** An import, and the message both copies reject it with, or {@code null} if both accept it. */
     private static List<String[]> cases() {
-        int length = ImportResolver.MAX_IMPORT_LENGTH;
-        int parts = ImportResolver.MAX_IMPORT_PARTS;
+        int length = ImportSize.MAX_IMPORT_LENGTH;
+        int parts = ImportSize.MAX_IMPORT_PARTS;
         String emoji = Character.toString(0x1F600);
         return List.of(
                 new String[]{"java.util", null},

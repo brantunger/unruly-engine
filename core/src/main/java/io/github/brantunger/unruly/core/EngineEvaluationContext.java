@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.CancelRegistration;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
+import io.github.brantunger.unruly.internal.Causes;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -246,7 +247,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
      *                              suppressed on it, as far as keeping them doesn't fail: each once, and none it
      *                              already carries or that carries it (see {@link Failures#keepAlso})
      * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError}, and other than
-     *                              an {@link InternalError} that wraps one (see {@link Failures#isOverflow}), that
+     *                              an {@link InternalError} that wraps one (see {@link Causes#isOverflow}), that
      *                              keeping what failed before on the first failure threw, once every value is closed,
      *                              in place of the first failure, which it doesn't carry
      */
@@ -298,9 +299,9 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
         } catch (StackOverflowError ignored) {
             // Every value is closed: only what wasn't kept is lost, and the first is thrown as it is all the same.
         } catch (InternalError internal) {
-            // As for a StackOverflowError when it wraps one, as the JDK does (see Failures.isOverflow, which allocates
+            // As for a StackOverflowError when it wraps one, as the JDK does (see Causes.isOverflow, which allocates
             // nothing), and else as for any other VirtualMachineError.
-            if (!Failures.isOverflow(internal)) {
+            if (!Causes.isOverflow(internal)) {
                 throw internal;
             }
         } catch (VirtualMachineError fatal) {

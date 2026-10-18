@@ -19,6 +19,7 @@ import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -1055,7 +1056,7 @@ class NestedRunFailureLogTest {
 
         assertSame(oom, outcome.thrown());
         assertEquals(List.of(INNER_FATAL, "Failed to execute action for rule 'outer-rule': "
-                + "x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (4000 more characters)" + AFTER_NESTED_FATAL),
+                + "x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (4000 more characters)" + AFTER_NESTED_FATAL),
                 outcome.lines("ERROR"), outcome.logs());
     }
 
@@ -1727,7 +1728,7 @@ class NestedRunFailureLogTest {
     @DisplayName("#956: a long failure thrown on with no words of its own has the note after its count of what was"
             + " left out")
     void longFailureThrownOnKeepsTheNote() {
-        String message = "x".repeat(Failures.MAX_DESCRIPTION_LENGTH + 500);
+        String message = "x".repeat(Text.MAX_DESCRIPTION_LENGTH + 500);
         AtomicReference<RuntimeException> kept = new AtomicReference<>();
         Runnable earlier = keeping(running(engine("inner-rule", doing(() -> {
             throw new IllegalStateException(message);
@@ -1740,7 +1741,7 @@ class NestedRunFailureLogTest {
         });
 
         String inner = "Failed to execute action for rule 'inner-rule': "
-                + "x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters)";
+                + "x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters)";
         assertEquals(List.of(inner), outcome.lines("ERROR"), outcome.logs());
         assertEquals("Failed to execute action for rule 'later-rule': " + inner + " (already logged)",
                 outcome.thrown().getMessage());

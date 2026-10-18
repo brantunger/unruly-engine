@@ -13,6 +13,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -267,6 +268,6 @@ class CompileFailureTest {
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
 
         assertTrue(ex.getMessage().startsWith("Condition for rule 'r' xxx"), ex.getMessage());
-        assertTrue(ex.getMessage().length() < Failures.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
+        assertTrue(ex.getMessage().length() < Text.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
     }
 }

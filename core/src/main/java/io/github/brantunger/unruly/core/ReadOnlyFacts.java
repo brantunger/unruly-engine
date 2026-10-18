@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import io.github.brantunger.unruly.internal.Text;
 import java.util.function.Predicate;
 
 /**
@@ -232,7 +233,7 @@ final class ReadOnlyFacts extends AbstractMap<String, Object> {
     private static UnsupportedOperationException rejected(String error, Object key) {
         // Replaced, not formatted: String.formatted() has the JDK initialize Formatter's classes, which a run whose
         // expression writes to its facts would be the first to use (see RunClasses).
-        return new UnsupportedOperationException(error.replace("%s", Failures.quote(String.valueOf(key))));
+        return new UnsupportedOperationException(error.replace("%s", Text.quote(String.valueOf(key))));
     }
 
     private UnsupportedOperationException rejected() {

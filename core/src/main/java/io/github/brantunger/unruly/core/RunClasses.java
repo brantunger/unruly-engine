@@ -19,7 +19,14 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.FactProperties;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.Throwables;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Widening;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
@@ -202,7 +209,7 @@ final class RunClasses {
     static void initialize(MethodHandles.Lookup lookup, List<Class<?>> classes, List<String> named) {
         // In a native image nothing is looked up by name: which names an image has is its application's metadata to
         // decide, not this library's, and a lookup of one it lacks fails, with ClassNotFoundException or, in an image
-        // built with strict reachability metadata, with an error (see MissingRegistration.isMissingRegistration).
+        // built with strict reachability metadata, with an error (see Lookups.isMissingRegistration).
         // Skipping the lookups, rather than telling that error apart, also leaves CI's strict image build a check that
         // none is made.
         boolean image = inNativeImage();
@@ -309,11 +316,14 @@ final class RunClasses {
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
     // may not be there. OneStepStack makes the field updater that every change to a rule set's idle copies and open
-    // compilers goes through, which a load would otherwise make (#1220). The thirteen before the last five have no
+    // compilers goes through, which a load would otherwise make (#1220). The thirteen before the last twelve have no
     // static initializer: they are what a rule's or a run's first failure would otherwise be the first to load, which
     // can overflow deep in a stack as initializing a class can (#1066, #1093), so they are loaded here. So are the
-    // last five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be
-    // the first to load or initialize (#1097).
+    // next five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be
+    // the first to load or initialize (#1097). The last seven are what the api and core packages share and what
+    // api.language publishes of it: Text has the table of the characters it escapes, and a failure's description is
+    // the first to read it; the rest have no static initializer, and a language's or the kit's first failure, read
+    // through Throwables, ImportLimits or FatalErrors, would otherwise be the first to load them (#1241).
     private static List<Class<?>> engineClasses() {
         return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
@@ -330,7 +340,9 @@ final class RunClasses {
                 Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class,
                 CopyPermits.Returned.class,
                 RuleCompilationException.class, InvalidExpressionException.class,
-                InvalidExpressionException.Issue.class, MessageText.class);
+                InvalidExpressionException.Issue.class, MessageText.class,
+                Text.class, Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
+                FatalErrors.class);
     }
 
     // Loaded through the same lookup: the engine's classes, none with a static initializer, that the JVM's first load

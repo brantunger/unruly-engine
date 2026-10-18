@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.benchmarks;
 
-import io.github.brantunger.unruly.core.Failures;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -13,10 +12,11 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
+import io.github.brantunger.unruly.api.language.MessageText;
 import java.util.concurrent.TimeUnit;
 
 /**
- * What escaping costs: {@code Failures.escape}, which every failure's message and every name in one goes through,
+ * What escaping costs: {@code MessageText.escape}, which every failure's message and every name in one goes through,
  * over 999 characters of text. Plain text escapes nothing; the other inputs escape every character, or one in twenty
  * as ordinary right-to-left or emoji text does, so the cost of writing an escape shows.
  *
@@ -82,6 +82,6 @@ public class EscapeBenchmark {
      */
     @Benchmark
     public String escape() {
-        return Failures.escape(text);
+        return MessageText.escape(text);
     }
 }

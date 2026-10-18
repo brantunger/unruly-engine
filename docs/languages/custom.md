@@ -103,9 +103,8 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
 The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext` your language gets;
-tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine). An
-evaluation or action context equals only itself. Methods added to interfaces you implement are `default`, so an
-earlier 2.x language keeps working.
+tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
+Methods added to interfaces you implement are `default`, so an earlier 2.x language keeps working.
 
 ```java
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
@@ -161,6 +160,10 @@ throws `UnsupportedOperationException`. `output()` is the output object, MVEL's 
 `RuleExecutionException` naming the rule; a [fatal error](../glossary.md#fatal-error) is rethrown unchanged, even
 wrapped in your own exception. Keep caught exceptions as causes. A condition returning anything but a `Boolean`,
 `null` included, fails the rule: the engine coerces nothing.
+
+Since 2.33.0, `Throwables` reads what you catch as the engine does: `isFatal`, `isOverflow` (see
+[`prepare()`](#preparing-the-languages-classes)), `fatalError` and `isInterrupt`, which search suppressed exceptions
+too, and `messageOf`, `causeChain` and `rootCause`, safe when an accessor throws.
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get it [logged twice](../nested-runs.md#-what-is-logged). `FactProperties.read`'s
@@ -235,9 +238,7 @@ public void prepare() {
     // newCompiler(); the first time for its class, after the engine has checked that the stack has room.
     // Initialize classes and nothing else, but for running your own library's public API once, such as evaluating a
     // trivial expression, so a first run deep in a stack has fewer classes to load: create no state an engine uses,
-    // since the language may never compile anything, and stay cheap once done. A warm-up that may overflow should catch
-    // StackOverflowError and skip itself, as MVEL's does, but throw when a LinkageError comes first in the cause chain,
-    // such as a NoClassDefFoundError for a class an earlier overflow left unusable. A throw fails build() unchanged,
+    // since the language may never compile anything, and stay cheap once done. A throw fails build() unchanged,
     // or, at a first use, the rules in this language, as a failing newCompiler() does: "The 'my' expression language
     // failed to prepare: ...". The next use prepares again. It runs on the thread of that build(), load() or
     // validate(), and may run on several threads at once. Until a run that fired an action of this language class's
@@ -249,6 +250,17 @@ public void prepare() {
             lookup.ensureInitialized(type);   // runs the static initializer, and nothing else
         } catch (IllegalAccessException e) {
             // Out of this lookup's reach: left to its first use.
+        }
+    }
+    try {
+        MyParser.parse("1 == 1");   // runs the library once; deep in a stack it may overflow, and then skips itself
+    } catch (Throwable e) {
+        // Since 2.33.0, Throwables reads what you caught as the engine does, so don't write the rule yourself.
+        // isOverflow: a StackOverflowError, or one the library or the JDK wrapped, with no LinkageError before it in
+        // the cause chain. A NoClassDefFoundError for a class an earlier overflow left unusable, which no retry
+        // helps, isn't one, nor is a fatal error such as OutOfMemoryError (Throwables.isFatal): both are thrown.
+        if (!Throwables.isOverflow(e)) {
+            throw e;
         }
     }
 }
@@ -263,7 +275,7 @@ compiles the same way but logs only a fatal error. Every row but the session one
 | --- | --- | --- |
 | `InvalidExpressionException(message, issues)` | `Condition for rule 'prime-rate' ` + your message, with your issues; your exception as the cause | Per rule, with every other broken rule |
 | Any other exception | `Condition for rule 'prime-rate' failed to compile: ` + its description; no issues; your exception as the cause | Per rule |
-| A `StackOverflowError` ahead of any `LinkageError` in anything but an `InvalidExpressionException`'s cause chain | `... failed to compile: the expression is too long or too deeply nested to compile`, or, low on stack, `the stack ran out: ...`; elsewhere, `...: the stack overflowed` | Per rule, or as that call's row |
+| An overflow, as `Throwables.isOverflow` reads one, from anything but an `InvalidExpressionException` | `... failed to compile: the expression is too long or too deeply nested to compile`, or, low on stack, `the stack ran out: ...`; elsewhere, `...: the stack overflowed`, and, unless from `newSession`, `: the rule text may be too long or too deeply nested for the language` | Per rule, or as that call's row |
 | `null` from `compileCondition` or `compileAction` | `... wasn't compiled: its expression language returned null` | Per rule |
 | An exception from `newCompiler`, or `null` | `The 'my' expression language failed to create a compiler: ` + its description, or `returned no compiler`; no rule name | Once, in place of the first rule that needed the language; its rules aren't compiled |
 | An exception from `newSession` or `warmUp`, or `null` from `newSession`, while `load()` makes the copies of [`copiesAtLoad(n)`](../compiled-copies.md#making-copies-at-load) | `The 'my' expression language failed to create a session: ` or `failed to warm up a session: ` + its description, or `returned no session`; no rule name | By `load()` alone, after every rule has compiled; the rules loaded before stay loaded |
@@ -272,14 +284,13 @@ compiles the same way but logs only a fatal error. Every row but the session one
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
-warning's issue, as [Reading exception messages](../exception-messages.md) describes. Any other exception with no
-message shows its class name, and any root cause's in `(caused by ...)` unless already named.
+warning's issue, and notes a root cause, as [Reading exception messages](../exception-messages.md) describes.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
 Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`. Text the engine
 shows as it came, such as the issues you throw, is yours to make safe with
 `io.github.brantunger.unruly.api.language.MessageText`. To keep a note after such text whole, give `escapeWithin` or
-`quoteWithin` the room the rest of the message leaves:
+`quoteWithin` the room left:
 
 ```java
 String fact = "'" + MessageText.quote(factName) + "'";                // a name: cut to 200 characters, then escaped
@@ -291,15 +302,28 @@ String text = MessageText.escape(MessageText.truncate(libraryText));  // truncat
 // The class name gets a name's 200 characters of room; the text gets the room the note leaves.
 String note = " (caused by " + MessageText.quoteWithin(causeClassName, MessageText.MAX_NAME_LENGTH) + ")";
 String issueText = MessageText.escapeWithin(libraryText, MessageText.MAX_TEXT_LENGTH - note.length()) + note;
+// Since 2.33.0, text you cut your own way can end with the engine's note. Cut between code points and escape what you
+// keep, as above; escapeWithin also leaves out raw text that reads as an escape, which this doesn't.
+int end = libraryText.offsetByCodePoints(0, 50);   // for text of more than 50 code points
+String shortened = MessageText.escape(libraryText.substring(0, end)) + MessageText.leftOut(libraryText.length() - end);
+// Since 2.33.0, an import an expression makes inline can be rejected with the engine's words. importSizeProblem is null
+// within 1,000 characters and 64 dot-separated parts, else "it has 1001 characters, and an import may have at most
+// 1000" or "it has 65 dot-separated parts, ...". The rule's failure then reads "Condition for rule 'prime-rate'
+// failed to compile: Can't import '...': it has ...".
+String problem = ImportLimits.importSizeProblem(importName);
+if (problem != null) {
+    throw new InvalidExpressionException("failed to compile: Can't import '" + MessageText.quote(importName) + "': "
+            + problem);
+}
 ```
 
-The `RuleCompilationException` carries the same issues; its name, kind and issues are the first failure's, and
-`failures()` has each rule's, in compile order: priority order, highest first, `null` last, equal priorities in list
-order. [Several failures from load()](../exception-messages.md#-several-failures-from-load) shows its message.
+The `RuleCompilationException`'s name, kind and issues are the first failure's, and `failures()` has each rule's, in
+compile order: priority order, highest first, `null` last, equal priorities in list order.
+[Several failures from load()](../exception-messages.md#-several-failures-from-load) shows its message.
 
-The engine itself fails a rule with a blank condition or action (`Rule 'prime-rate' has a blank condition expression`)
-or a language it doesn't have (`Rule 'prime-rate' is written in 'cel', which isn't one of the engine's expression
-languages: [mvel]`, with no expression kind), collected with the rest; a `null` rule or a duplicate name fails at once.
+The engine itself fails a rule with a [blank](../writing-rules.md#-anatomy-of-a-rule) condition or action, or, with
+no expression kind, a [language it doesn't have](README.md#-choosing-a-language-per-rule), collected with the rest; a
+`null` rule or a duplicate name fails at once.
 
 > [!WARNING]
 > A condition that doesn't compile hides its action's errors: the action isn't compiled until a `load()` with the

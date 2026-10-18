@@ -2,6 +2,12 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.ClassFiles;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ImportLimits;
+import io.github.brantunger.unruly.api.language.Throwables;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -25,7 +31,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * which tells listeners of it, use neither, nor does {@link UniqueMatchRulesEngine}, whose own code fails a run that
  * matches more than one rule, nor {@link Closing}, which closes what a failed borrow made. #1097: nor
  * {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
- * {@link RuleCompilationException}, which every failed load creates. This reads their class files, and those of their
+ * {@link RuleCompilationException}, which every failed load creates. #1241: nor the readers and text helpers the
+ * {@code internal} package holds for them, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
+ * what {@code api.language} publishes of them, {@link Throwables}, {@link ImportLimits} and the {@link FatalErrors}
+ * bridge, which a language's first failure may be the first to call. This reads their class files, and those of their
  * nested classes, from the directory or jar each was loaded from, as {@code StringConcatenationTest} reads the
  * library's, and fails if one names {@code LambdaMetafactory}, as the constant pool does for a call site linked to
  * it, if a method of one has any other {@code invokedynamic}, which the JVM links the same way, or if the class itself
@@ -37,7 +46,9 @@ class FailureCodeLambdaTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
-            UniqueMatchRulesEngine.class, Closing.class, CopyPermits.class, RuleCompilationException.class})
+            UniqueMatchRulesEngine.class, Closing.class, CopyPermits.class, RuleCompilationException.class,
+            Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
+            ImportLimits.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.mvel.ExactNameClassLoaderCopies;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,10 +14,10 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * {@code mvel.ExactNameClassLoader} keeps its own copy of {@code core.ImportResolver.isWrongName}, which tells the
+ * {@code mvel.ExactNameClassLoader} keeps its own copy of {@code internal.Lookups.isWrongName}, which tells the
  * JVM's "wrong name" error for the name looked up from any other {@code NoClassDefFoundError}, because the
- * {@code mvel} package may not use {@code core.ImportResolver}, which isn't public either: this test is in
- * {@code core}'s package to reach it. The copies read the same errors the same way, so a change to one that misses
+ * {@code mvel} package may not use the engine's {@code internal} package, which its module doesn't export: this test,
+ * on the class path, reads both copies. The copies read the same errors the same way, so a change to one that misses
  * the other makes an engine import and a name in a rule's text read a class file found in another case differently.
  * Every case here runs on both. The cases have the names in both orders the JVMs write them in: the name asked for
  * first, as HotSpot writes it, and last, as OpenJ9 does.
@@ -40,8 +41,8 @@ class WrongNameCopiesTest {
 
     private static Stream<Arguments> copies() {
         return Stream.of(
-                Arguments.of("core.ImportResolver", (BiPredicate<NoClassDefFoundError, String>)
-                        ImportResolver::isWrongName),
+                Arguments.of("internal.Lookups", (BiPredicate<NoClassDefFoundError, String>)
+                        Lookups::isWrongName),
                 Arguments.of("mvel.ExactNameClassLoader", (BiPredicate<NoClassDefFoundError, String>)
                         ExactNameClassLoaderCopies::isWrongName));
     }

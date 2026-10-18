@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -655,7 +656,7 @@ final class RuleSet {
             compiler.warmUp(session);
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
-            String msg = "The '" + Failures.quote(language) + "' expression language failed to warm up a session: "
+            String msg = "The '" + Text.quote(language) + "' expression language failed to warm up a session: "
                     + NestedFailures.describeCallOut(e, true);
             AbstractRulesEngine.reportCalledCodeFailure(msg, e);
             throw NestedFailures.report(msg, e);
@@ -1280,7 +1281,7 @@ final class RuleSet {
      * listener is told: no callback has been sent for the run yet.
      */
     private static Session newSession(String language, ExpressionCompiler compiler) {
-        String failed = "The '" + Failures.quote(language) + "' expression language ";
+        String failed = "The '" + Text.quote(language) + "' expression language ";
         Session session;
         try {
             LoggedFailures.callOut();

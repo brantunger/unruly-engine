@@ -10,6 +10,8 @@ import java.util.Set;
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Widening;
 
 /**
  * Takes in a run's facts for an engine: collects their values, widening a boxed primitive to the primitive type its
@@ -220,7 +222,7 @@ final class FactIntake {
         // that rejects a fact would be the first to use (see RunClasses).
         String why = primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
                 ? " (" + Widening.ONLY_WIDENED + ")" : "";
-        throw rejectedFact("Fact '" + Failures.quote(name) + "' was declared as " + declared.getName()
+        throw rejectedFact("Fact '" + Text.quote(name) + "' was declared as " + declared.getName()
                 + ", but the run supplied a " + value.getClass().getName() + why);
     }
 
@@ -238,13 +240,13 @@ final class FactIntake {
         }
         for (String name : values.keySet()) {
             if (!declaredFacts.containsKey(name)) {
-                throw rejectedFact("Fact '" + Failures.quote(name)
+                throw rejectedFact("Fact '" + Text.quote(name)
                         + "' wasn't declared, and this engine was built with requireDeclaredFacts()");
             }
         }
         for (String name : declaredFacts.keySet()) {
             if (!values.containsKey(name)) {
-                throw rejectedFact("Fact '" + Failures.quote(name) + "' was declared, but the run didn't supply it, "
+                throw rejectedFact("Fact '" + Text.quote(name) + "' was declared, but the run didn't supply it, "
                         + "and this engine was built with requireDeclaredFacts()");
             }
         }
@@ -334,8 +336,8 @@ final class FactIntake {
             failure = e;
         }
         Failures.keepInterruptStatus(failure);
-        String msg = "The '" + Failures.quote(language) + "' expression language failed to check fact name '"
-                + Failures.quote(name) + "': " + NestedFailures.describeCallOut(failure, true);
+        String msg = "The '" + Text.quote(language) + "' expression language failed to check fact name '"
+                + Text.quote(name) + "': " + NestedFailures.describeCallOut(failure, true);
         Error fatal = Failures.fatalError(failure);
         boolean logs = (logged || fatal != null) && NestedFailures.unlogged(failure);
         if (logs) {

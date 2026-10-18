@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.core.Failures;
+import io.github.brantunger.unruly.internal.Text;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +43,7 @@ public class LoggingRuleListener implements RuleListener {
 
     /** Names a rule the way the engine's error messages do. */
     private static String nameOf(Rule rule) {
-        return Failures.quote(rule.getRuleName());
+        return Text.quote(rule.getRuleName());
     }
 
     @Override
@@ -92,7 +92,7 @@ public class LoggingRuleListener implements RuleListener {
         // The engine's own messages arrive escaped, and escaping them again changes nothing; an engine of your own
         // may not have escaped its message, and its fact values are the ones most likely to come from request data.
         String message = error.getMessage();
-        String escaped = message == null ? null : Failures.escape(message);
+        String escaped = message == null ? null : Text.escape(message);
         if (isStop(error)) {
             log.debug("Stopped rule: {} | {}", nameOf(rule), escaped);
         } else {

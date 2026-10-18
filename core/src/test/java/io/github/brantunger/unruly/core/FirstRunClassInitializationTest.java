@@ -11,7 +11,14 @@ import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.FactProperties;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.ImportLimits;
+import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Widening;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -155,7 +162,9 @@ class FirstRunClassInitializationTest {
                     NestedFailures.class, NestedFailures.Below.class,
                     Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class,
                     IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
-                    InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class)
+                    InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class, Text.class,
+                    Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
+                    FatalErrors.class)
                     .map(Class::getName),
             Stream.of(RuleSet.class.getName() + "$Source", RuleSet.class.getName() + "$Warning",
                     "io.github.brantunger.unruly.api.language.NoSession",

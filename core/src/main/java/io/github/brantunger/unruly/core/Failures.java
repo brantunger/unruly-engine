@@ -3,14 +3,14 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.Text;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
@@ -21,27 +21,11 @@ import java.util.Set;
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
  * unchanged, and how an exception is described in an error message. Only {@link #closingInsteadOf},
  * {@link #insteadOf} and {@link #keepAlso} log, and under the engine's logger name,
- * {@code io.github.brantunger.unruly.engine}, as every failure is logged.
- * <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so that the
- * {@code api} package ({@code Names}, {@code LoggingRuleListener} and {@code language.MessageText}) and the benchmarks
- * can use it: they shorten and escape text the way the engine does, rather than keeping a copy that could drift.
+ * {@code io.github.brantunger.unruly.engine}, as every failure is logged. What was thrown is read as {@link Causes}
+ * reads it, and text is shortened and escaped as {@link Text} does it; {@code api.language} publishes both, and
+ * {@link FatalErrors} the search for a fatal error made here.
  */
-public final class Failures {
-
-    /**
-     * How much of an exception's message an error message includes; see {@link NestedFailures#describe}.
-     * {@code MessageText} publishes it.
-     */
-    static final int MAX_DESCRIPTION_LENGTH = MessageText.MAX_TEXT_LENGTH;
-
-    /**
-     * How much of a fact, rule or language name a message includes; see {@link #quote}. {@code MessageText} publishes
-     * it.
-     */
-    static final int MAX_NAME_LENGTH = MessageText.MAX_NAME_LENGTH;
-
-    /** How many links of an exception's cause chain the engine reads; see {@link #causeChain}. */
-    static final int MAX_CAUSE_CHAIN_LENGTH = 100;
+final class Failures {
 
     /**
      * How many different exceptions, through causes and suppressed exceptions, the engine reads to learn whether one
@@ -50,17 +34,6 @@ public final class Failures {
      * found.
      */
     static final int MAX_EXCEPTIONS_READ = 10_000;
-
-    /**
-     * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
-     * Unicode 15.0 to 17.0) that aren't format characters, as the first and last code point of each range, in order:
-     * fillers, marks such as the variation selectors, and the unassigned code points kept for more of them. U+180E and
-     * the tag characters in U+E0000..U+E0FFF are format characters, which are escaped anyway; see {@link #escape}.
-     */
-    private static final int[] OTHER_DEFAULT_IGNORABLE = {
-        0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
-        0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
-    };
 
     // What a Reach looks for (see Reach#matches): a fatal error, any error, an interrupt, the stop of a run past a
     // deadline or interrupted, or the very instance given. Written as numbers that pick plain code rather than as
@@ -77,56 +50,13 @@ public final class Failures {
     }
 
     /**
-     * Tells whether {@code thrown} is an {@link Error} the engine must not absorb, because the JVM itself is failing
-     * and no message about a rule would help: a {@link VirtualMachineError} other than {@link StackOverflowError},
-     * such as {@link OutOfMemoryError}, {@link InternalError} or {@link UnknownError}, but not an
-     * {@link InternalError} that is an overflow (see {@link #isOverflow}).
-     *
-     * <p>
-     * Every other error comes from the code being run, so it's handled like an exception and reported with the name of
-     * the rule it came from:
-     * </p>
-     * <ul>
-     *     <li>{@link StackOverflowError} (runaway recursion), which is itself a {@code VirtualMachineError} and so is
-     *     excluded here on purpose;</li>
-     *     <li>an {@link InternalError} with a {@link StackOverflowError} in its cause chain and no
-     *     {@link LinkageError} before it, as the JDK wraps an overflow it hits defining a hidden class deep in a stack
-     *     (#1141): the code being run ran out of stack, which more room fixes;</li>
-     *     <li>{@link AssertionError} ({@code assert} in a rule, a listener or a language);</li>
-     *     <li>every {@link LinkageError} — {@link NoClassDefFoundError}, {@link IllegalAccessError},
-     *     {@link IncompatibleClassChangeError}, {@link ExceptionInInitializerError}, {@link VerifyError} and the rest —
-     *     which means a class a rule uses is missing or can't be read: a configuration problem in one rule, not a
-     *     failing JVM;</li>
-     *     <li>any other {@link Error}, such as {@link java.io.IOError} or
-     *     {@link java.util.ServiceConfigurationError}.</li>
-     * </ul>
-     *
-     * <p>
-     * It allocates nothing, and is the one check the engine's last-resort code makes, where handling a failure has
-     * itself failed, as it can deep in a stack or with no memory left: ending a run (see {@link Teardown}), closing
-     * a run's values and refusing one whose init ended the run ask it for what they caught, with instanceof checks and
-     * assignments around it. Only an {@link InternalError} has its chain read, as {@link #isOverflow} reads it, so the
-     * call takes one frame more than the checks themselves would (#1164).
-     * </p>
-     *
-     * @param thrown One throwable from a cause chain, or {@code null}, which isn't fatal
-     * @return {@code true} if {@code thrown} must be rethrown unchanged
-     */
-    static boolean isFatal(Throwable thrown) {
-        // StackOverflowError is a VirtualMachineError, so excluding it needs its own check. Only an InternalError has
-        // its chain read, with nothing allocated for it.
-        return thrown instanceof VirtualMachineError && !(thrown instanceof StackOverflowError)
-                && !(thrown instanceof InternalError && isOverflow(thrown));
-    }
-
-    /**
-     * Finds the fatal {@link Error} (see {@link #isFatal}) in what was caught: the throwable itself, or one of its
-     * causes, or failing that one suppressed on any of them, or among the causes and suppressed exceptions of those. An
-     * error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the engine
-     * inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be absorbed
-     * into a {@link RuleExecutionException}; and a {@code try}-with-resources whose {@code close()} hits one while its
-     * body throws leaves it suppressed on the body's exception, so checking only the cause chain let it be absorbed
-     * too.
+     * Finds the fatal {@link Error} (see {@link Causes#isFatal}) in what was caught: the throwable itself, or one of
+     * its causes, or failing that one suppressed on any of them, or among the causes and suppressed exceptions of
+     * those. An error from Java code a rule calls, such as a method, a getter or a lambda held in a fact, reaches the
+     * engine inside MVEL's own exception, so checking only the outer exception let an {@link OutOfMemoryError} be
+     * absorbed into a {@link RuleExecutionException}; and a {@code try}-with-resources whose {@code close()} hits one
+     * while its body throws leaves it suppressed on the body's exception, so checking only the cause chain let it be
+     * absorbed too.
      *
      * <p>
      * A suppressed exception the engine itself added to a failure it reported isn't read (see
@@ -145,14 +75,14 @@ public final class Failures {
      *         there is none among the exceptions read
      */
     static Error fatalError(Throwable thrown) {
-        return fatalErrorIn(causeChain(thrown));
+        return fatalErrorIn(Causes.causeChain(thrown));
     }
 
     /**
      * Finds the fatal {@link Error} in a cause chain read once, as {@link #fatalError} finds it in what was caught,
      * for a caller that goes on to ask where in that same chain it is.
      *
-     * @param chain An exception and its causes (see {@link #causeChain})
+     * @param chain An exception and its causes (see {@link Causes#causeChain})
      * @return The fatal error {@link #fatalError} returns for it, or {@code null}
      */
     static Error fatalErrorIn(List<Throwable> chain) {
@@ -163,7 +93,7 @@ public final class Failures {
     /** Finds the first fatal {@link Error} in a cause chain itself, or {@code null} if there is none. */
     static Error fatalIn(List<Throwable> chain) {
         for (Throwable t : chain) {
-            if (isFatal(t)) {
+            if (Causes.isFatal(t)) {
                 return (Error) t;
             }
         }
@@ -201,11 +131,12 @@ public final class Failures {
      * goes into, it reads the exception's cause chain first, each link in order; then it reads the direct suppressed
      * exceptions of each link of that chain, from the top link down, each in order, before it goes into any of them;
      * then it goes into each of those in the same order, the same way, depth first. A cause is read as
-     * {@link #causeOf} reads it, so a {@code getCause()} that throws ends that chain; so does a link read already.
-     * {@code getSuppressed()} is final, and read once for each exception. Each exception is read once, and at most
-     * {@value #MAX_EXCEPTIONS_READ} different ones are, the links a walk starts beside included, so a graph with loops
-     * of its own, a {@code getCause()} that returns a new exception every time, or a great many suppressed exceptions
-     * end it too; one past that many is never found. It ends as soon as an exception matches or that many are read.
+     * {@link Causes#causeOf} reads it, so a {@code getCause()} that throws ends that chain; so does a link read
+     * already. {@code getSuppressed()} is final, and read once for each exception. Each exception is read once, and at
+     * most {@value #MAX_EXCEPTIONS_READ} different ones are, the links a walk starts beside included, so a graph with
+     * loops of its own, a {@code getCause()} that returns a new exception every time, or a great many suppressed
+     * exceptions end it too; one past that many is never found. It ends as soon as an exception matches or that many
+     * are read.
      * Besides the set of what it read, the walk holds a list of the suppressed exceptions it read for each exception
      * it's going into, each exception in one list at most, so no more than that many exceptions; the copy
      * {@code getSuppressed()} returned for each link of the chain it starts beside, for as long as it walks; and,
@@ -280,13 +211,13 @@ public final class Failures {
          * @return The suppressed exceptions read, to go into next, which may be none
          */
         private List<Throwable> goInto(Throwable t) {
-            Throwable cause = causeOf(t);
+            Throwable cause = Causes.causeOf(t);
             if (cause == null) {
                 return readSuppressed(t, t.getSuppressed(), List.of());
             }
             List<Throwable> chain = new ArrayList<>();
             chain.add(t);
-            for (Throwable link = cause; link != null && read(link); link = causeOf(link)) {
+            for (Throwable link = cause; link != null && read(link); link = Causes.causeOf(link)) {
                 chain.add(link);
             }
             List<Throwable> tested = List.of();
@@ -312,7 +243,7 @@ public final class Failures {
 
         /**
          * Tells whether an exception is what the walk looks for: with {@link #FATAL}, a fatal {@link Error} (see
-         * {@link #isFatal}); with {@link #ANY_ERROR}, any error; with {@link #INTERRUPT}, an
+         * {@link Causes#isFatal}); with {@link #ANY_ERROR}, any error; with {@link #INTERRUPT}, an
          * {@link InterruptedException}; with {@link #STOP}, the stop of a run past the deadline the walk was given,
          * or interrupted if it was given none (see {@link ReportedFailure#isStopFor}); and with {@link #SAME}, the
          * very instance it was given.
@@ -321,7 +252,7 @@ public final class Failures {
         @SuppressWarnings("PMD.CompareObjectsWithEquals")
         private boolean matches(Throwable t) {
             return switch (match) {
-                case FATAL -> isFatal(t);
+                case FATAL -> Causes.isFatal(t);
                 case ANY_ERROR -> t instanceof Error;
                 case INTERRUPT -> t instanceof InterruptedException;
                 case STOP -> t instanceof ReportedFailure reported && reported.isStopFor((Deadline) target);
@@ -440,7 +371,7 @@ public final class Failures {
      * carrying the rest. The run makes it before it holds anything, a copy of the rules or a value, so that ending a
      * run that has run out of memory allocates nothing until what the steps threw is combined (#855), and adds what
      * each step threw, or {@code null}, in order: {@link #add} is assignments and the instanceof checks of
-     * {@link Failures#isFatal} only, so a step that failed never keeps the next from running, as combining what it
+     * {@link Causes#isFatal} only, so a step that failed never keeps the next from running, as combining what it
      * threw there could, when it runs out of stack or memory.
      * {@link #result} combines them once every step has run, and when combining fails, as it can when it allocates,
      * falls back on the first fatal error the JVM threw, kept by assignment as the steps were added, or else on what
@@ -466,14 +397,14 @@ public final class Failures {
         }
 
         /**
-         * Adds what the next step threw, with nothing allocated and no call but {@link Failures#isFatal}.
+         * Adds what the next step threw, with nothing allocated and no call but {@link Causes#isFatal}.
          *
          * @param t What it threw, or {@code null} if it threw nothing
          */
         void add(Throwable t) {
             thrown[steps] = t;
             steps++;
-            if (fatal == null && isFatal(t)) {
+            if (fatal == null && Causes.isFatal(t)) {
                 fatal = t;
             }
         }
@@ -624,7 +555,8 @@ public final class Failures {
      */
     static Throwable insteadOf(Throwable failure, Throwable later) {
         // A fatal error itself, as ending a run returns one, is read with nothing allocated.
-        return later == null ? null : replaced(failure, later, isFatal(later) ? (Error) later : fatalError(later));
+        return later == null ? null
+                : replaced(failure, later, Causes.isFatal(later) ? (Error) later : fatalError(later));
     }
 
     /**
@@ -638,7 +570,7 @@ public final class Failures {
      */
     private static Throwable replaced(Throwable failure, Throwable later, Error laterFatal) {
         Throwable other = laterFatal != null ? laterFatal : later;
-        List<Throwable> chain = causeChain(failure);
+        List<Throwable> chain = Causes.causeChain(failure);
         Error fatal = fatalErrorIn(chain);
         if (fatal != null) {
             return fatalOfFailure(failure, chain, fatal, other);
@@ -684,10 +616,10 @@ public final class Failures {
 
     /**
      * Returns the text of a nested failure for the note {@link NestedFailures#describe} adds after an exception's own
-     * message: the text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a
-     * whole before it's escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold
+     * message: the text {@link #loggedText} returns, shortened to {@value Text#MAX_DESCRIPTION_LENGTH} characters as a
+     * whole before it's escaped, as {@link Text#quoteAll} shortens a list, because the nested failure may itself hold
      * news, run after run. The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s
-     * message included, so it's shortened as {@link #clip} shortens it, never inside an escape. Its text names the
+     * message included, so it's shortened as {@link Text#clip} shortens it, never inside an escape. Its text names the
      * root cause if it's hidden, so the note of the exception around it doesn't.
      *
      * @param logged The nested failure
@@ -696,19 +628,19 @@ public final class Failures {
     static String noteText(Throwable logged) {
         String message = messageOr(logged, logged.getClass().getName());
         if (logged instanceof ReportedFailure) {
-            return clip(message);
+            return Text.clip(message);
         }
         // Shortened before it's escaped, as a whole, and before an escape the message already holds, so a cut never
         // falls inside an escape.
-        String note = rawCauseNote(causeChain(logged), shownOf(readableMessage(logged)));
-        return clip(escape(message).contains(escape(note)) ? message : message + note);
+        String note = rawCauseNote(Causes.causeChain(logged), shownOf(readableMessage(logged)));
+        return Text.clip(Text.escape(message).contains(Text.escape(note)) ? message : message + note);
     }
 
     /**
      * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
      * {@link ReportedFailure}, which the engine wrote, or else the exception described as
      * {@link NestedFailures#describe} describes one whose cause chain holds no nested failure, which escapes a message
-     * a language wrote and shortens it as {@link #clip} shortens it, never inside an escape: the engine wrote most
+     * a language wrote and shortens it as {@link Text#clip} shortens it, never inside an escape: the engine wrote most
      * such messages, such as a rule that fails to compile or a fact it rejects, and escaped the names and text in them
      * already. The note of a root cause it would otherwise hide is left out when the message already has it, as a
      * message the engine wrote from a language's exception does, so it isn't there twice, as
@@ -719,10 +651,10 @@ public final class Failures {
      */
     static String loggedText(Throwable logged) {
         if (logged instanceof ReportedFailure) {
-            return messageOf(logged);
+            return Causes.messageOf(logged);
         }
-        String text = clip(messageOr(logged, logged.getClass().getName()));
-        String note = causeNote(causeChain(logged), shownOf(readableMessage(logged)));
+        String text = Text.clip(messageOr(logged, logged.getClass().getName()));
+        String note = causeNote(Causes.causeChain(logged), shownOf(readableMessage(logged)));
         return text.contains(note) ? text : text + note;
     }
 
@@ -732,12 +664,12 @@ public final class Failures {
      * description shows already has it, the class's name for a root cause with no message, as
      * {@code new RuntimeException(cause)}'s message has it, and the message otherwise: the first message for
      * {@link NestedFailures#describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's
-     * first {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them (see {@link #shownOf}), searched
-     * raw, without the note of what was left out: a root cause's message found only past the cut isn't shown, and
-     * searching all of a long text took time that grew with the square of its length. A message that can't be read
-     * (see {@link #messageOf}) hides the root cause as a missing one does, and a root cause whose message can't be
-     * read is named with the note that it's unavailable. Only a text that can be read can already show the root cause's
-     * message: two notes that messages are unavailable read the same whatever the messages were.
+     * first {@value Text#MAX_DESCRIPTION_LENGTH} characters as {@link Text#clip} keeps them (see {@link #shownOf}),
+     * searched raw, without the note of what was left out: a root cause's message found only past the cut isn't shown,
+     * and searching all of a long text took time that grew with the square of its length. A message that can't be read
+     * (see {@link Causes#messageOf}) hides the root cause as a missing one does, and a root cause whose message can't
+     * be read is named with the note that it's unavailable. Only a text that can be read can already show the root
+     * cause's message: two notes that messages are unavailable read the same whatever the messages were.
      *
      * @param chain An exception and its causes
      * @param shown The part of the first exception's text the description shows, as {@link #shownOf} returns it, or
@@ -746,14 +678,14 @@ public final class Failures {
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
     static String causeNote(List<Throwable> chain, @Nullable String shown) {
-        return escape(rawCauseNote(chain, shown));
+        return Text.escape(rawCauseNote(chain, shown));
     }
 
     /**
      * Names the root cause as {@link #causeNote} does, before the note is escaped: the root cause's class shortened as
-     * {@link #quote} shortens a name, and its message as {@link #shortenBeforeEscape} shortens one, never inside an
-     * escape: the message of a root cause the engine built holds escapes already, and escaping the note after, or
-     * shortening it again with the text it follows (see {@link #noteText}), can't mend one cut in half.
+     * {@link Text#quote} shortens a name, and its message as {@link Text#shortenBeforeEscape} shortens one, never
+     * inside an escape: the message of a root cause the engine built holds escapes already, and escaping the note
+     * after, or shortening it again with the text it follows (see {@link #noteText}), can't mend one cut in half.
      *
      * @param chain An exception and its causes
      * @param shown As for {@link #causeNote}
@@ -764,15 +696,16 @@ public final class Failures {
             return "";
         }
         Throwable root = chain.get(chain.size() - 1);
-        String rootMessage = messageOf(root);
+        String rootMessage = Causes.messageOf(root);
         if (rootMessage == null) {
             // A text that shows the class already, as new RuntimeException(cause)'s message does, needs no note.
             String rootClass = root.getClass().getName();
-            return shown != null && shown.contains(rootClass) ? "" : " (caused by " + shorten(rootClass) + ")";
+            return shown != null && shown.contains(rootClass) ? "" : " (caused by " + Text.shorten(rootClass) + ")";
         }
         boolean hidden = !allReadable(chain) && (shown == null || !shown.contains(rootMessage));
         return hidden
-                ? " (caused by " + shorten(root.getClass().getName()) + ": " + shortenBeforeEscape(rootMessage) + ")"
+                ? " (caused by " + Text.shorten(root.getClass().getName()) + ": "
+                        + Text.shortenBeforeEscape(rootMessage) + ")"
                 : "";
     }
 
@@ -789,30 +722,30 @@ public final class Failures {
     /**
      * Returns the part of a text that a description shows, for {@link #causeNote} to search: the characters it keeps
      * themselves, not the shortened text, whose note of what was left out could match. That's the whole text if it
-     * fits, or else its first characters as {@link #clip} keeps them, which can be up to 5 fewer than
-     * {@link #truncate} keeps.
+     * fits, or else its first characters as {@link Text#clip} keeps them, which can be up to 5 fewer than
+     * {@link Text#truncate} keeps.
      *
      * @param text The text, or {@code null} if there's none that can be read
      * @return The part shown, or {@code null} if {@code text} is
      */
     static @Nullable String shownOf(@Nullable String text) {
-        if (text == null || text.length() <= MAX_DESCRIPTION_LENGTH) {
+        if (text == null || text.length() <= Text.MAX_DESCRIPTION_LENGTH) {
             return text;
         }
-        return text.substring(0, keptBeforeEscape(text, MAX_DESCRIPTION_LENGTH));
+        return text.substring(0, Text.keptBeforeEscape(text, Text.MAX_DESCRIPTION_LENGTH));
     }
 
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
-     * calls outside any rule, such as the output factory: shortened to {@value #MAX_DESCRIPTION_LENGTH} characters,
-     * then escaped, as {@link #clip} does, like {@link NestedFailures#describe}, so a message the engine escaped is
+     * calls outside any rule, such as the output factory: shortened to {@value Text#MAX_DESCRIPTION_LENGTH} characters,
+     * then escaped, as {@link Text#clip} does, like {@link NestedFailures#describe}, so a message the engine escaped is
      * never cut inside an escape, and naming a root cause it would otherwise hide as {@link NestedFailures#describe}
      * does. The root cause counts as shown only when the part of the {@code toString()} this shows, its first
-     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them, has its message, so neither a class name
-     * that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it. The
-     * note is left out when the text already has it, as the message of a {@code run()} started from that code does
-     * unless it was shortened, so it isn't there twice. When {@code toString()} throws, its class name stands in with a
-     * note that its message is unavailable (see {@link #textOf}), which shows no root cause.
+     * {@value Text#MAX_DESCRIPTION_LENGTH} characters as {@link Text#clip} keeps them, has its message, so neither a
+     * class name that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it.
+     * The note is left out when the text already has it, as the message of a {@code run()} started from that code
+     * does unless it was shortened, so it isn't there twice. When {@code toString()} throws, its class name stands in
+     * with a note that its message is unavailable (see {@link #textOf}), which shows no root cause.
      *
      * @param e The exception to describe
      * @return Its class name, its message if it has one, and a note of its root cause if the text hides it and doesn't
@@ -820,39 +753,14 @@ public final class Failures {
      */
     static String describeWithClass(Throwable e) {
         String readable = readableText(e);
-        String text = clip(readable != null ? readable : textOf(e));
-        String note = causeNote(causeChain(e), shownOf(readable));
+        String text = Text.clip(readable != null ? readable : textOf(e));
+        String note = causeNote(Causes.causeChain(e), shownOf(readable));
         return text.contains(note) ? text : text + note;
     }
 
     /**
-     * Reads an exception's message without letting a failure to read it escape. The engine reads the message of what
-     * rules, listeners and languages throw to describe it, and a {@code getMessage()} of their own can throw, such as
-     * one built from a field that is {@code null}; a failure the engine was handling would then end as that one.
-     * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable: what an
-     * accessor of an exception the engine didn't create throws says nothing about the failure the engine is handling,
-     * which is still handled as it would be, its own fatal errors included. The accessors {@link #readableMessage},
-     * {@link #messageOr}, {@link #textOf}, {@link #readableText}, {@link #causeOf} and {@link #issuesOf} read the same
-     * way, each in a {@code try} of its own rather than through a lambda or method reference, so the JVM's first
-     * failure links no call site, which could overflow deep in a stack (#1093). {@code mvel.ExceptionReads} keeps a
-     * copy for the {@code mvel} package, which may not use this class, and mvel's {@code ExceptionReadsCopiesTest}
-     * checks it against this one.
-     *
-     * @param e The exception
-     * @return Its message, or {@code null} if it has none, or {@code (message unavailable: ...)}, naming the class of
-     *         what {@code getMessage()} threw, if it can't be read
-     */
-    static String messageOf(Throwable e) {
-        try {
-            return e.getMessage();
-        } catch (Throwable thrown) {
-            return unavailable("", thrown);
-        }
-    }
-
-    /**
-     * Reads an exception's message as {@link #messageOf} does, telling no message and one that can't be read apart
-     * from one that says something.
+     * Reads an exception's message as {@link Causes#messageOf} does, telling no message and one that can't be read
+     * apart from one that says something.
      *
      * @param e The exception
      * @return Its message, or {@code null} if it has none or it can't be read
@@ -866,7 +774,7 @@ public final class Failures {
     }
 
     /**
-     * Reads an exception's message as {@link #messageOf} does, with a stand-in for a message it doesn't have.
+     * Reads an exception's message as {@link Causes#messageOf} does, with a stand-in for a message it doesn't have.
      *
      * @param e      The exception
      * @param ifNone What to return if it has no message
@@ -878,12 +786,12 @@ public final class Failures {
             String message = e.getMessage();
             return message != null ? message : ifNone;
         } catch (Throwable thrown) {
-            return unavailable(ifNone + " ", thrown);
+            return Causes.unavailable(ifNone + " ", thrown);
         }
     }
 
     /**
-     * Reads an exception's {@link Throwable#toString()} as {@link #messageOf} reads its message. The default
+     * Reads an exception's {@link Throwable#toString()} as {@link Causes#messageOf} reads its message. The default
      * {@code toString()} reads the message, so an exception whose {@code getMessage()} throws fails here too.
      *
      * @param e The exception
@@ -893,7 +801,7 @@ public final class Failures {
         try {
             return e.toString();
         } catch (Throwable thrown) {
-            return unavailable(e.getClass().getName() + " ", thrown);
+            return Causes.unavailable(e.getClass().getName() + " ", thrown);
         }
     }
 
@@ -912,35 +820,7 @@ public final class Failures {
     }
 
     /**
-     * Makes the note that an exception's text can't be read, naming only the class of what reading it threw: that
-     * one's own message could be what throws.
-     *
-     * @param prefix What goes before the note
-     * @param thrown What reading the text threw
-     * @return {@code prefix} and the note
-     */
-    private static String unavailable(String prefix, Throwable thrown) {
-        return prefix + "(message unavailable: " + thrown.getClass().getName() + ")";
-    }
-
-    /**
-     * Reads an exception's cause as {@link #messageOf} reads its message: {@code getCause()} isn't final either.
-     * {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one
-     * through {@link #causeChain}.
-     *
-     * @param e The exception
-     * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
-     */
-    static Throwable causeOf(Throwable e) {
-        try {
-            return e.getCause();
-        } catch (Throwable thrown) {
-            return null;
-        }
-    }
-
-    /**
-     * Reads the issues a language reported with an expression it rejected, as {@link #messageOf} reads a message:
+     * Reads the issues a language reported with an expression it rejected, as {@link Causes#messageOf} reads a message:
      * {@code issues()} isn't final either, and a language's own subclass may throw from it, or return {@code null} or
      * a list with a {@code null} in it, which the {@code RuleCompilationException} that reports them can't take.
      *
@@ -956,403 +836,40 @@ public final class Failures {
     }
 
     /**
-     * Shortens a message to at most {@value #MAX_DESCRIPTION_LENGTH} characters, as {@link #shorten(String, int)}
-     * does. {@code api.language.MessageText} publishes this.
-     *
-     * @param text The message
-     * @return The message, shortened if it was longer
-     */
-    public static String truncate(String text) {
-        return shorten(text, MAX_DESCRIPTION_LENGTH);
-    }
-
-    /**
-     * Makes text safe to put in a message: shortened as {@link #shortenBeforeEscape} shortens it, then
-     * {@link #escape escaped}. Raw text, such as a name or a language's message, is never cut inside an escape, as it's
-     * escaped after it's cut. Text can hold escapes already, though: the message of an exception the engine built,
-     * such as a rule that fails to compile or a fact it rejects, with a language's message or a name in it, a nested
-     * failure's message, and a message of a rule's own that copies one. Those are cut before an escape, never inside
-     * one, so up to 5 fewer characters show; where raw text only reads as an escape, those characters are lost.
-     *
-     * @param text The text
-     * @return The text, shortened if it was longer, then escaped
-     */
-    static String clip(String text) {
-        return escape(shortenBeforeEscape(text));
-    }
-
-    /**
-     * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #truncate} does, except where the
-     * limit falls inside an escape {@link #escape} writes ({@code \n}, {@code \r}, {@code \t}, or a backslash,
-     * {@code u} and four lowercase hex digits): the escape is left out whole, and the text keeps at most 5 characters
-     * fewer. {@link #escape} doesn't escape a backslash, so text that only reads as an escape is left out the same way.
-     * The count of what was left out counts the characters of the text as given: escaped where it was escaped already,
-     * such as a nested failure's message as it's held, and raw otherwise. So it matches the count in the line a nested
-     * failure was logged with only when that line shows the same text.
-     *
-     * @param text The text, escaped or not
-     * @return The text, shortened if it was longer, not escaped
-     */
-    private static String shortenBeforeEscape(String text) {
-        if (text.length() <= MAX_DESCRIPTION_LENGTH) {
-            return text;
-        }
-        return cut(text, keptBeforeEscape(text, MAX_DESCRIPTION_LENGTH));
-    }
-
-    /**
-     * How many characters of text longer than {@code limit} to keep, as {@link #shortenBeforeEscape} keeps
-     * {@value #MAX_DESCRIPTION_LENGTH} and {@link #shorten(String)} keeps {@value #MAX_NAME_LENGTH}: as many as
-     * {@link #shorten(String, int)} keeps, or fewer, up to the backslash of an escape they would end inside, or of text
-     * that reads as one.
-     *
-     * @param text  The text, longer than {@code limit}
-     * @param limit The most characters to keep, at least 1
-     * @return How many of its first characters to keep
-     */
-    private static int keptBeforeEscape(String text, int limit) {
-        int kept = keptLength(text, limit);
-        int backslash = text.lastIndexOf('\\', kept - 1);
-        return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
-    }
-
-    /**
-     * Tells whether a cut at {@code at} falls inside an escape {@link #escape} writes, or inside text that reads as
-     * one. Only the last backslash before the cut can start one, as no escape holds a backslash after its first
-     * character, and only one at most 5 characters before it, as no escape is longer than 6.
-     *
-     * @param text The text
-     * @param at   Where the text would be cut
-     * @return {@code true} if an escape starts before the cut and ends after it
-     */
-    private static boolean insideEscape(String text, int at) {
-        int from = Math.max(0, at - 5);
-        int backslash = from + text.substring(from, at).lastIndexOf('\\');
-        return backslash >= from && backslash + escapeLength(text, backslash) > at;
-    }
-
-    /**
-     * How long the escape {@link #escape} writes that starts at a backslash is: 2 for {@code \n}, {@code \r} and
-     * {@code \t}, 6 for a backslash, {@code u} and four lowercase hex digits, or 0 if what follows the backslash is
-     * none of them.
-     *
-     * @param text The text
-     * @param at   Where the backslash is
-     * @return The escape's length, or 0
-     */
-    private static int escapeLength(String text, int at) {
-        // Only escapeWithin's cut can fall after a backslash that ends the text; keptBeforeEscape's leaves some out.
-        if (at + 1 == text.length()) {
-            return 0;
-        }
-        char kind = text.charAt(at + 1);
-        if ("nrt".indexOf(kind) >= 0) {
-            return 2;
-        }
-        if (kind != 'u' || at + 6 > text.length()) {
-            return 0;
-        }
-        for (int i = at + 2; i < at + 6; i++) {
-            char digit = text.charAt(i);
-            if ((digit < '0' || digit > '9') && (digit < 'a' || digit > 'f')) {
-                return 0;
-            }
-        }
-        return 6;
-    }
-
-    /**
-     * Shortens text to at most {@code limit} characters, saying how many were left out: the plain cut of
-     * {@link #truncate}, which {@link #keptBeforeEscape} backs off from before an escape. A surrogate pair the limit
-     * falls inside is left out whole, so the text never ends in half a character.
-     *
-     * @param text  The text
-     * @param limit How many characters to keep
-     * @return The text, shortened if it was longer
-     */
-    static String shorten(String text, int limit) {
-        if (text.length() <= limit) {
-            return text;
-        }
-        return cut(text, keptLength(text, limit));
-    }
-
-    /**
-     * Keeps the first characters of a text, saying how many were left out, as {@link #shorten(String, int)} writes it.
-     *
-     * @param text The text
-     * @param kept How many characters to keep
-     * @return The kept characters, then {@code ... (N more characters)}
-     */
-    private static String cut(String text, int kept) {
-        return text.substring(0, kept) + leftOut(text.length() - kept);
-    }
-
-    /**
-     * Says how many characters were left out of a text, after the part of it a message shows.
-     *
-     * @param count How many characters were left out
-     * @return {@code ... (N more characters)}
-     */
-    private static String leftOut(int count) {
-        return "... (" + count + " more characters)";
-    }
-
-    /**
-     * Escapes text as {@link #escape} does, shortened first, if it is longer than {@code most} characters or its
-     * escaped form is longer than {@code room} characters, to as many of its first characters as fit in {@code room}
-     * with {@code ... (N more characters)} after them, as {@link #cut} writes it. N counts the text's own characters
-     * left out, as given, not escaped ones. The text is cut between code points, and never inside an escape
-     * {@link #escape} writes or inside text that reads as one ({@code \n}, {@code \r}, {@code \t}, or a backslash,
-     * {@code u} and four lowercase hex digits), which is left out whole: text can hold escapes already, such as a
-     * message the engine built, and escaping it doesn't mend one cut in half. It shows at most the first {@code most}
-     * characters, as {@link #keptBeforeEscape} keeps them, and none for a {@code most} of 0 or less. A room too small
-     * for the count alone, a negative one included, gets the count alone; empty text is escaped as empty.
-     * {@code api.language.MessageText} publishes this.
-     *
-     * @param text The text, raw, or with escapes the engine already wrote
-     * @param most The most of its characters to show
-     * @param room The most characters the escaped text may take, the count included
-     * @return The text, shortened if it didn't fit or is longer than {@code most}, and escaped
-     */
-    public static String escapeWithin(String text, int most, int room) {
-        int last = most >= text.length() ? text.length() : most <= 0 ? 0 : keptBeforeEscape(text, most);
-        // Each code point escapes to at least its own characters, and each one kept can shorten the count by at most
-        // one digit, so the two together only grow as more is kept, and once they don't fit, nothing more will.
-        int kept = 0;
-        long shown = 0;
-        int end = 0;
-        while (end < last && shown <= room) {
-            int next = end + Character.charCount(text.codePointAt(end));
-            shown += escape(text.substring(end, next)).length();
-            if (shown + leftOut(text.length() - next).length() <= room && !insideEscape(text, next)) {
-                kept = next;
-            }
-            end = next;
-        }
-        return end == text.length() && shown <= Math.max(room, 0) ? escape(text)
-                : escape(text.substring(0, kept)) + leftOut(text.length() - kept);
-    }
-
-    /**
-     * Quotes a name as {@link #quote} does, or, if that is longer than {@code room} characters, escapes it within the
-     * room as {@link #escapeWithin} does, showing no more of it than {@link #quote} does. An empty name is quoted as
-     * empty, whatever the room. {@code api.language.MessageText} publishes this.
-     *
-     * @param name The name
-     * @param room The most characters the quoted name may take, the count of what was left out included
-     * @return The name, quoted
-     */
-    public static String quoteWithin(String name, int room) {
-        String quoted = quote(name);
-        return quoted.length() <= room ? quoted : escapeWithin(name, MAX_NAME_LENGTH, room);
-    }
-
-    /**
-     * How many characters of text longer than {@code limit} to keep: {@code limit}, or one fewer when the last of them
-     * is a high surrogate.
-     */
-    private static int keptLength(String text, int limit) {
-        return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
-    }
-
-    /**
-     * Makes a fact, rule or language name safe to put in a message the engine logs: shortened to
-     * {@value #MAX_NAME_LENGTH} characters (UTF-16 units), then {@link #escape escaped}; each escaped unit shows as 2
-     * or 6 characters. The name keeps one fewer where the limit falls inside a surrogate pair, which is left out whole,
-     * and up to 5 fewer where it falls inside raw text that reads as an escape, which is left out whole too, as
-     * {@link #keptBeforeEscape} keeps them, so it never shows as an escape cut in half.
-     * {@code api.language.MessageText} publishes this.
-     *
-     * @param name The name
-     * @return The name, shortened if it was longer, then escaped
-     */
-    public static String quote(String name) {
-        return escape(shorten(name));
-    }
-
-    /**
-     * Shortens a name as {@link #quote} does, without escaping it, for a list of names that is escaped as a whole.
-     *
-     * @param name The name
-     * @return The name, shortened if it was longer
-     */
-    static String shorten(String name) {
-        if (name.length() <= MAX_NAME_LENGTH) {
-            return name;
-        }
-        return cut(name, keptBeforeEscape(name, MAX_NAME_LENGTH));
-    }
-
-    /**
-     * Makes a list of names safe to put in a message, shown as a {@link java.util.List}'s {@code toString()} shows it,
-     * such as {@code [eu, retail]}: each name shortened as {@link #quote} does, the list shortened and the whole
-     * escaped last, as {@link #clip} does, so a cut never falls inside an escape. The count of what was
-     * left out of the list counts the characters of the list as it was before it was escaped: the shortened names, the
-     * notes of what was left out of each, and the separators.
-     *
-     * @param names The names; a {@code null} one is shown as {@code null}
-     * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
-     *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
-     */
-    public static String quoteAll(Collection<? extends @Nullable String> names) {
-        StringBuilder list = new StringBuilder("[");
-        String separator = "";
-        for (String name : names) {
-            list.append(separator).append(name == null ? "null" : shorten(name));
-            separator = ", ";
-        }
-        return clip(list.append(']').toString());
-    }
-
-    /**
-     * Makes a list of names safe to put in a message, each name shortened as {@link #quote} does and put between
-     * single quotes, the names separated by {@code ", "}, such as {@code 'eu', 'retail'}; the list is then shortened
-     * and escaped as {@link #quoteAll} shortens and escapes it.
-     *
-     * @param names The names
-     * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
-     *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
-     */
-    static String quoteJoined(Collection<String> names) {
-        StringBuilder list = new StringBuilder();
-        String separator = "";
-        for (String name : names) {
-            list.append(separator).append('\'').append(shorten(name)).append('\'');
-            separator = ", ";
-        }
-        return clip(list.toString());
-    }
-
-    /**
-     * Makes text the engine didn't write safe to put in a message it logs, without shortening it. Line breaks, tabs
-     * and other control characters, and the Unicode line and paragraph separators, are escaped ({@code \n},
-     * {@code \r}, {@code \t}, or a backslash, {@code u} and four hex digits), so neither a name nor a fact value that
-     * reached the message from request data can start a log line of its own. So are the Unicode format characters
-     * (category Cf), such as bidi controls and zero-width and tag characters, which could reorder the rest of a line in
-     * a viewer or make two different names look the same, and the other characters Unicode marks
-     * {@code Default_Ignorable_Code_Point}, which a viewer shows as nothing, such as the Hangul fillers, the combining
-     * grapheme joiner, variation selectors and the code points kept unassigned for more of them. So is every space
-     * separator (category Zs) other than the ordinary space U+0020: U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F
-     * and U+3000, which a viewer shows as a space or a mark, so a name ending in a no-break space would look like a
-     * valid name followed by an ordinary space. An escaped character outside the Basic Multilingual Plane, such as a
-     * tag character or a variation selector from U+E0100, is escaped as its two UTF-16 units, each a backslash,
-     * {@code u} and four hex digits.
-     *
-     * <p>
-     * Escaping text that has already been escaped changes nothing, because a backslash isn't a control, format,
-     * space-separator or default-ignorable character, so a caller that can't tell whether a message has been through
-     * here may escape it again.
-     * </p>
-     *
-     * <p>
-     * A lone surrogate, half of a pair without the other half, is escaped too: a logger's encoder would otherwise
-     * write it as {@code ?}, so the log would differ from the message and two different names would log the same. A
-     * valid surrogate pair, such as an emoji, is kept whole.
-     * </p>
-     *
-     * @param text The text
-     * @return The text, with every character that could start a line, every format or other default-ignorable
-     *         character, every space separator other than U+0020 and every lone surrogate escaped
-     */
-    public static String escape(String text) {
-        StringBuilder escaped = new StringBuilder(text.length());
-        int c;
-        for (int i = 0; i < text.length(); i += Character.charCount(c)) {
-            c = text.codePointAt(i);
-            switch (c) {
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    int type = Character.getType(c);
-                    // The loop reads code points, so only a lone surrogate has the type SURROGATE.
-                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)
-                            || (type == Character.SPACE_SEPARATOR && c != ' ')) {
-                        for (char unit : Character.toChars(c)) {
-                            appendEscape(escaped, unit);
-                        }
-                    } else {
-                        escaped.appendCodePoint(c);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
-    }
-
-    /**
-     * Tells whether a code point is one of Unicode's {@code Default_Ignorable_Code_Point} characters that isn't a
-     * format character, which {@code Character} has no test for: the ranges of {@link #OTHER_DEFAULT_IGNORABLE}.
-     *
-     * @param c The code point
-     * @return {@code true} if a viewer shows it as nothing
-     */
-    private static boolean isOtherDefaultIgnorable(int c) {
-        // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
-        for (int i = 0; i < OTHER_DEFAULT_IGNORABLE.length; i += 2) {
-            if (c < OTHER_DEFAULT_IGNORABLE[i]) {
-                return false;
-            }
-            if (c <= OTHER_DEFAULT_IGNORABLE[i + 1]) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Appends one UTF-16 unit as a backslash, {@code u} and four lowercase hex digits, as
-     * {@code String.format("\\u%04x", unit)} would, without parsing a format for every character.
-     *
-     * @param escaped What to append to
-     * @param unit    The unit
-     */
-    static void appendEscape(StringBuilder escaped, char unit) {
-        escaped.append("\\u");
-        for (int shift = 12; shift >= 0; shift -= 4) {
-            escaped.append(Character.forDigit((unit >> shift) & 0xF, 16));
-        }
-    }
-
-    /**
      * Sets the current thread's interrupt status again when what was caught was caused by an interrupt, or carries
      * one as a suppressed exception. A rule, listener or language interrupted while it blocks throws an
      * {@link InterruptedException}, which clears the status, and the engine receives it wrapped by MVEL or the
      * language, or suppressed on the body's exception by a {@code try}-with-resources whose {@code close()} was
-     * interrupted; without this, the caller of {@code run()} couldn't tell the thread had been interrupted. The cause
-     * chain is read first, then the suppressed exceptions as {@link #fatalError} reads them: one the engine added
-     * with {@link ReportedFailure#addSuppressedByEngine} isn't read, and one past the {@value #MAX_EXCEPTIONS_READ}
-     * exceptions read is missed. A
-     * {@link java.io.InterruptedIOException} doesn't count: a {@link java.net.SocketTimeoutException} is one.
+     * interrupted; without this, the caller of {@code run()} couldn't tell the thread had been interrupted. The
+     * interrupt is found as {@link #hasInterrupt} finds it.
      *
      * @param thrown What was caught, or {@code null}
      */
     static void keepInterruptStatus(Throwable thrown) {
-        List<Throwable> chain = causeChain(thrown);
-        for (Throwable t : chain) {
-            if (t instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        if (suppressedMatching(chain, INTERRUPT, null) != null) {
+        if (hasInterrupt(thrown)) {
             Thread.currentThread().interrupt();
         }
     }
 
     /**
-     * Finds the last exception in {@code e}'s cause chain (see {@link #causeChain}). {@code mvel.ExceptionReads} keeps
-     * a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one.
+     * Tells whether what was caught was caused by an interrupt, or carries one as a suppressed exception, as
+     * {@link #keepInterruptStatus} asks before it sets the thread's interrupt status again. The cause chain is read
+     * first, then the suppressed exceptions as {@link #fatalError} reads them: one the engine added with
+     * {@link ReportedFailure#addSuppressedByEngine} isn't read, and one past the {@value #MAX_EXCEPTIONS_READ}
+     * exceptions read is missed. A {@link java.io.InterruptedIOException} doesn't count: a
+     * {@link java.net.SocketTimeoutException} is one.
      *
-     * @param e The exception
-     * @return The last link of its cause chain that could be read, which is {@code e} if it has no cause
+     * @param thrown What was caught, or {@code null}
+     * @return {@code true} if an {@link InterruptedException} is among the exceptions read
      */
-    static Throwable rootCause(Throwable e) {
-        List<Throwable> chain = causeChain(e);
-        return chain.get(chain.size() - 1);
+    static boolean hasInterrupt(Throwable thrown) {
+        List<Throwable> chain = Causes.causeChain(thrown);
+        for (Throwable t : chain) {
+            if (t instanceof InterruptedException) {
+                return true;
+            }
+        }
+        return suppressedMatching(chain, INTERRUPT, null) != null;
     }
 
     /**
@@ -1363,7 +880,7 @@ public final class Failures {
      * or rethrows the failure, rather than a {@link StackOverflowError} in its place (#1208). Whatever records the
      * failure as logged has recorded it already, or still does, so a load or a run around this one doesn't log it
      * again. Any other failure of the log call is thrown, as before, and so is an {@link InternalError} that doesn't
-     * wrap an overflow (see {@link #isOverflow}).
+     * wrap an overflow (see {@link Causes#isOverflow}).
      *
      * @param logger  The engine's logger
      * @param message What failed
@@ -1377,7 +894,7 @@ public final class Failures {
         } catch (InternalError internal) {
             // As for a StackOverflowError when it wraps one, as the JDK does, and else as for any other
             // VirtualMachineError.
-            if (!isOverflow(internal)) {
+            if (!Causes.isOverflow(internal)) {
                 throw internal;
             }
         }
@@ -1388,7 +905,7 @@ public final class Failures {
      * first message logged in a JVM can overflow deep in a stack, loses the line, and the caller goes on as it does
      * once the line is logged, rather than throwing a {@link StackOverflowError} (#1208). Any other failure of the log
      * call is thrown, as before, and so is an {@link InternalError} that doesn't wrap an overflow (see
-     * {@link #isOverflow}).
+     * {@link Causes#isOverflow}).
      *
      * @param logger    The engine's logger
      * @param format    The message, with a {@code {}} for each argument, as SLF4J formats it
@@ -1402,56 +919,10 @@ public final class Failures {
             // Only the line is lost; the caller goes on.
         } catch (InternalError internal) {
             // As in logError.
-            if (!isOverflow(internal)) {
+            if (!Causes.isOverflow(internal)) {
                 throw internal;
             }
         }
-    }
-
-    /**
-     * Tells whether {@code e} is a {@link StackOverflowError}, or what was thrown in place of one: walking its cause
-     * chain (see {@link #causeChain}) from the top, a {@link StackOverflowError} comes before any {@link LinkageError}.
-     * A {@link NoClassDefFoundError} or an {@link ExceptionInInitializerError} above the overflow says a class was left
-     * unusable, by an overflow in its static initializer, maybe in an earlier load, and no change to the rule or the
-     * stack's depth helps, so that isn't an overflow, as JDK 25 and 26 make one with the overflow as its cause (#1116).
-     * An {@link InternalError} around one, as the JDK wraps an overflow it hits defining a hidden class, is (#1141).
-     * The chain is read link by link, with nothing allocated, so the engine's last-resort checks, which run when
-     * handling a failure has itself failed, as allocating can, can ask it too: up to {@value #MAX_CAUSE_CHAIN_LENGTH}
-     * links, which may repeat in a chain that loops back on itself, so it answers as {@link #causeChain}'s links read
-     * in order would. {@code mvel.ExceptionReads} keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks
-     * against this one, and so does the test kit's {@code KitFailures}, which the kit's {@code KitOverflowCopyTest}
-     * checks.
-     *
-     * @param e The exception
-     * @return {@code true} if a {@link StackOverflowError} is in its cause chain with no {@link LinkageError} before it
-     */
-    static boolean isOverflow(Throwable e) {
-        Throwable link = e;
-        for (int read = 0; link != null && read < MAX_CAUSE_CHAIN_LENGTH; read++) {
-            if (link instanceof LinkageError) {
-                return false;
-            }
-            if (link instanceof StackOverflowError) {
-                return true;
-            }
-            link = causeOf(link);
-        }
-        return false;
-    }
-
-    /**
-     * Lists {@code e} and its causes, stopping if the chain loops back on itself, at a link whose {@code getCause()}
-     * throws (see {@link #causeOf}), or after {@value #MAX_CAUSE_CHAIN_LENGTH} links: a {@code getCause()} of its own
-     * that returns a new exception every time would otherwise make a chain that never ends. {@code mvel.ExceptionReads}
-     * keeps a copy, which mvel's {@code ExceptionReadsCopiesTest} checks against this one.
-     */
-    static List<Throwable> causeChain(Throwable e) {
-        List<Throwable> chain = new ArrayList<>();
-        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (Throwable t = e; t != null && chain.size() < MAX_CAUSE_CHAIN_LENGTH && seen.add(t); t = causeOf(t)) {
-            chain.add(t);
-        }
-        return chain;
     }
 
     /**
@@ -1462,7 +933,7 @@ public final class Failures {
      * @return The name
      */
     static String expression(ExpressionKind kind, String ruleName) {
-        return (kind == ExpressionKind.CONDITION ? "Condition" : "Action") + " for rule '" + quote(ruleName) + "'";
+        return (kind == ExpressionKind.CONDITION ? "Condition" : "Action") + " for rule '" + Text.quote(ruleName) + "'";
     }
 
     /**

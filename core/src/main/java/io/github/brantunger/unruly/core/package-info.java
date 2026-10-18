@@ -11,11 +11,11 @@
  * {@link io.github.brantunger.unruly.core.EngineEvaluationContext},
  * {@link io.github.brantunger.unruly.core.EngineActionContext} and
  * {@link io.github.brantunger.unruly.core.EngineRunContext}, the implementations the sealed context interfaces in
- * {@code api} and {@code api.language} permit; and {@link io.github.brantunger.unruly.core.Accessors} and
- * {@link io.github.brantunger.unruly.core.Failures}, which the API's default output writer,
- * {@link io.github.brantunger.unruly.api.language.FactProperties} and logging listener use; and
- * {@link io.github.brantunger.unruly.core.Widening}, which the default output writer,
- * {@code OutputWriter.beansAndMaps()}, and the engine's widening and check of a declared fact share.
+ * {@code api} and {@code api.language} permit; {@link io.github.brantunger.unruly.core.Accessors}, which the API's
+ * default output writer and {@link io.github.brantunger.unruly.api.language.FactProperties} use; and
+ * {@link io.github.brantunger.unruly.core.FatalErrors}, the search for a fatal error that
+ * {@link io.github.brantunger.unruly.api.language.Throwables} publishes. What {@code api} and {@code core} share
+ * without either depending on the other is in the unexported package {@code io.github.brantunger.unruly.internal}.
  * The module exports this package only to the test kit, {@code io.github.brantunger.unruly.test}. Rules are compiled
  * when {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} loads them, each by the language it
  * names or by the engine's default language, and evaluated against a

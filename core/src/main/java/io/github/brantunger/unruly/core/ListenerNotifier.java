@@ -9,6 +9,7 @@ import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.internal.Causes;
 
 /**
  * Tells an engine's listeners what its runs do: calls each run and rule callback on every listener, logging what a
@@ -435,7 +436,7 @@ final class ListenerNotifier {
      * trace. Printing it calls the {@code toString()} of the throwable, of each of its causes and of each suppressed
      * exception, and one of a listener's own can throw; the stack trace is then left out, whatever was thrown, a fatal
      * {@link Error} too, rather than let that end the failure handling the call is part of (see
-     * {@link Failures#messageOf}).
+     * {@link Causes#messageOf}).
      *
      * @param log     The logger
      * @param message The message

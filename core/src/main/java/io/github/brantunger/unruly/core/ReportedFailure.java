@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.internal.Causes;
 
 import java.util.Arrays;
 
@@ -16,7 +17,7 @@ import java.util.Arrays;
  * <p>
  * Each one records, when it's built, the innermost failure and the first {@link Error} in its cause chain, so the run
  * around it reads them from the first failure in its own chain that recorded them. Every nested run adds a link to the
- * chain, and the engine reads only {@value Failures#MAX_CAUSE_CHAIN_LENGTH} links of it (see
+ * chain, and the engine reads only {@value Causes#MAX_CAUSE_CHAIN_LENGTH} links of it (see
  * {@link NestedFailures#below}), so reading them from the chain alone would miss a failure or an error more than that
  * many runs down. A form serialized before these were recorded reads {@link #recorded()} as {@code false}, and its
  * chain is read as it was then.
