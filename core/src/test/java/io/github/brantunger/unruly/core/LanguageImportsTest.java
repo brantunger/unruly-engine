@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
+import io.github.brantunger.unruly.internal.ImportSize;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -114,7 +115,7 @@ class LanguageImportsTest {
     @Test
     @DisplayName("build() rejects a language import of more than 1,000 characters, and accepts one of 1,000")
     void longestImport() {
-        String longest = "m".repeat(ImportResolver.MAX_IMPORT_LENGTH);
+        String longest = "m".repeat(ImportSize.MAX_IMPORT_LENGTH);
         String tooLong = longest + "/";
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,

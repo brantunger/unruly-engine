@@ -1,6 +1,8 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,8 +105,8 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
         Set<String> names = new TreeSet<>(languages.keySet());
         if (defaultName != null) {
             if (!languages.containsKey(defaultName)) {
-                throw new IllegalStateException("The default language '" + Failures.quote(defaultName)
-                        + "' isn't one of the engine's expression languages: " + Failures.quoteAll(names));
+                throw new IllegalStateException("The default language '" + Text.quote(defaultName)
+                        + "' isn't one of the engine's expression languages: " + Text.quoteAll(names));
             }
             return new LanguageRegistry(Map.copyOf(languages), defaultName);
         }
@@ -115,7 +117,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
         Iterator<String> name = names.iterator();
         String only = name.next();
         if (name.hasNext()) {
-            throw new IllegalStateException("The engine has several expression languages, " + Failures.quoteAll(names)
+            throw new IllegalStateException("The engine has several expression languages, " + Text.quoteAll(names)
                     + ", so name the language of rules without one with defaultLanguage()");
         }
         return new LanguageRegistry(Map.copyOf(languages), only);
@@ -178,7 +180,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
             if (problem == LanguageNames.Problem.TAKEN) {
                 throw new IllegalStateException("The expression languages " + languages.get(name).getClass().getName()
                         + " and " + language.getClass().getName() + " found with ServiceLoader are both named '"
-                        + Failures.quote(name) + "'");
+                        + Text.quote(name) + "'");
             }
             languages.put(name, language);
         }
@@ -194,7 +196,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
      * can't say, because looking the class or its class files up fails in any way, has none, and a location whose file
      * can't be found is taken for this library's. So has a loader in a native image built with strict reachability
      * metadata that has none for the class, whose lookup throws GraalVM's {@code MissingReflectionRegistrationError}
-     * (see {@link MissingRegistration#isMissingRegistration}). Any other {@link Error} the class's lookup throws that
+     * (see {@link Lookups#isMissingRegistration}). Any other {@link Error} the class's lookup throws that
      * isn't a {@link LinkageError} fails {@code build()}.
      */
     private static boolean hasOwnCopy(ClassLoader loader) {
@@ -206,7 +208,7 @@ record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaul
             return false;
         } catch (Error e) {
             // A LinkageError in GraalVM for JDK 25, so caught above, but not in GraalVM for JDK 21.
-            if (MissingRegistration.isMissingRegistration(e)) {
+            if (Lookups.isMissingRegistration(e)) {
                 return false;
             }
             throw e;

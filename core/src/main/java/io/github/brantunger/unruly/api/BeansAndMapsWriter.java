@@ -1,8 +1,8 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.core.Accessors;
-import io.github.brantunger.unruly.core.MissingRegistration;
-import io.github.brantunger.unruly.core.Widening;
+import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Widening;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.GenericArrayType;
@@ -518,7 +518,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
             try {
                 methods = methods(bridge.getDeclaringClass());
             } catch (Error e) {
-                if (MissingRegistration.isMissingRegistration(e)) {
+                if (Lookups.isMissingRegistration(e)) {
                     return List.of();
                 }
                 throw e;
@@ -571,7 +571,7 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
     static @Nullable Method target(Method bridge) {
         Class<?> type = bridge.getDeclaringClass();
         while (type != null) {
-            Method target = MissingRegistration.publicMethod(type, bridge.getName(), bridge.getParameterTypes());
+            Method target = Lookups.publicMethod(type, bridge.getName(), bridge.getParameterTypes());
             if (target == null) {
                 return null;
             }

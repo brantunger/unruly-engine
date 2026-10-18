@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.core.Failures;
-
+import io.github.brantunger.unruly.internal.Text;
 import java.util.Objects;
 
 /**
@@ -19,7 +18,7 @@ import java.util.Objects;
  * {@code " (caused by ...)"}, cut it with {@link #escapeWithin(String, int)},
  * {@link #escapeWithin(String, int, int)} or {@link #quoteWithin(String, int)}, giving it the room the rest of the
  * message leaves: the escaped result, its {@code ... (N more characters)} included, fits in that room, so the note
- * stays whole.
+ * stays whole. To end text it shortened its own way with the engine's note, use {@link #leftOut}.
  * </p>
  *
  * <p>
@@ -49,16 +48,29 @@ public final class MessageText {
      * The most characters (UTF-16 units) of a name {@link #quote} shows: 200, fixed for 2.x. javac inlines it into the
      * classes that read it.
      */
-    public static final int MAX_NAME_LENGTH = 200;
+    public static final int MAX_NAME_LENGTH = Text.MAX_NAME_LENGTH;
 
     /**
      * The most characters (UTF-16 units) of other text {@link #truncate} keeps, and the length above which the engine
      * shortens the messages the class description lists: 1,000, fixed for 2.x. javac inlines it into the classes that
      * read it.
      */
-    public static final int MAX_TEXT_LENGTH = 1_000;
+    public static final int MAX_TEXT_LENGTH = Text.MAX_DESCRIPTION_LENGTH;
 
     private MessageText() {
+    }
+
+    /**
+     * Writes the note that follows shortened text, as {@link #truncate}, {@link #quote} and the engine's own messages
+     * write it: {@code ... (N more characters)}, N being how many characters of the text were left out. For a language
+     * that shortens text its own way, such as to the room a message leaves after it, and ends it with the engine's
+     * note. The count is written as given, whatever it is. It allocates the note.
+     *
+     * @param count How many characters were left out
+     * @return {@code ... (} + {@code count} + {@code  more characters)}
+     */
+    public static String leftOut(int count) {
+        return Text.leftOut(count);
     }
 
     /**
@@ -90,7 +102,7 @@ public final class MessageText {
      * @throws NullPointerException if {@code text} is {@code null}
      */
     public static String escape(String text) {
-        return Failures.escape(Objects.requireNonNull(text, "text must not be null"));
+        return Text.escape(Objects.requireNonNull(text, "text must not be null"));
     }
 
     /**
@@ -111,7 +123,7 @@ public final class MessageText {
      * @throws NullPointerException if {@code text} is {@code null}
      */
     public static String truncate(String text) {
-        return Failures.truncate(Objects.requireNonNull(text, "text must not be null"));
+        return Text.truncate(Objects.requireNonNull(text, "text must not be null"));
     }
 
     /**
@@ -126,7 +138,7 @@ public final class MessageText {
      * @throws NullPointerException if {@code name} is {@code null}
      */
     public static String quote(String name) {
-        return Failures.quote(Objects.requireNonNull(name, "name must not be null"));
+        return Text.quote(Objects.requireNonNull(name, "name must not be null"));
     }
 
     /**
@@ -173,7 +185,7 @@ public final class MessageText {
      * @throws NullPointerException if {@code text} is {@code null}
      */
     public static String escapeWithin(String text, int most, int room) {
-        return Failures.escapeWithin(Objects.requireNonNull(text, "text must not be null"), most, room);
+        return Text.escapeWithin(Objects.requireNonNull(text, "text must not be null"), most, room);
     }
 
     /**
@@ -187,6 +199,6 @@ public final class MessageText {
      * @throws NullPointerException if {@code name} is {@code null}
      */
     public static String quoteWithin(String name, int room) {
-        return Failures.quoteWithin(Objects.requireNonNull(name, "name must not be null"), room);
+        return Text.quoteWithin(Objects.requireNonNull(name, "name must not be null"), room);
     }
 }

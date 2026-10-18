@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -153,7 +154,7 @@ public class ErrorMessageCauseTest {
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(facts));
 
-        assertTrue(ex.getMessage().length() < Failures.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
+        assertTrue(ex.getMessage().length() < Text.MAX_DESCRIPTION_LENGTH + 100, ex.getMessage());
         assertTrue(ex.getMessage().matches("(?s).*\\.\\.\\. \\(\\d+ more characters\\)$"), ex.getMessage());
     }
 

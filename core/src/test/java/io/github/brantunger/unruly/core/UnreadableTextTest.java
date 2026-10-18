@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.internal.Causes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -136,31 +137,31 @@ class UnreadableTextTest {
     @Test
     @DisplayName("messageOf returns the message, or null if there is none")
     void messageOfReadable() {
-        assertEquals("boom", Failures.messageOf(new IllegalStateException("boom")));
-        assertNull(Failures.messageOf(new IllegalStateException()));
+        assertEquals("boom", Causes.messageOf(new IllegalStateException("boom")));
+        assertNull(Causes.messageOf(new IllegalStateException()));
     }
 
     @Test
     @DisplayName("messageOf returns a note naming the class of what getMessage() threw")
     void messageOfUnreadable() {
         assertEquals("(message unavailable: java.lang.NullPointerException)",
-                Failures.messageOf(new Throwing(new NullPointerException())));
+                Causes.messageOf(new Throwing(new NullPointerException())));
     }
 
     @Test
     @DisplayName("messageOf returns the note for a StackOverflowError from getMessage()")
     void messageOfStackOverflow() {
         assertEquals("(message unavailable: java.lang.StackOverflowError)",
-                Failures.messageOf(new Throwing(new StackOverflowError())));
+                Causes.messageOf(new Throwing(new StackOverflowError())));
     }
 
     @Test
     @DisplayName("messageOf returns the note for a fatal error from getMessage(), and one that what it threw wraps")
     void messageOfFatal() {
         assertEquals("(message unavailable: java.lang.OutOfMemoryError)",
-                Failures.messageOf(new Throwing(new OutOfMemoryError("reading"))));
+                Causes.messageOf(new Throwing(new OutOfMemoryError("reading"))));
         assertEquals("(message unavailable: java.lang.IllegalStateException)",
-                Failures.messageOf(new Throwing(new IllegalStateException("reading", new OutOfMemoryError()))));
+                Causes.messageOf(new Throwing(new IllegalStateException("reading", new OutOfMemoryError()))));
     }
 
     @Test
@@ -187,9 +188,9 @@ class UnreadableTextTest {
     void causeOf() {
         IllegalStateException cause = new IllegalStateException("cause");
 
-        assertSame(cause, Failures.causeOf(new RuntimeException(cause)));
-        assertNull(Failures.causeOf(new Throwing(new NullPointerException())));
-        assertNull(Failures.causeOf(new Throwing(new OutOfMemoryError("cause"))));
+        assertSame(cause, Causes.causeOf(new RuntimeException(cause)));
+        assertNull(Causes.causeOf(new Throwing(new NullPointerException())));
+        assertNull(Causes.causeOf(new Throwing(new OutOfMemoryError("cause"))));
     }
 
     @Test
@@ -233,13 +234,13 @@ class UnreadableTextTest {
 
     @Test
     @DisplayName("a getCause() that returns a new exception every time is read for the first "
-            + Failures.MAX_CAUSE_CHAIN_LENGTH + " links of the chain")
+            + Causes.MAX_CAUSE_CHAIN_LENGTH + " links of the chain")
     void causesThatNeverEnd() {
         EndlessCauses top = new EndlessCauses(0);
 
-        Throwable root = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Failures.rootCause(top));
+        Throwable root = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Causes.rootCause(top));
 
-        assertEquals(Failures.MAX_CAUSE_CHAIN_LENGTH - 1, assertInstanceOf(EndlessCauses.class, root).depth);
+        assertEquals(Causes.MAX_CAUSE_CHAIN_LENGTH - 1, assertInstanceOf(EndlessCauses.class, root).depth);
         assertEquals("level 0", assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(top)));
     }
 

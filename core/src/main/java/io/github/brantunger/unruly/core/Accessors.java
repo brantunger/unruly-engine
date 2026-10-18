@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.Lookups;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Method;
@@ -201,7 +203,7 @@ public final class Accessors {
 
     /**
      * Finds an exception of a type among what was thrown and its causes, reading the causes as the engine reads them:
-     * no further than {@code Failures.MAX_CAUSE_CHAIN_LENGTH} links, and stopping at a {@code getCause()} that throws,
+     * no further than {@code Causes.MAX_CAUSE_CHAIN_LENGTH} links, and stopping at a {@code getCause()} that throws,
      * whatever it throws, or that leads back to a link already read.
      *
      * @param thrown What was thrown
@@ -210,7 +212,7 @@ public final class Accessors {
      * @return The first exception of that type, from the top, or {@code null} if there is none
      */
     public static <T extends Throwable> @Nullable T inCauses(Throwable thrown, Class<T> type) {
-        for (Throwable link : Failures.causeChain(thrown)) {
+        for (Throwable link : Causes.causeChain(thrown)) {
             if (type.isInstance(link)) {
                 return type.cast(link);
             }
@@ -231,7 +233,7 @@ public final class Accessors {
      * because every method passed here is public. Where access is refused, the method is returned anyway, so that
      * calling it reports why. Access is a flag on the {@link Method} object, which callers cache and never hand out.
      * In a native image built with strict reachability metadata, a supertype the image has no metadata for counts as
-     * one that doesn't declare the method (see {@link MissingRegistration#publicMethod}), so the rest are still asked,
+     * one that doesn't declare the method (see {@link Lookups#publicMethod}), so the rest are still asked,
      * and the method is still made accessible.
      * </p>
      *
@@ -247,7 +249,7 @@ public final class Accessors {
             if (!reachable(supertype)) {
                 continue;
             }
-            Method declared = MissingRegistration.publicMethod(supertype, method.getName(), method.getParameterTypes());
+            Method declared = Lookups.publicMethod(supertype, method.getName(), method.getParameterTypes());
             // A reachable type can inherit the method from one that isn't, and invoking it would fail the same way, so
             // what matters is where the method we found is declared. An interface may also declare a static method of
             // the same name, which isn't the object's method at all.

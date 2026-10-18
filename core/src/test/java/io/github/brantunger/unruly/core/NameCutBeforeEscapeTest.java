@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +30,7 @@ class NameCutBeforeEscapeTest {
     @DisplayName("quote leaves raw text that reads as \\u0041 out whole where the limit falls inside it")
     void unicodeEscapeLeftOutWhole() {
         assertEquals("a".repeat(198) + "... (16 more characters)", MessageText.quote(NAME));
-        assertEquals("a".repeat(198) + "... (16 more characters)", Failures.quote(NAME));
+        assertEquals("a".repeat(198) + "... (16 more characters)", Text.quote(NAME));
     }
 
     @Test
@@ -47,8 +48,8 @@ class NameCutBeforeEscapeTest {
     void listsCutEachNameBeforeEscape() {
         String shown = "a".repeat(198) + "... (16 more characters)";
 
-        assertEquals("[" + shown + ", b]", Failures.quoteAll(List.of(NAME, "b")));
-        assertEquals("'" + shown + "', 'b'", Failures.quoteJoined(List.of(NAME, "b")));
+        assertEquals("[" + shown + ", b]", Text.quoteAll(List.of(NAME, "b")));
+        assertEquals("'" + shown + "', 'b'", Text.quoteJoined(List.of(NAME, "b")));
     }
 
     // A guard: text that only reads as an escape when it is lowercase, or that the limit falls after, is cut as before.

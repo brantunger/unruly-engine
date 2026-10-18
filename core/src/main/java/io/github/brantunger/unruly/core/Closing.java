@@ -2,6 +2,8 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,13 +93,13 @@ final class Closing {
                 try {
                     failed = runValueFailed(thrown, failed);
                 } catch (Throwable t) {
-                    // Only assignments and the instanceof checks of Failures.isFatal, which allocates nothing, so
+                    // Only assignments and the instanceof checks of Causes.isFatal, which allocates nothing, so
                     // they can't fail as handling the failure did: what close() threw isn't lost, a fatal Error above
                     // all, and the next value is still closed.
                     if (escaped == null) {
                         escaped = t;
                     }
-                    if (held == null || Failures.isFatal(thrown)) {
+                    if (held == null || Causes.isFatal(thrown)) {
                         held = thrown;
                     }
                 }
@@ -174,7 +176,7 @@ final class Closing {
                         NestedFailures.describe(e));
             } else {
                 Failures.logWarn(log, "The '{}' expression language failed to close {}: {}",
-                        Failures.quote(language), what, NestedFailures.describe(e));
+                        Text.quote(language), what, NestedFailures.describe(e));
             }
         }
         return Failures.fatalError(e);

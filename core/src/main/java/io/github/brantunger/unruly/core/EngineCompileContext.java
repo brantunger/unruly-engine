@@ -5,6 +5,9 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Widening;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,7 +74,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(reservedFactNames, "reservedFactNames must not be null");
         for (String packageName : packageImports) {
             Objects.requireNonNull(packageName, "packageImports must not contain null");
-            ImportResolver.checkSize(packageName);
+            ImportSize.checkSize(packageName);
         }
         for (Class<?> importedClass : classImports) {
             Objects.requireNonNull(importedClass, "classImports must not contain null");
@@ -82,7 +85,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         });
         for (String name : languageImportNames) {
             Objects.requireNonNull(name, "languageImports must not contain null");
-            ImportResolver.checkLength(name);
+            ImportSize.checkLength(name);
         }
         for (String name : reservedFactNames) {
             Objects.requireNonNull(name, "reservedFactNames must not contain null");
@@ -279,7 +282,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         if (warningsLogged) {
             Failures.logWarn(Warnings.LOG, "{} has a warning{}: {}",
                     Failures.expression(source.kind(), source.ruleName()), Failures.position(issue),
-                    Failures.clip(issue.message()));
+                    Text.clip(issue.message()));
         }
     }
 

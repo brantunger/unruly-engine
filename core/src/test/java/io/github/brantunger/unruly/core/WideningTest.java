@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Widening;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

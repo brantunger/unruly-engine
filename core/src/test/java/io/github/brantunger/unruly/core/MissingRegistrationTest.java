@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.LinkageMissingRegistration;
+import io.github.brantunger.unruly.internal.Lookups;
 import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,20 +21,20 @@ class MissingRegistrationTest {
     @Test
     @DisplayName("the image's error is recognized, and no other error is")
     void missingRegistrationRecognized() {
-        assertTrue(MissingRegistration.isMissingRegistration(new MissingReflectionRegistrationError("p.A")));
-        assertTrue(MissingRegistration.isMissingRegistration(LinkageMissingRegistration.of("p.A")));
-        assertFalse(MissingRegistration.isMissingRegistration(new Error("not the image's")));
-        assertFalse(MissingRegistration.isMissingRegistration(new StackOverflowError()));
-        assertFalse(MissingRegistration.isMissingRegistration(new NoClassDefFoundError("p/A")));
+        assertTrue(Lookups.isMissingRegistration(new MissingReflectionRegistrationError("p.A")));
+        assertTrue(Lookups.isMissingRegistration(LinkageMissingRegistration.of("p.A")));
+        assertFalse(Lookups.isMissingRegistration(new Error("not the image's")));
+        assertFalse(Lookups.isMissingRegistration(new StackOverflowError()));
+        assertFalse(Lookups.isMissingRegistration(new NoClassDefFoundError("p/A")));
     }
 
     @Test
     @DisplayName("a public method is looked up as Class.getMethod finds it, and one there isn't is none")
     void publicMethodLookedUp() throws NoSuchMethodException {
-        assertEquals(String.class.getMethod("length"), MissingRegistration.publicMethod(String.class, "length"));
+        assertEquals(String.class.getMethod("length"), Lookups.publicMethod(String.class, "length"));
         assertEquals(CharSequence.class.getMethod("charAt", int.class),
-                MissingRegistration.publicMethod(CharSequence.class, "charAt", int.class));
-        assertNull(MissingRegistration.publicMethod(String.class, "length", int.class));
-        assertNull(MissingRegistration.publicMethod(String.class, "noSuchMethod"));
+                Lookups.publicMethod(CharSequence.class, "charAt", int.class));
+        assertNull(Lookups.publicMethod(String.class, "length", int.class));
+        assertNull(Lookups.publicMethod(String.class, "noSuchMethod"));
     }
 }

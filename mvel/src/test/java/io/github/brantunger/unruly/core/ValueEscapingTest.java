@@ -15,6 +15,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -274,11 +275,11 @@ public class ValueEscapingTest {
     @Test
     @DisplayName("a message is shortened before it's escaped, so the count counts the language's own characters")
     void shortenedBeforeEscaping() {
-        String text = "\n".repeat(Failures.MAX_DESCRIPTION_LENGTH + 5);
+        String text = "\n".repeat(Text.MAX_DESCRIPTION_LENGTH + 5);
 
         String described = NestedFailures.describe(new IllegalStateException(text));
 
-        assertEquals("\\n".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (5 more characters)", described);
+        assertEquals("\\n".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (5 more characters)", described);
     }
 
     @Test

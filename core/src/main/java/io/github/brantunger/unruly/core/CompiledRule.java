@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.OutputConverter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
+import io.github.brantunger.unruly.internal.Text;
 
 /**
  * A CompiledRule wraps a {@link Rule} together with its compiled condition and action
@@ -24,7 +25,7 @@ final class CompiledRule {
 
     /**
      * @param rule              The {@link Rule}, as it was passed to {@code load}
-     * @param displayName       The rule's name for messages, escaped as {@link Failures#quote} does
+     * @param displayName       The rule's name for messages, escaped as {@link Text#quote} does
      * @param language          The name of the expression language that compiled the rule, whose session it runs with
      * @param compiledCondition The compiled condition expression
      * @param compiledAction    The compiled action expression
@@ -45,7 +46,7 @@ final class CompiledRule {
         return rule;
     }
 
-    /** The rule's name for messages, escaped as {@link Failures#quote} does. */
+    /** The rule's name for messages, escaped as {@link Text#quote} does. */
     String displayName() {
         return displayName;
     }

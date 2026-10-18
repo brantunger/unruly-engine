@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -7,7 +8,7 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Failures.truncate keeps a message of up to 1,000 characters and shortens a longer one, and escape and "
+@DisplayName("Text.truncate keeps a message of up to 1,000 characters and shortens a longer one, and escape and "
         + "quote make text safe for a log line")
 class FailuresTest {
 
@@ -17,30 +18,30 @@ class FailuresTest {
     @Test
     @DisplayName("a message of exactly 1,000 characters is returned unchanged")
     void messageAtTheLimitUnchanged() {
-        String message = "a".repeat(Failures.MAX_DESCRIPTION_LENGTH);
+        String message = "a".repeat(Text.MAX_DESCRIPTION_LENGTH);
 
-        assertEquals(message, Failures.truncate(message));
+        assertEquals(message, Text.truncate(message));
     }
 
     @Test
     @DisplayName("a message of 1,001 characters keeps its first 1,000 and says one more was left out")
     void messageOneOverTheLimitShortened() {
-        String kept = "a".repeat(Failures.MAX_DESCRIPTION_LENGTH);
+        String kept = "a".repeat(Text.MAX_DESCRIPTION_LENGTH);
 
-        assertEquals(kept + "... (1 more characters)", Failures.truncate(kept + "b"));
+        assertEquals(kept + "... (1 more characters)", Text.truncate(kept + "b"));
     }
 
     @Test
     @DisplayName("a message is never shortened inside a surrogate pair, and the count says what was really left out")
     void messageNotCutInsideSurrogatePair() {
-        String kept = "a".repeat(Failures.MAX_DESCRIPTION_LENGTH - 1);
+        String kept = "a".repeat(Text.MAX_DESCRIPTION_LENGTH - 1);
 
-        String fits = "a".repeat(Failures.MAX_DESCRIPTION_LENGTH - 2) + EMOJI;
+        String fits = "a".repeat(Text.MAX_DESCRIPTION_LENGTH - 2) + EMOJI;
 
-        assertEquals(fits, Failures.truncate(fits));
-        assertEquals(kept + "... (2 more characters)", Failures.truncate(kept + EMOJI));
-        assertEquals(kept + "... (3 more characters)", Failures.truncate(kept + EMOJI + "b"));
-        assertEquals(kept + "... (2 more characters)", Failures.truncate(kept + TAG));
+        assertEquals(fits, Text.truncate(fits));
+        assertEquals(kept + "... (2 more characters)", Text.truncate(kept + EMOJI));
+        assertEquals(kept + "... (3 more characters)", Text.truncate(kept + EMOJI + "b"));
+        assertEquals(kept + "... (2 more characters)", Text.truncate(kept + TAG));
     }
 
     @Test
@@ -49,7 +50,7 @@ class FailuresTest {
         String text = "a\nb\rc\td" + (char) 0 + "e" + (char) 0x85 + "f" + (char) 0x2028 + "g" + (char) 0x2029 + "h"
                 + (char) 0x7f;
 
-        assertEquals("a\\nb\\rc\\td\\u0000e\\u0085f\\u2028g\\u2029h\\u007f", Failures.escape(text));
+        assertEquals("a\\nb\\rc\\td\\u0000e\\u0085f\\u2028g\\u2029h\\u007f", Text.escape(text));
     }
 
     @Test
@@ -58,7 +59,7 @@ class FailuresTest {
         String text = "a" + (char) 0x202e + "b" + (char) 0x2066 + "c" + (char) 0x2069 + "d" + (char) 0x200b + "e"
                 + (char) 0x200d + "f" + (char) 0xfeff + "g" + (char) 0xad;
 
-        assertEquals("a\\u202eb\\u2066c\\u2069d\\u200be\\u200df\\ufeffg\\u00ad", Failures.escape(text));
+        assertEquals("a\\u202eb\\u2066c\\u2069d\\u200be\\u200df\\ufeffg\\u00ad", Text.escape(text));
     }
 
     @Test
@@ -69,13 +70,13 @@ class FailuresTest {
                 + (char) 0x2009 + (char) 0x200a + "d" + (char) 0x202f + "e" + (char) 0x205f + "f" + (char) 0x3000;
 
         assertEquals("a\\u00a0b\\u1680c\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009"
-                + "\\u200ad\\u202fe\\u205ff\\u3000", Failures.escape(text));
+                + "\\u200ad\\u202fe\\u205ff\\u3000", Text.escape(text));
     }
 
     @Test
     @DisplayName("an ordinary space is kept")
     void ordinarySpaceKept() {
-        assertEquals("a b", Failures.escape("a b"));
+        assertEquals("a b", Text.escape("a b"));
     }
 
     @Test
@@ -84,7 +85,7 @@ class FailuresTest {
         String text = "a" + (char) 0x0600 + "b" + (char) 0x0605 + "c" + (char) 0x06dd + "d" + (char) 0xfff9 + "e"
                 + (char) 0xfffb + "f" + Character.toString(0x110BD);
 
-        assertEquals("a\\u0600b\\u0605c\\u06ddd\\ufff9e\\ufffbf\\ud804\\udcbd", Failures.escape(text));
+        assertEquals("a\\u0600b\\u0605c\\u06ddd\\ufff9e\\ufffbf\\ud804\\udcbd", Text.escape(text));
     }
 
     @Test
@@ -97,7 +98,7 @@ class FailuresTest {
                 + (char) 0xfe0f + (char) 0xfe00;
 
         assertEquals("a\\u3164b\\uffa0c\\u115f\\u1160d\\u034fe\\u17b4\\u17b5f\\u180b\\u180d\\u180fg\\u2065h"
-                + "\\ufff0\\ufff8i" + (char) 0x2764 + "\\ufe0f\\ufe00", Failures.escape(text));
+                + "\\ufff0\\ufff8i" + (char) 0x2764 + "\\ufe0f\\ufe00", Text.escape(text));
     }
 
     @Test
@@ -108,22 +109,22 @@ class FailuresTest {
                 + (char) 0x4e00 + (char) 0xfdff + (char) 0xfe10 + (char) 0xff9f + (char) 0xffa1 + (char) 0xffef
                 + Character.toString(0xDFFFF) + Character.toString(0xE1000) + Character.toString(0xF0000);
 
-        assertEquals(text, Failures.escape(text));
+        assertEquals(text, Text.escape(text));
     }
 
     @Test
     @DisplayName("a tag character or a variation selector, outside the Basic Multilingual Plane, is escaped as its two "
             + "UTF-16 units")
     void tagCharacterEscapedAsTwoUnits() {
-        assertEquals("a\\udb40\\udc41b", Failures.escape("a" + TAG + "b"));
-        assertEquals("a\\udb40\\udd00b\\udb40\\uddefc\\udb43\\udfff", Failures.escape("a" + Character.toString(0xE0100)
+        assertEquals("a\\udb40\\udc41b", Text.escape("a" + TAG + "b"));
+        assertEquals("a\\udb40\\udd00b\\udb40\\uddefc\\udb43\\udfff", Text.escape("a" + Character.toString(0xE0100)
                 + "b" + Character.toString(0xE01EF) + "c" + Character.toString(0xE0FFF)));
     }
 
     @Test
     @DisplayName("a character outside the Basic Multilingual Plane that isn't a format character is kept")
     void emojiKept() {
-        assertEquals("a" + EMOJI + "b", Failures.escape("a" + EMOJI + "b"));
+        assertEquals("a" + EMOJI + "b", Text.escape("a" + EMOJI + "b"));
     }
 
     @Test
@@ -131,8 +132,8 @@ class FailuresTest {
     void loneSurrogatesEscaped() {
         String text = "a" + (char) 0xd800 + "b" + (char) 0xdc00 + "c" + (char) 0xdc00 + (char) 0xd800 + EMOJI;
 
-        assertEquals("a\\ud800b\\udc00c\\udc00\\ud800" + EMOJI, Failures.escape(text));
-        assertEquals("a\\udbff", Failures.quote("a" + (char) 0xdbff));
+        assertEquals("a\\ud800b\\udc00c\\udc00\\ud800" + EMOJI, Text.escape(text));
+        assertEquals("a\\udbff", Text.quote("a" + (char) 0xdbff));
     }
 
     @Test
@@ -141,7 +142,7 @@ class FailuresTest {
         for (int unit = 0; unit <= Character.MAX_VALUE; unit++) {
             StringBuilder written = new StringBuilder();
 
-            Failures.appendEscape(written, (char) unit);
+            Text.appendEscape(written, (char) unit);
 
             assertEquals(String.format("\\u%04x", unit), written.toString());
         }
@@ -150,19 +151,19 @@ class FailuresTest {
     @Test
     @DisplayName("escaping text that has already been escaped changes nothing")
     void escapingTwiceChangesNothing() {
-        String escaped = Failures.escape("a\n" + (char) 0x202e + TAG + EMOJI + (char) 0xd800);
+        String escaped = Text.escape("a\n" + (char) 0x202e + TAG + EMOJI + (char) 0xd800);
 
-        assertEquals(escaped, Failures.escape(escaped));
+        assertEquals(escaped, Text.escape(escaped));
     }
 
     @Test
     @DisplayName("a name is never shortened inside a surrogate pair")
     void nameNotCutInsideSurrogatePair() {
-        String kept = "x".repeat(Failures.MAX_NAME_LENGTH - 1);
+        String kept = "x".repeat(Text.MAX_NAME_LENGTH - 1);
 
-        assertEquals(kept + "... (6 more characters)", Failures.quote(kept + EMOJI + "tail"));
-        assertEquals(kept + "... (2 more characters)", Failures.quote(kept + TAG));
-        assertEquals("a\\u202eb", Failures.quote("a" + (char) 0x202e + "b"));
+        assertEquals(kept + "... (6 more characters)", Text.quote(kept + EMOJI + "tail"));
+        assertEquals(kept + "... (2 more characters)", Text.quote(kept + TAG));
+        assertEquals("a\\u202eb", Text.quote("a" + (char) 0x202e + "b"));
     }
 
     @Test
@@ -172,7 +173,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("x".repeat(1500) + " disk full",
                 new RuntimeException((String) null, root));
 
-        assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (510 more characters) (caused by "
+        assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (510 more characters) (caused by "
                 + "java.lang.IllegalStateException: disk full)", NestedFailures.describe(first));
     }
 
@@ -206,7 +207,7 @@ class FailuresTest {
         RuntimeException root = new IllegalStateException("more characters");
         RuntimeException first = new RuntimeException("x".repeat(1500), new RuntimeException((String) null, root));
 
-        assertEquals("x".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (caused by "
+        assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (caused by "
                 + "java.lang.IllegalStateException: more characters)", NestedFailures.describe(first));
     }
 
@@ -264,7 +265,7 @@ class FailuresTest {
         RuntimeException root = new IllegalStateException("a".repeat(600) + "b");
         RuntimeException first = new RuntimeException("a".repeat(1200), new RuntimeException((String) null, root));
 
-        assertEquals("a".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (200 more characters) (caused by "
+        assertEquals("a".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (200 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "a".repeat(600) + "b)", NestedFailures.describe(first));
     }
 
@@ -282,7 +283,7 @@ class FailuresTest {
 
         String description = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(first));
 
-        assertEquals("a".repeat(Failures.MAX_DESCRIPTION_LENGTH) + "... (799000 more characters) (caused by "
+        assertEquals("a".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (799000 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "a".repeat(1000) + "... (399001 more characters))",
                 description);
     }

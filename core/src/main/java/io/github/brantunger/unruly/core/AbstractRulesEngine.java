@@ -37,6 +37,9 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.Text;
 
 /**
  * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles and
@@ -151,7 +154,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // A language's own imports aren't looked up, so only their length is checked.
         configuration.languageImports().forEach((language, names) -> {
             checkLanguageKnown(languages, language, "Imports");
-            names.forEach(ImportResolver::checkLength);
+            names.forEach(ImportSize::checkLength);
         });
         Set<String> packages = new LinkedHashSet<>();
         Set<Class<?>> classes = new LinkedHashSet<>();
@@ -222,8 +225,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private static void checkLanguageKnown(LanguageRegistry languages, String language, String setting) {
         if (!languages.languages().containsKey(language)) {
             throw new IllegalStateException(setting + " are given for the expression language '"
-                    + Failures.quote(language) + "', which isn't one of the engine's expression languages: "
-                    + Failures.quoteAll(new TreeSet<>(languages.languages().keySet())));
+                    + Text.quote(language) + "', which isn't one of the engine's expression languages: "
+                    + Text.quoteAll(new TreeSet<>(languages.languages().keySet())));
         }
     }
 
@@ -536,7 +539,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         the values or the rules threw, or else the first other throwable that escaped them, as logging one can,
      *         either carrying the rest as suppressed exceptions (see {@link Failures#fatalFirst}). Nothing else a
      *         {@code close()} throws is returned: it was logged. If combining them fails, as it can when it runs out
-     *         of memory, the first fatal error met (see {@link Failures#isFatal}) is returned alone, or else what
+     *         of memory, the first fatal error met (see {@link Causes#isFatal}) is returned alone, or else what
      *         combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
@@ -990,7 +993,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * compiler that fails to tell which facts its rules read; and each declared fact name the languages reject, or
      * reserve only for the rule lists that use them, last. Its {@code failures()} has each. Its message counts them,
      * lists the first whole, and each next one while the list stays within
-     * {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts the rest. A {@code null} rule or a duplicate
+     * {@value Text#MAX_DESCRIPTION_LENGTH} characters, then counts the rest. A {@code null} rule or a duplicate
      * name is thrown at once, before anything is compiled.
      * </p>
      *
@@ -1271,7 +1274,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Reports a condition or action that threw as its rule's failure. An overflow (see {@link Failures#isOverflow}),
+     * Reports a condition or action that threw as its rule's failure. An overflow (see {@link Causes#isOverflow}),
      * bare or wrapped, as in an {@link InternalError} the JDK wraps one in, says the stack overflowed, unless what it
      * threw holds a nested {@code run()}'s or {@code load()}'s failure, which is described as
      * {@link NestedFailures#describe} describes it, naming that run's or load's rule.
@@ -1390,7 +1393,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The new output object, never {@code null}
      * @throws RuleExecutionException if the factory throws or returns {@code null}. A {@link VirtualMachineError}
      *                                other than {@link StackOverflowError}, and other than an {@link InternalError}
-     *                                that wraps one (see {@link Failures#isOverflow}), is logged, then rethrown
+     *                                that wraps one (see {@link Causes#isOverflow}), is logged, then rethrown
      *                                unchanged, also
      *                                when it is the cause of what the factory throws or suppressed on it; any other
      *                                {@link Error}, and a {@link Throwable} that is neither an exception nor an error,
@@ -1627,7 +1630,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             outputWriter.set(output, property, value, rule.converter());
         } catch (InvocationTargetException e) {
             // A writer of its own may throw one with no cause, or one of its own whose getCause() throws.
-            Throwable cause = Failures.causeOf(e);
+            Throwable cause = Causes.causeOf(e);
             Throwable thrown = cause != null ? cause : e;
             RuleExecutionException stop = stopped(rule, facts.deadline(), thrown);
             throw stop != null ? stop : propertyFailure(rule, property, thrown);
@@ -1638,7 +1641,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     private RuleExecutionException propertyFailure(CompiledRule rule, String property, Throwable cause) {
-        return notifier.failure(rule, ExpressionKind.ACTION, "Failed to set '" + Failures.quote(property)
+        return notifier.failure(rule, ExpressionKind.ACTION, "Failed to set '" + Text.quote(property)
                 + "' on the output for rule '" + rule.displayName() + "': " + NestedFailures.describe(cause), cause);
     }
 }

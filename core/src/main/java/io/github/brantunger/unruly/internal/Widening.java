@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.internal;
 
 import java.util.List;
 import java.util.Map;

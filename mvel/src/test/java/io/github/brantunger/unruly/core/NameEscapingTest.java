@@ -10,6 +10,7 @@ import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
+import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
@@ -42,7 +43,7 @@ class NameEscapingTest {
 
     // 199 control characters, each escaped to six, so a name of one more character quotes to 1,195 characters: more
     // than the engine keeps of a message, so a message that quoted it whole would be cut, inside an escape (#875).
-    private static final String CONTROLS = String.valueOf((char) 1).repeat(Failures.MAX_NAME_LENGTH - 1);
+    private static final String CONTROLS = String.valueOf((char) 1).repeat(Text.MAX_NAME_LENGTH - 1);
     private static final String ESCAPED_CONTROL = "\\u0001";
     // A backslash that doesn't start a whole escape: an escape cut in half, in a message with no backslash of its own.
     private static final Pattern CUT_ESCAPE = Pattern.compile("\\\\(?!u[0-9a-f]{4}|[nrt])");
@@ -115,7 +116,7 @@ class NameEscapingTest {
 
         Outcome<RuntimeException> failure = capture(RuntimeException.class, () -> engine.run(facts));
 
-        assertEquals("'" + "-".repeat(Failures.MAX_NAME_LENGTH) + "... (9800 more characters)' is not a valid fact "
+        assertEquals("'" + "-".repeat(Text.MAX_NAME_LENGTH) + "... (9800 more characters)' is not a valid fact "
                 + "name: rules can only refer to a fact named with a Java identifier", failure.thrown().getMessage());
     }
 
@@ -154,11 +155,11 @@ class NameEscapingTest {
         String controls = "a\tb" + (char) 0 + "c" + (char) 0x2028 + "d" + (char) 0x2029 + "e" + (char) 0x7f + "f"
                 + (char) 0x85;
 
-        assertEquals("a\\tb\\u0000c\\u2028d\\u2029e\\u007ff\\u0085", Failures.quote(controls));
-        assertEquals("plain-name_1 é", Failures.quote("plain-name_1 é"));
-        String limit = "x".repeat(Failures.MAX_NAME_LENGTH);
-        assertEquals(limit, Failures.quote(limit));
-        assertEquals(limit + "... (1 more characters)", Failures.quote(limit + "y"));
+        assertEquals("a\\tb\\u0000c\\u2028d\\u2029e\\u007ff\\u0085", Text.quote(controls));
+        assertEquals("plain-name_1 é", Text.quote("plain-name_1 é"));
+        String limit = "x".repeat(Text.MAX_NAME_LENGTH);
+        assertEquals(limit, Text.quote(limit));
+        assertEquals(limit + "... (1 more characters)", Text.quote(limit + "y"));
     }
 
     @Test
@@ -352,8 +353,8 @@ class NameEscapingTest {
 
         assertInstanceOf(RuleCompilationException.class, failure.thrown());
         String message = failure.thrown().getCause().getMessage();
-        assertTrue(message.length() <= Failures.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
-        assertEquals(Failures.escape(message), message);
+        assertTrue(message.length() <= Text.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
+        assertEquals(Text.escape(message), message);
         assertFalse(CUT_ESCAPE.matcher(message).find(), message);
         assertLoggedWhole(failure, message);
         assertTrue(failure.thrown().getMessage().endsWith("failed to create a compiler: " + message),
@@ -390,7 +391,7 @@ class NameEscapingTest {
      * counts the name's own characters, not escaped ones: the name's first character and each escape shown are one.
      */
     private static void assertFitsWhole(String message, String name) {
-        assertTrue(message.length() <= Failures.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
+        assertTrue(message.length() <= Text.MAX_DESCRIPTION_LENGTH, message.length() + ": " + message);
         assertFalse(CUT_ESCAPE.matcher(message).find(), message);
         Matcher leftOut = LEFT_OUT.matcher(message);
         assertTrue(leftOut.find(), message);

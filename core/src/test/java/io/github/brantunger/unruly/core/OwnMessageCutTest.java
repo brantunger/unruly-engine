@@ -13,6 +13,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -48,7 +49,7 @@ class OwnMessageCutTest {
     private static final String NESTED_LOAD = "a nested load() failed: ";
     private static final String WRAPPED = "audit failed: ";
 
-    /** The end of a text that holds the start of an escape {@link Failures#escape} writes and not the rest. */
+    /** The end of a text that holds the start of an escape {@link Text#escape} writes and not the rest. */
     private static final Pattern HALF_AN_ESCAPE = Pattern.compile("\\\\(u[0-9a-f]{0,3})?$");
 
     private static RulesEngineBuilder<Map<String, Object>> builder(ExpressionLanguage language) {
@@ -267,7 +268,7 @@ class OwnMessageCutTest {
         String held = e.getCause().getMessage();
         assertTrue(held.length() > 1_000, held);
         assertCutBeforeEscape(held,
-                after("Declared fact '" + Failures.quote(name) + "' can't be used: ", e.getMessage()));
+                after("Declared fact '" + Text.quote(name) + "' can't be used: ", e.getMessage()));
     }
 
     // An exception's toString() from the output factory: describeWithClass()
@@ -376,7 +377,7 @@ class OwnMessageCutTest {
 
         assertEquals('\\', list.charAt(999), list);
         assertEquals(list.substring(0, 999) + "... (" + (list.length() - 999) + " more characters)",
-                Failures.quoteAll(names));
+                Text.quoteAll(names));
     }
 
     // Guards: raw text with no escape at the limit, a message that fits, and MessageText.truncate, as before

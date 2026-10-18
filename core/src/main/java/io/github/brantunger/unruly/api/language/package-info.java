@@ -18,7 +18,11 @@
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction}, and throw
  *   {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException} for one you reject, such as a
  *   condition that assigns to a fact. {@link io.github.brantunger.unruly.api.language.MessageText} shortens and
- *   escapes text you didn't write for a message, as the engine does.</li>
+ *   escapes text you didn't write for a message, as the engine does;
+ *   {@link io.github.brantunger.unruly.api.language.Throwables} reads what you catch as the engine does, a stack
+ *   overflow and a fatal error included, so a language keeps no rule of its own for them; and
+ *   {@link io.github.brantunger.unruly.api.language.ImportLimits} bounds an import an expression makes inline as the
+ *   engine bounds its own.</li>
  *   <li>Keep what changes while expressions run in a {@link io.github.brantunger.unruly.api.language.Session}, one
  *   for each compiled copy of the rules, or return
  *   {@link io.github.brantunger.unruly.api.language.Session#none()} when nothing does.</li>

@@ -14,6 +14,7 @@ import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
+import io.github.brantunger.unruly.internal.Causes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -147,7 +148,7 @@ class CallOutOverflowTest {
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
 
         assertEquals("The 'x' expression language failed to create a compiler: " + LOAD_TIME, ex.getMessage());
-        assertTrue(Failures.causeChain(ex).stream().anyMatch(StackOverflowError.class::isInstance),
+        assertTrue(Causes.causeChain(ex).stream().anyMatch(StackOverflowError.class::isInstance),
                 "the cause chain is kept");
     }
 
@@ -309,7 +310,7 @@ class CallOutOverflowTest {
                 () -> engine.run(new FactMap<>()));
 
         assertEquals("r", ex.getRuleName());
-        assertTrue(Failures.causeChain(ex).contains(wrapped), ex.getMessage());
+        assertTrue(Causes.causeChain(ex).contains(wrapped), ex.getMessage());
     }
 
     /**

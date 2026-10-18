@@ -16,6 +16,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.internal.Causes;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -357,7 +358,7 @@ class InterruptStatusTest {
         thread.join();
 
         RuleExecutionException ex = assertInstanceOf(RuleExecutionException.class, thrown.get());
-        assertInstanceOf(InterruptedException.class, Failures.rootCause(ex));
+        assertInstanceOf(InterruptedException.class, Causes.rootCause(ex));
         assertTrue(status.get(), "the thread's interrupt status after run() threw");
     }
 

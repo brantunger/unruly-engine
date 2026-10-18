@@ -127,11 +127,12 @@ java -agentlib:native-image-agent=config-output-dir=native-smoke/build/agent-con
 ```
 
 The agent overwrites the files in its output directory, so point it at a scratch directory, not at your
-`reflect-config.json`. Then compare what it wrote with your file, and copy what's new. For the sample, the agent
-recorded `put` on `java.util.Map`, the interface, and `java.util.HashMap` only for looking its methods up, and an
-image built from its output ran. A hand-written file that listed `HashMap` with no `put` anywhere failed with
-`MissingReflectionRegistrationError` naming `HashMap.put`, and registering `put` on `HashMap` fixed it. When you
-write an entry by hand, register the method on the class the error names.
+`reflect-config.json`. Then compare what it wrote with your file, and copy what's new.
+
+For the sample, the agent recorded `put` on `java.util.Map`, the interface, and `java.util.HashMap` only for looking
+its methods up, and an image built from its output ran. A hand-written file that listed `HashMap` with no `put`
+anywhere failed with `MissingReflectionRegistrationError` naming `HashMap.put`, and registering `put` on `HashMap`
+fixed it. When you write an entry by hand, register the method on the class the error names.
 
 ## 🚧 Gotchas
 
@@ -165,6 +166,7 @@ the option is experimental. These are CI's commands for its second image:
 ```bash
 packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
 packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
+packages=$packages,io.github.brantunger.unruly.internal
 packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
 native-image --no-fallback -H:+ReportExceptionStackTraces \
     -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
@@ -181,7 +183,7 @@ native-smoke/build/native/native-smoke-strict
 How the list works on GraalVM for JDK 21, from GraalVM's source:
 
 - Each entry is a package or a class, matched exactly, not as a prefix. `io.github.brantunger` covers none of the
-  library's classes, so CI lists each of its six packages. The build's `checkStrictImagePackages` task, which
+  library's classes, so CI lists each of its seven packages. The build's `checkStrictImagePackages` task, which
   `./gradlew build` runs, fails when that list misses a package of the `core` or `mvel` jars, or names another.
 - The list picks whose `Class.forName` and other reflection calls throw. A lookup through a class loader's
   `loadClass` throws for any name the image has no metadata for, whatever the list.
@@ -233,7 +235,7 @@ image.
 ## 🧪 What was tested
 
 CI's `native-image` job builds the native-smoke application with GraalVM Community Edition for JDK 21 (21.0.2) on
-Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's six
+Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's seven
 packages. The application checks its own results and exits with 1 if one is wrong. It covers:
 
 - a first-match engine with a class and a package import, a record fact read by property and a bean output an

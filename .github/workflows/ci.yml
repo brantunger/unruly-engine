@@ -299,6 +299,7 @@ jobs:
         run: |
           packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
           packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
+          packages=$packages,io.github.brantunger.unruly.internal
           packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
           native-image --no-fallback -H:+ReportExceptionStackTraces \
             -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \

@@ -52,6 +52,9 @@ public interface ExpressionLanguage {
      * run, deep in another run's stack, for example from an action, and a {@link StackOverflowError} inside a class's
      * static initializer leaves the class unusable for the life of the JVM: every later use of it, by any engine,
      * throws {@link NoClassDefFoundError}. Initializing them here leaves a later load or run nothing to initialize.
+     * A warm-up that runs the library once, and so may itself overflow deep in a stack, should skip itself only for
+     * what {@link Throwables#isOverflow} reads as an overflow, which such a {@code NoClassDefFoundError} isn't, and
+     * rethrow anything else, a fatal error ({@link Throwables#isFatal}) included.
      *
      * <p>
      * The engine calls it before anything is compiled with the language, having first checked that the thread has

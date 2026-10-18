@@ -22,6 +22,8 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.internal.Text;
 
 /**
  * Compiles an engine's rule lists for {@code load()} and {@code validate()}: checks the list itself, compiles each rule
@@ -136,7 +138,7 @@ final class RuleListCompiler {
             if (rule == null) {
                 problems.add(compilationFailure("Rule at index " + i + " of the rule list is null", null, null));
             } else if (!ruleNames.add(rule.getRuleName())) {
-                problems.add(compilationFailure("Duplicate rule name '" + Failures.quote(rule.getRuleName()) + "'",
+                problems.add(compilationFailure("Duplicate rule name '" + Text.quote(rule.getRuleName()) + "'",
                         null, rule.getRuleName()));
             }
             if (mode.firstOnly() && !problems.isEmpty()) {
@@ -287,7 +289,7 @@ final class RuleListCompiler {
         private Map<String, Set<String>> askNamesRead(Map<String, ExpressionCompiler> checks) {
             Map<String, Set<String>> read = new HashMap<>();
             for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
-                String named = "The '" + Failures.quote(check.getKey()) + "' expression language";
+                String named = "The '" + Text.quote(check.getKey()) + "' expression language";
                 Set<String> names = Set.of();
                 boolean tells;
                 boolean holdsNull = false;
@@ -397,7 +399,7 @@ final class RuleListCompiler {
          * Throws the one failure there is, or one exception for several, whose message lists as many as fit. The
          * message counts rules when every failure is a rule's, and failures otherwise: a language that couldn't
          * create its compiler and a rejected declared fact name have no rule. It lists the first failure whole, and
-         * each next one while the list stays within {@value Failures#MAX_DESCRIPTION_LENGTH} characters, then counts
+         * each next one while the list stays within {@value Text#MAX_DESCRIPTION_LENGTH} characters, then counts
          * the rest, which the exception's {@code failures()} still has. Every failure was logged when it happened, so
          * the one exception for several is recorded as logged, and a run or load around a nested {@code load()}
          * doesn't log it again (see {@link LoggedFailures}).
@@ -451,10 +453,10 @@ final class RuleListCompiler {
             if (rejected != null) {
                 // An overflow's rejection says the stack overflowed, as run() reports it, with no note naming its
                 // class again.
-                String reason = Failures.isOverflow(rejected)
-                        ? Failures.clip(Failures.messageOr(rejected, rejected.getClass().getName()))
+                String reason = Causes.isOverflow(rejected)
+                        ? Text.clip(Failures.messageOr(rejected, rejected.getClass().getName()))
                         : NestedFailures.describe(rejected);
-                failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: " + reason,
+                failures.add(compilationFailure("Declared fact '" + Text.quote(name) + "' can't be used: " + reason,
                         rejected, null));
             }
         }
@@ -545,13 +547,13 @@ final class RuleListCompiler {
             }
         }
         // Bounded, as a rule table loaded after a breaking change can fail thousands of rules at once. Whole failures
-        // are left out, not characters, so this doesn't go through Failures.truncate: each message is built from
+        // are left out, not characters, so this doesn't go through Text.truncate: each message is built from
         // parts shortened and escaped one at a time, so a single message isn't capped at MAX_DESCRIPTION_LENGTH, and
         // a cut could fall inside an escape.
         StringBuilder listed = new StringBuilder(failures.get(0).getMessage());
         int count = 1;
         while (count < failures.size()
-                && listed.length() + 2 + failures.get(count).getMessage().length() <= Failures.MAX_DESCRIPTION_LENGTH) {
+                && listed.length() + 2 + failures.get(count).getMessage().length() <= Text.MAX_DESCRIPTION_LENGTH) {
             listed.append("; ").append(failures.get(count).getMessage());
             count++;
         }
@@ -596,11 +598,11 @@ final class RuleListCompiler {
             LoggedFailures.callOut();
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
-            throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to " + failedTo
+            throw compilationFailure("The '" + Text.quote(name) + "' expression language failed to " + failedTo
                     + ": " + NestedFailures.describeCallOut(e, !preparing), e, null);
         }
         if (compiler == null) {
-            throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",
+            throw compilationFailure("The '" + Text.quote(name) + "' expression language returned no compiler",
                     null, null);
         }
         return compiler;
@@ -608,7 +610,7 @@ final class RuleListCompiler {
 
     private CompiledRule compileRule(Rule rule, ExpressionCompiler compiler, LanguageCompilers compilers) {
         String ruleName = rule.getRuleName();
-        String displayName = Failures.quote(ruleName);
+        String displayName = Text.quote(ruleName);
         if (rule.getCondition().isBlank()) {
             throw compilationFailure("Rule '" + displayName + "' has a blank condition expression", null,
                     ruleName, ExpressionKind.CONDITION, List.of());
@@ -619,9 +621,9 @@ final class RuleListCompiler {
         }
         String language = languageOf(rule);
         if (compiler == null) {
-            throw compilationFailure("Rule '" + displayName + "' is written in '" + Failures.quote(language)
+            throw compilationFailure("Rule '" + displayName + "' is written in '" + Text.quote(language)
                     + "', which isn't one of the engine's expression languages: "
-                    + Failures.quoteAll(compilers.languageNames()), null, ruleName);
+                    + Text.quoteAll(compilers.languageNames()), null, ruleName);
         }
         CompiledCondition compiledCondition = compile(
                 new Expression(ruleName, ExpressionKind.CONDITION, rule.getCondition()), compiler::compileCondition);
@@ -636,7 +638,7 @@ final class RuleListCompiler {
      * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
      * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A
      * {@link StackOverflowError}, also in the cause chain of what the language threw with no {@link LinkageError}
-     * before it (see {@link Failures#isOverflow}), is reported by its cause, which the room left on the stack where it
+     * before it (see {@link Causes#isOverflow}), is reported by its cause, which the room left on the stack where it
      * was caught tells (see {@link #overflowReason()}); a class an overflow left unusable is described as any other
      * failure is. A fatal {@link Error}, also one the language wraps in its own exception, is logged like any failure
      * and then rethrown.
@@ -655,7 +657,7 @@ final class RuleListCompiler {
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
             // A language's own subclass may have a getMessage() or an issues() that throws.
-            String reason = Failures.clip(Failures.messageOr(e, "was rejected by its expression language"));
+            String reason = Text.clip(Failures.messageOr(e, "was rejected by its expression language"));
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
                     Failures.issuesOf(e));
         } catch (Throwable e) {
@@ -663,7 +665,7 @@ final class RuleListCompiler {
             // expression compiled with too little stack left, such as by a load called deep in a stack or on a thread
             // with a small one (#1013).
             // A class an overflow left unusable isn't one: no change to the rule or the depth helps (#1116).
-            String reason = Failures.isOverflow(e) ? overflowReason() : NestedFailures.describe(e);
+            String reason = Causes.isOverflow(e) ? overflowReason() : NestedFailures.describe(e);
             throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
                     List.of());
         }
