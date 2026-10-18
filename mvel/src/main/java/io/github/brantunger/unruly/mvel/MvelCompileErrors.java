@@ -7,14 +7,15 @@ import org.mvel2.ErrorDetail;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * How an MVEL compile error reads: turns what compiling an expression threw, or what the compiler found in a
- * condition, into an {@link InvalidExpressionException} with one issue at {@code ERROR}, its message and its issue
- * built in one place.
+ * How an MVEL compile error reads: tells which of what compiling an expression threw is a compile error (see
+ * {@link #translate}), and turns one, or what the compiler found in a condition, into an
+ * {@link InvalidExpressionException} with one issue at {@code ERROR}, its message and its issue built in one place.
+ * What isn't one, such as an overflow or a failure of the application's class loader, is given back to be thrown as
+ * it is.
  */
 final class MvelCompileErrors {
 
@@ -125,6 +126,56 @@ final class MvelCompileErrors {
     }
 
     /**
+     * Returns what to throw for what compiling an expression threw: the {@link InvalidExpressionException} that
+     * describes it when it's a compile error the engine describes, or else the exception itself, to be thrown as it
+     * is. A {@link CompileException} is reported by {@link #analysisLoop} when MVEL's analysis went round in a loop
+     * (see {@link #looped}), returned as it is when an overflow is its cause (see {@link ExceptionReads#isOverflow}),
+     * and otherwise reported by {@link #compileError(CompileException, String)}; an {@link Imports.ImportRejected} by
+     * {@link #importRejected}; an {@link IndexOutOfBoundsException} by {@link #malformed} when MVEL's own code threw
+     * it (see {@link #thrownInMvel}); and any other by {@link #classCalledLikeMethod} when an imported class was
+     * called like a method (see {@link #calledLikeMethod}), or by {@link #plainRejection} when MVEL threw it to
+     * reject the expression (see {@link #rejectedPlainly}). An {@link IndexOutOfBoundsException} or other exception
+     * from code MVEL called, such as the application's class loader, is returned as it is.
+     *
+     * @param e        What compiling threw
+     * @param analysis The analysis pass over the expression, for its text and the type it rejected
+     * @return The exception to throw: one that describes the error, or {@code e} itself
+     */
+    // A chain of instanceof checks rather than a pattern switch, whose call site the JVM links with an invokedynamic
+    // the first time it runs, which could overflow deep in a stack, as a lambda's could (#1097).
+    static RuntimeException translate(RuntimeException e, MvelAnalysis analysis) {
+        if (e instanceof CompileException compileError) {
+            if (looped(compileError)) {
+                return analysisLoop(compileError);
+            }
+            // The engine reports an overflow by its cause: an expression too long for MVEL's recursive parser, or a
+            // compile called too deep in the stack or on a thread with a small one. A class an overflow left unusable
+            // isn't one, and is reported as MVEL's compile error, as on JDK 21, whose NoClassDefFoundError has no
+            // cause (#1116).
+            if (ExceptionReads.isOverflow(compileError)) {
+                return e;
+            }
+            return compileError(compileError, analysis.rejectedType());
+        }
+        if (e instanceof Imports.ImportRejected rejected) {
+            return importRejected(analysis.sourceText(), rejected);
+        }
+        if (e instanceof IndexOutOfBoundsException) {
+            // MVEL's parser reads out of bounds for some malformed expressions, such as a . or ? it can't read past or
+            // blank parentheses, instead of reporting them. One from other code, such as the application's class
+            // loader, is reported as is.
+            return thrownInMvel(e) ? malformed(e) : e;
+        }
+        // An imported class called like a method, such as ArrayList(y), fails MVEL's cast to a static method.
+        if (calledLikeMethod(e)) {
+            return classCalledLikeMethod(e);
+        }
+        // MVEL throws a plain RuntimeException, with no cause and no position, for some expressions it rejects, such
+        // as int in = 1 or an ambiguous class name. Any other is reported as is.
+        return rejectedPlainly(e) ? plainRejection(e) : e;
+    }
+
+    /**
      * Reports an assignment or {@code import_static} found in a condition, with one issue that says where it starts:
      * the line and column, counting from 1, as MVEL's own compile errors say.
      *
@@ -163,7 +214,9 @@ final class MvelCompileErrors {
      * the name where it first follows {@code import} and any whitespace. The name's text in a string or a comment
      * before it isn't taken for it, even after {@code import}. The scan ends a comment where MVEL ends it, so
      * {@code /*}{@code /} is a whole comment (#747), and MVEL passes the name as a slice of the text, from just after
-     * the keyword and the characters it skips as whitespace, so the {@code import} MVEL read is always found.
+     * the keyword and the characters it skips as whitespace, so the {@code import} MVEL read is always found. With no
+     * {@code import} of the name in the text at all, which MVEL never passes, the error is reported with no line or
+     * column, as {@link #positionless} reports one.
      * </p>
      *
      * <p>
@@ -214,10 +267,10 @@ final class MvelCompileErrors {
             }
         }
         if (at < 0) {
-            // With no import of the name in the text at all, which MVEL never passes, the scan fails as a stream's
-            // findFirst().orElseThrow() did.
+            // With no import of the name in the text at all, which MVEL never passes, there is no place to report it
+            // at: positionOf would read before the text's start.
             if (first < 0) {
-                throw new NoSuchElementException("No value present");
+                return positionless(e.describedWithin(roomAfter(messageStart(0, 0))), e);
             }
             at = first;
         }
@@ -443,7 +496,9 @@ final class MvelCompileErrors {
      * {@code .} or {@code ?} it can't read past, such as in {@code b.}, {@code b. == 1} or {@code foo(?)}, or for blank
      * parentheses, such as in {@code ( ) + 1}, is {@code failed to compile: malformed expression}. An expression that
      * calls an imported class like a method, such as {@code ArrayList(y)} with {@code java.util} imported, is
-     * {@code failed to compile: a class can't be called like a method: use new}. What MVEL threw is the cause.
+     * {@code failed to compile: a class can't be called like a method: use new}. An import rejected whose name isn't
+     * in the text after any {@code import}, which MVEL never passes (see {@link #importRejected}), is
+     * {@code failed to compile: Can't import ...}. What MVEL threw is the cause.
      *
      * @param description The description, escaped
      * @param e           What MVEL threw

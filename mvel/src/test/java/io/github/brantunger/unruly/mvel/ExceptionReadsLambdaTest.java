@@ -23,8 +23,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code FailureCodeLambdaTest} reads {@code Failures}', and fails if one names {@code LambdaMetafactory}, as the
  * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
  * JVM links the same way, or if the class itself isn't read. {@link FailureMethodLambdaTest} checks
- * {@link MvelAnalysis}' methods that read a compile error. {@link FirstUseClassInitializationTest} checks that
- * MVEL's first failing condition and action, and its first failing load and {@code validate()}, link none.
+ * {@link MvelAnalysis}' methods that read a compile error, and {@link MvelCompileErrors#translate} by name.
+ * {@link FirstUseClassInitializationTest} checks that MVEL's first failing condition and action, and its first failing
+ * load and {@code validate()}, link none.
  */
 @DisplayName("ExceptionReads and MvelCompileErrors link no lambda (#1093, #1097)")
 class ExceptionReadsLambdaTest {
