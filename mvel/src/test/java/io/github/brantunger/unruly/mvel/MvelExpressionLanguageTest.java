@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.MVEL;
@@ -58,7 +59,7 @@ class MvelExpressionLanguageTest {
         Runnable call = () -> MVEL.executeExpression(MVEL.compileExpression("v.call()"), (Object) null, variables);
 
         Throwable thrown = assertThrows(RuntimeException.class, call::run);
-        assertInstanceOf(StackOverflowError.class, ExceptionReads.rootCause(thrown), "MVEL wraps the overflow");
+        assertInstanceOf(StackOverflowError.class, Throwables.rootCause(thrown), "MVEL wraps the overflow");
         assertFalse(MvelExpressionLanguage.warmedUp(call));
     }
 

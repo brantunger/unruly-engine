@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.util.ParseTools;
@@ -156,7 +157,7 @@ class RuleTextNamesTest {
                     stops += afterIsdef ? 2 : 1;
                 }
             }
-            if (stops > Imports.MAX_IMPORT_PARTS || word.length() > Imports.MAX_IMPORT_LENGTH) {
+            if (stops > ImportLimits.MAX_IMPORT_PARTS || word.length() > ImportLimits.MAX_IMPORT_LENGTH) {
                 return true;
             }
         }

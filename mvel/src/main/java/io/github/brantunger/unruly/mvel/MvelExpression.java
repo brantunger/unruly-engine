@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.mvel.warmup.WarmUpTarget;
 import org.jspecify.annotations.Nullable;
 import org.mvel2.MVEL;
@@ -408,7 +409,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
                 throw e;
             }
             // A wrapper of the loop itself would make a chain that loops back to it.
-            if (!ExceptionReads.causeChain(e).contains(loop)) {
+            if (!Throwables.causeChain(e).contains(loop)) {
                 loop.addSuppressed(e);
             }
             throw loop;

@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -28,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class InlineStaticMemberFactNameTest {
 
     // A word too long for MVEL to scan for the names its rules read, so it checks every fact.
-    private static final String LONG_WORD = "'" + "a".repeat(Imports.MAX_IMPORT_LENGTH) + "'";
+    private static final String LONG_WORD = "'" + "a".repeat(ImportLimits.MAX_IMPORT_LENGTH) + "'";
 
     private static Rule rule(String condition, String action) {
         return Rule.builder().ruleName("r").condition(condition).action(action).build();
@@ -166,7 +167,7 @@ class InlineStaticMemberFactNameTest {
         try (RulesEngine<Map<String, Object>> engine = engine("true",
                 "import java.lang.Math.*; output.put('r', PI + " + LONG_WORD + ".length())")) {
             assertEquals(rejection("PI"), run(engine, "PI", 42));
-            assertEquals(Map.of("r", Math.PI + Imports.MAX_IMPORT_LENGTH), run(engine, "E", 42));
+            assertEquals(Map.of("r", Math.PI + ImportLimits.MAX_IMPORT_LENGTH), run(engine, "E", 42));
             // The scan gave up, so a keyword no rule names is checked, and rejected.
             assertEquals(rejection("empty"), run(engine, "empty", 42));
         }

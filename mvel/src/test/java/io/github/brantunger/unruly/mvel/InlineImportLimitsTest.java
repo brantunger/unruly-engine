@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -309,5 +310,42 @@ class InlineImportLimitsTest {
 
         assertEquals(Map.of("hit", true), engine.run(new FactMap<>(new Fact<>("v0", 1))));
         assertTrue(importLookups(loader) > 0, "MVEL looks v0 up in the imported package");
+    }
+
+    @Test
+    @DisplayName("an import is accepted, or rejected with the engine's message, the quoted import and the reason the"
+            + " engine gives (#1241)")
+    void checkSizeRejectsAsTheEngineDoes() {
+        int length = ImportLimits.MAX_IMPORT_LENGTH;
+        int parts = ImportLimits.MAX_IMPORT_PARTS;
+        String emoji = Character.toString(0x1F600);
+        // Each import, and the message it is rejected with, or null if it is accepted.
+        List<String[]> cases = List.of(
+                new String[]{"java.util", null},
+                new String[]{"", null},
+                new String[]{"a".repeat(length), null},
+                new String[]{"a.".repeat(parts - 1) + "a", null},
+                new String[]{".".repeat(parts - 1), null},
+                new String[]{"a".repeat(length + 1), "Can't import '" + "a".repeat(200) + "... (801 more characters)':"
+                        + " it has 1001 characters, and an import may have at most 1000"},
+                new String[]{"a.".repeat(parts) + "a", "Can't import '" + "a.".repeat(parts) + "a': it has 65"
+                        + " dot-separated parts, and an import may have at most 64"},
+                new String[]{".".repeat(parts), "Can't import '" + ".".repeat(parts) + "': it has 65 dot-separated"
+                        + " parts, and an import may have at most 64"},
+                new String[]{LONG_PACKAGE, LONG_MESSAGE},
+                new String[]{"a\n.".repeat(parts), "Can't import '" + "a\\n.".repeat(parts) + "': it has 65"
+                        + " dot-separated parts, and an import may have at most 64"},
+                new String[]{"a".repeat(199) + emoji + "a".repeat(801), "Can't import '" + "a".repeat(199)
+                        + "... (803 more characters)': it has 1002 characters, and an import may have at most 1000"});
+        for (String[] expected : cases) {
+            String message;
+            try {
+                Imports.checkSize(expected[0]);
+                message = null;
+            } catch (Imports.ImportRejected e) {
+                message = e.getMessage();
+            }
+            assertEquals(expected[1], message, "an import of " + expected[0].length() + " characters");
+        }
     }
 }

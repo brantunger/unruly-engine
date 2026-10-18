@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.jspecify.annotations.Nullable;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.util.ParseTools;
@@ -74,8 +75,8 @@ final class RuleText {
     // a word of dots and minus signs. So addNames gives up on a word with more of them than an import has parts, or
     // more characters than an import may have: the longest qualified name a rule can name a class by inline fits in
     // one word.
-    private static final int MAX_WORD_STOPS = Imports.MAX_IMPORT_PARTS;
-    private static final int MAX_WORD_LENGTH = Imports.MAX_IMPORT_LENGTH;
+    private static final int MAX_WORD_STOPS = ImportLimits.MAX_IMPORT_PARTS;
+    private static final int MAX_WORD_LENGTH = ImportLimits.MAX_IMPORT_LENGTH;
     private static final char BACKSLASH = '\\';
 
     private RuleText() {
@@ -153,8 +154,8 @@ final class RuleText {
      * computes or interpolates, and reads {@code this} as no fact. A name added that MVEL reads as something else, or
      * not at all, such as a word of a comment, only adds a name. A name MVEL reads with MVEL's whitespace in it can
      * still be missed, such as one {@code isdef} reads up to a comment on a later line. Gives up, with only some names
-     * added, on a word of more than 1,000 characters ({@link Imports#MAX_IMPORT_LENGTH}), or with more than 64
-     * characters that aren't part of an identifier ({@link Imports#MAX_IMPORT_PARTS}), each one just after
+     * added, on a word of more than 1,000 characters ({@link ImportLimits#MAX_IMPORT_LENGTH}), or with more than 64
+     * characters that aren't part of an identifier ({@link ImportLimits#MAX_IMPORT_PARTS}), each one just after
      * {@code isdef} counted twice, as the spans it reads grow as the square of those. Scanned with loops rather than a
      * stream, as a load calls it (#1012).
      *

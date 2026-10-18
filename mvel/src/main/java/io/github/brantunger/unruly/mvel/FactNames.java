@@ -278,16 +278,6 @@ final class FactNames {
         return count == 0 ? "" : ", and " + count + " more";
     }
 
-    /**
-     * Says how many characters were left out of a text, as the engine does after the part of it a message shows.
-     *
-     * @param count How many characters were left out
-     * @return {@code ... (N more characters)}
-     */
-    static String leftOut(int count) {
-        return "... (" + count + " more characters)";
-    }
-
     private boolean isPackageClass(String name) {
         if (packages.isEmpty()) {
             return false;
@@ -391,9 +381,9 @@ final class FactNames {
         } catch (ClassNotFoundException e) {
             return false;
         } catch (VirtualMachineError e) {
-            // Not core's Failures.isFatal, which the mvel package may not use and which reads a StackOverflowError
-            // as one rule's failure: every error the JVM itself raises propagates out of this lookup today, and a
-            // fact-name check is no place to start absorbing one.
+            // Not Throwables.isFatal, which reads a StackOverflowError as one rule's failure: every error the JVM
+            // itself raises propagates out of this lookup today, and a fact-name check is no place to start absorbing
+            // one.
             throw e;
         } catch (Error e) {
             // One catch for the rest, so an image's MissingReflectionRegistrationError — an Error, but not a

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -217,7 +218,7 @@ class RunLoopStateTest {
                 () -> expression.evaluate(LanguageTestContexts.evaluation(Map.of("m", m)), session));
         // MVEL wraps what the map threw in an exception of its own, which doesn't hold the loop, so it is kept.
         assertEquals(1, loop.getSuppressed().length);
-        assertTrue(ExceptionReads.causeChain(loop.getSuppressed()[0]).contains(other));
+        assertTrue(Throwables.causeChain(loop.getSuppressed()[0]).contains(other));
     }
 
     @Test

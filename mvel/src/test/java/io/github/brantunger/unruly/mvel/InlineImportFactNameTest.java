@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -26,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class InlineImportFactNameTest {
 
     // A word too long for MVEL to scan for the names its rules read, so it checks every fact.
-    private static final String LONG_WORD = "'" + "a".repeat(Imports.MAX_IMPORT_LENGTH) + "'";
+    private static final String LONG_WORD = "'" + "a".repeat(ImportLimits.MAX_IMPORT_LENGTH) + "'";
 
     private static Rule rule(String name, String condition, String action) {
         return Rule.builder().ruleName(name).condition(condition).action(action).build();
@@ -141,7 +142,7 @@ class InlineImportFactNameTest {
     void tooLongToScanAcceptsUnresolvedPackageClass() {
         try (RulesEngine<Map<String, Object>> engine = engine(rule("r", "true",
                 "import java.util.*; output.put('r', new ArrayList().size() + " + LONG_WORD + ".length())"))) {
-            assertEquals(Map.of("r", Imports.MAX_IMPORT_LENGTH), run(engine, "Date", 42));
+            assertEquals(Map.of("r", ImportLimits.MAX_IMPORT_LENGTH), run(engine, "Date", 42));
             // The scan gave up, so a keyword no rule names is checked, and rejected.
             assertEquals(rejection("empty"), run(engine, "empty", 42));
         }
@@ -162,7 +163,7 @@ class InlineImportFactNameTest {
                         + ".length()))"))) {
             assertEquals(rejection("Date"), run(engine, "Date", 42));
             assertEquals(rejection("abs"), run(engine, "abs", 42));
-            assertEquals(Map.of("long", 1, "named", new Date(0), "unnamed", 0, "both", Imports.MAX_IMPORT_LENGTH),
+            assertEquals(Map.of("long", 1, "named", new Date(0), "unnamed", 0, "both", ImportLimits.MAX_IMPORT_LENGTH),
                     run(engine, "amount", 42));
         }
     }

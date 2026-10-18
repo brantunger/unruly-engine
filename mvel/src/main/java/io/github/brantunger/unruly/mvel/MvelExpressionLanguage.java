@@ -4,6 +4,8 @@ import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.ImportLimits;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.mvel2.DataConversion;
 import org.mvel2.MVEL;
 import org.mvel2.MVELRuntime;
@@ -187,9 +189,16 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // with a null static field, and the place of either in the text. A class's first load deep in a stack can
         // overflow as initializing one can (#1066, #1097). And those that MVEL's first loop, in its analysis or in a
         // run, and its first lookup of a name with a '$' and too many parts would be the first to initialize (#1099).
+        // And the engine's readers this module reads a failure and bounds an inline import with, which it calls in a
+        // catch after an overflow too: an engine preloads them when it's built, a language used without one doesn't.
         initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
                 Imports.ClassCalledLikeMethod.class, Imports.ImportRejected.class, Imports.AnalysisLoop.class,
-                Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class));
+                Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class, Throwables.class, ImportLimits.class));
+        // Those two only delegate, to engine classes this module can't name, which their first call would otherwise
+        // load: so one call of each kind, which reads nothing that can throw and answers no, loads them now.
+        Throwables.isOverflow(null);
+        Throwables.isWrongName(new NoClassDefFoundError(), MvelExpressionLanguage.class.getName());
+        ImportLimits.importSizeProblem("");
         // The classes without a static initializer that the JVM's first load of an MVEL rule and its first run would
         // otherwise be the first to read from this module's jar or class directory, or MVEL's: those that create the
         // compiler and compile a rule, then the session and an action's variables, and MVEL's that a first run of an
@@ -270,7 +279,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     /**
      * Runs the warm-up of {@link #prepare()}, and tells whether it finished. One that overflowed is skipped: a
      * {@link StackOverflowError} it throws, or one in the cause chain of what it throws with no {@link LinkageError}
-     * before it (see {@link ExceptionReads#isOverflow}), as MVEL wraps one thrown in a method it calls, and as the JDK
+     * before it (see {@link Throwables#isOverflow}), as MVEL wraps one thrown in a method it calls, and as the JDK
      * wraps one in an {@link InternalError}. A class an overflow left unusable, whose {@link NoClassDefFoundError} JDK
      * 25 and 26 give the overflow as its cause, isn't skipped, so {@code prepare()} fails (#1116). When the engine
      * prepares MVEL, at {@code build()} or a first load, its evaluations and its compile initialize no class with a
@@ -290,7 +299,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
             return false;
         } catch (InternalError e) {
             // An overflow the JDK wrapped, read with nothing allocated, or else fatal, as below.
-            if (ExceptionReads.isOverflow(e)) {
+            if (Throwables.isOverflow(e)) {
                 return false;
             }
             throw e;
@@ -298,7 +307,7 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
             // Fatal: as it is, with nothing allocated for it.
             throw e;
         } catch (Throwable e) {
-            if (ExceptionReads.isOverflow(e)) {
+            if (Throwables.isOverflow(e)) {
                 return false;
             }
             throw e;

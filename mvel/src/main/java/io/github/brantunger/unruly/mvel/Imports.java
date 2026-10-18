@@ -1,6 +1,8 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.MessageText;
+import io.github.brantunger.unruly.api.language.Throwables;
 import org.jspecify.annotations.Nullable;
 import org.mvel2.ParserConfiguration;
 import org.mvel2.compiler.AbstractParser;
@@ -32,12 +34,6 @@ final class Imports {
     private final Set<String> notClasses;
     private final Map<String, Class<?>> inputs;
     private final ClassNameRoots classNameRoots;
-
-    // The most characters and dot-separated parts an import in an expression's own text may have, as the engine's
-    // core.ImportResolver allows an engine's imports, which the mvel package may not use. ExactNameClassLoader bounds
-    // the names it looks up from these.
-    static final int MAX_IMPORT_LENGTH = 1_000;
-    static final int MAX_IMPORT_PARTS = 64;
 
     // The class every class loader of the JDK's own extends (see isJdkLoader).
     private static final String JDK_LOADER = "jdk.internal.loader.BuiltinClassLoader";
@@ -238,23 +234,18 @@ final class Imports {
     }
 
     /**
-     * Rejects an import too long, or with too many parts, to look up, with the same message as the engine's
-     * {@code core.ImportResolver.checkSize}, which the {@code mvel} package may not use.
-     * {@code ImportLimitCopiesTest} runs the same names through both, so the two can't drift apart.
+     * Rejects an import too long, or with too many parts, to look up, as the engine rejects one it is built with: the
+     * same limits, and the same message, the quoted import and the reason {@link ImportLimits#importSizeProblem}
+     * gives. {@link ExactNameClassLoader} bounds the names it looks up from the same limits.
      *
      * @param name The package's name
-     * @throws ImportRejected if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more than
-     *                        {@value #MAX_IMPORT_PARTS} dot-separated parts
+     * @throws ImportRejected if {@code name} has more than {@value ImportLimits#MAX_IMPORT_LENGTH} characters or more
+     *                        than {@value ImportLimits#MAX_IMPORT_PARTS} dot-separated parts
      */
     static void checkSize(String name) {
-        if (name.length() > MAX_IMPORT_LENGTH) {
-            throw new ImportRejected(name, "': it has " + name.length() + " characters, and an import may have at "
-                    + "most " + MAX_IMPORT_LENGTH);
-        }
-        long parts = RuleText.dottedParts(name);
-        if (parts > MAX_IMPORT_PARTS) {
-            throw new ImportRejected(name, "': it has " + parts + " dot-separated parts, and an import may have at "
-                    + "most " + MAX_IMPORT_PARTS);
+        String problem = ImportLimits.importSizeProblem(name);
+        if (problem != null) {
+            throw new ImportRejected(name, "': " + problem);
         }
     }
 
@@ -584,7 +575,7 @@ final class Imports {
             } catch (Error e) {
                 // A native image's error for a name it has no metadata for, a LinkageError in GraalVM for JDK 25, so
                 // caught above, but not in GraalVM for JDK 21.
-                if (ExactNameClassLoader.isMissingRegistration(e)) {
+                if (Throwables.isMissingRegistration(e)) {
                     return null;
                 }
                 throw e;
@@ -649,9 +640,9 @@ final class Imports {
          * </p>
          *
          * @param packageName The package's name, as the expression writes it
-         * @throws ImportRejected if the name has more than {@value Imports#MAX_IMPORT_LENGTH} characters or more than
-         *                        {@value Imports#MAX_IMPORT_PARTS} dot-separated parts, before it is looked up, or
-         *                        names a class with a public static field whose value is {@code null}
+         * @throws ImportRejected if the name has more than {@value ImportLimits#MAX_IMPORT_LENGTH} characters or more
+         *                        than {@value ImportLimits#MAX_IMPORT_PARTS} dot-separated parts, before it is looked
+         *                        up, or names a class with a public static field whose value is {@code null}
          */
         @Override
         public void addPackageImport(String packageName) {
