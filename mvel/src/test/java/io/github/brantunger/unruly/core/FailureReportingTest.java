@@ -497,7 +497,7 @@ class FailureReportingTest {
         RuntimeException mvel = new RuntimeException("[Error: s.get(): null]", new ExceptionInInitializerError(root));
 
         assertEquals("[Error: s.get(): null] (caused by java.lang.RuntimeException: static init boom)",
-                Failures.describe(mvel));
+                NestedFailures.describe(mvel));
     }
 
     @Test
@@ -506,7 +506,7 @@ class FailureReportingTest {
         RuntimeException wrapper = new RuntimeException(null, new IllegalStateException("root\nline"));
 
         assertEquals("java.lang.RuntimeException (caused by java.lang.IllegalStateException: root\\nline)",
-                Failures.describe(wrapper));
+                NestedFailures.describe(wrapper));
     }
 
     @Test
@@ -515,7 +515,7 @@ class FailureReportingTest {
         RuntimeException mvel = new RuntimeException("[Error: b.boom(): no room]",
                 new InvocationTargetException(new IllegalStateException("no room")));
 
-        assertEquals("[Error: b.boom(): no room]", Failures.describe(mvel));
+        assertEquals("[Error: b.boom(): no room]", NestedFailures.describe(mvel));
     }
 
     @Test
@@ -525,6 +525,6 @@ class FailureReportingTest {
                 new InvocationTargetException(new UnsupportedOperationException()));
 
         assertEquals("[Error: output.put('k', null)] (caused by java.lang.UnsupportedOperationException)",
-                Failures.describe(mvel));
+                NestedFailures.describe(mvel));
     }
 }

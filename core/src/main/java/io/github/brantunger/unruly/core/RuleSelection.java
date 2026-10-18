@@ -4,17 +4,38 @@ import io.github.brantunger.unruly.api.Rule;
 
 import java.time.Instant;
 import java.util.Collections;
-import java.util.Objects;
 import java.util.Set;
 
 /**
  * Which rules one run uses: the enabled ones that are within their validity window when the run starts and, if the
- * run was given tags, carry at least one of them. The run skips every other rule.
- *
- * @param startedAt When the run started, by the engine's clock
- * @param tags      The tags the run was given, or none to use rules whatever their tags
+ * run was given tags, carry at least one of them. The run skips every other rule. A plain class, not a record:
+ * nothing compares or prints one, and a record's own methods would link through {@code ObjectMethods}, which can fail
+ * for good when first called deep in the stack (#996).
  */
-record RuleSelection(Instant startedAt, Set<String> tags) {
+// Each accessor is named after the field it returns, as a record's are.
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+final class RuleSelection {
+    private final Instant startedAt;
+    private final Set<String> tags;
+
+    /**
+     * @param startedAt When the run started, by the engine's clock
+     * @param tags      The tags the run was given, or none to use rules whatever their tags
+     */
+    RuleSelection(Instant startedAt, Set<String> tags) {
+        this.startedAt = startedAt;
+        this.tags = tags;
+    }
+
+    /** When the run started, by the engine's clock. */
+    Instant startedAt() {
+        return startedAt;
+    }
+
+    /** The tags the run was given, or none to use rules whatever their tags. */
+    Set<String> tags() {
+        return tags;
+    }
 
     /**
      * Returns whether the run skips {@code rule}.
@@ -36,24 +57,5 @@ record RuleSelection(Instant startedAt, Set<String> tags) {
         Instant from = rule.getValidFrom();
         Instant to = rule.getValidTo();
         return (from == null || !startedAt.isBefore(from)) && (to == null || startedAt.isBefore(to));
-    }
-
-    // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods, which
-    // can fail for good when first called deep in the stack (#996). equals compares the components last first, as
-    // ObjectMethods does.
-    @Override
-    public final boolean equals(Object other) {
-        return this == other || other instanceof RuleSelection that && Objects.equals(tags, that.tags)
-                && Objects.equals(startedAt, that.startedAt);
-    }
-
-    @Override
-    public final int hashCode() {
-        return Objects.hashCode(startedAt) * 31 + Objects.hashCode(tags);
-    }
-
-    @Override
-    public final String toString() {
-        return "RuleSelection[startedAt=" + startedAt + ", tags=" + tags + "]";
     }
 }

@@ -10,16 +10,16 @@ import java.util.Arrays;
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.
  * When a {@code run()} started from a condition, an action, the output supplier, a listener callback or a language
  * fails with one, the run, {@code load()} or {@code validate()} around it doesn't log that failure again: see
- * {@link Failures#nestedRunFailure}. A {@code RuleExecutionException} a language or a rule throws itself is never one,
- * so it is logged and escaped like any other exception.
+ * {@link NestedFailures#nestedRunFailure}. A {@code RuleExecutionException} a language or a rule throws itself is never
+ * one, so it is logged and escaped like any other exception.
  *
  * <p>
  * Each one records, when it's built, the innermost failure and the first {@link Error} in its cause chain, so the run
  * around it reads them from the first failure in its own chain that recorded them. Every nested run adds a link to the
- * chain, and the engine reads only {@value Failures#MAX_CAUSE_CHAIN_LENGTH} links of it (see {@link Failures#below}),
- * so reading them from the chain alone would miss a failure or an error more than that many runs down. A form
- * serialized before these were recorded reads {@link #recorded()} as {@code false}, and its chain is read as it was
- * then.
+ * chain, and the engine reads only {@value Failures#MAX_CAUSE_CHAIN_LENGTH} links of it (see
+ * {@link NestedFailures#below}), so reading them from the chain alone would miss a failure or an error more than that
+ * many runs down. A form serialized before these were recorded reads {@link #recorded()} as {@code false}, and its
+ * chain is read as it was then.
  * </p>
  *
  * <p>
@@ -27,8 +27,8 @@ import java.util.Arrays;
  * it, which may be an exception thrown as is, such as a fact a nested run rejected, rather than one of these (see
  * {@link LoggedFailures}): the thread's record of those is forgotten when its outermost run ends, and this failure
  * may be thrown on, or read, after that. When an exception with a message of its own is wrapped around that failure
- * (see {@link Failures#below}), this one, which the engine logged with that message, names its chain instead, so a
- * run around it doesn't lose the message either. A form serialized before that was recorded names its chain by the
+ * (see {@link NestedFailures#below}), this one, which the engine logged with that message, names its chain instead, so
+ * a run around it doesn't lose the message either. A form serialized before that was recorded names its chain by the
  * innermost failure, as it did then.
  * </p>
  *
@@ -36,6 +36,12 @@ import java.util.Arrays;
  * It keeps, while it isn't serialized, the thread and the outermost run it was built in, so a run that wraps it in an
  * exception of its own tells one a run it started built from one an earlier outermost run on the thread built (see
  * {@link LoggedFailures#loggedBelow(ReportedFailure)}).
+ * </p>
+ *
+ * <p>
+ * It carries what it was given, and reads nothing of the thread's record itself: only {@link NestedFailures#report}
+ * and {@link NestedFailures#stop} build one, reading its cause chain first and recording it with the thread's record
+ * once it's built, so no run's thread state is read or written here, and no failure goes unrecorded.
  * </p>
  */
 final class ReportedFailure extends RuleExecutionException {
@@ -60,9 +66,9 @@ final class ReportedFailure extends RuleExecutionException {
     /** Whether the two above were recorded; {@code false} only in a form serialized before they were. */
     private final boolean belowRecorded;
     /**
-     * The failure a nested run or load logged that names the cause chain (see {@link Failures#below}), this one if an
-     * exception with a message of its own is wrapped around that failure, or {@code null} if there is none, or in a
-     * form serialized before it was recorded.
+     * The failure a nested run or load logged that names the cause chain (see {@link NestedFailures#below}), this one
+     * if an exception with a message of its own is wrapped around that failure, or {@code null} if there is none, or in
+     * a form serialized before it was recorded.
      */
     private final Throwable loggedBelow;
     /** Whether a {@code load()} logged {@link #loggedBelow}, rather than a {@code run()}. */
@@ -75,45 +81,34 @@ final class ReportedFailure extends RuleExecutionException {
     private transient Throwable[] addedByEngine;
     /**
      * The outermost run in progress on the thread it was built on, when it was built (see
-     * {@link LoggedFailures#reported}), or {@code null} if none was, or once this has been deserialized.
+     * {@link LoggedFailures#reported}), or {@code null} if none was, or once this has been deserialized. Set once
+     * it's recorded (see {@link #builtIn(LoggedFailures.Outermost)}), so not final; transient all the same.
      */
-    private final transient LoggedFailures.Outermost outermost;
+    private transient LoggedFailures.Outermost outermost;
 
     /**
-     * Creates the exception for a failure that belongs to no rule.
+     * Creates the exception, for {@link NestedFailures#report} and {@link NestedFailures#stop} only, which read what
+     * the cause chain holds first and record the failure once it's built.
      *
-     * @param message What failed
-     * @param cause   Why, or {@code null}
+     * @param message  What failed, or where the run stopped
+     * @param cause    Why, or {@code null}
+     * @param ruleName The rule's name, or {@code null} for a failure that belongs to no rule
+     * @param kind     Whether the rule's condition or its action failed, or {@code null}
+     * @param stopped  {@code true} for a run that stopped, because it was interrupted or passed its deadline
+     * @param passed   The deadline a stopped run passed, or {@code null} if it failed or was interrupted
+     * @param below    What {@code cause}'s chain holds of the engine's own failures (see {@link NestedFailures#below})
      */
-    ReportedFailure(String message, Throwable cause) {
-        this(message, cause, null, null, false, null);
-    }
-
-    private ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind, boolean stopped,
-                            Deadline passed) {
+    ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind, boolean stopped,
+                    Deadline passed, NestedFailures.Below below) {
         super(message, cause, ruleName, kind);
         this.stopped = stopped;
         this.interrupted = stopped && passed == null;
         this.passed = passed;
-        Failures.Below below = Failures.below(cause);
         this.innermostBelow = below.innermost();
         this.firstError = below.error();
         this.belowRecorded = true;
         this.loggedBelow = below.news() == null ? below.logged() : this;
         this.loggedBelowByLoad = below.news() == null && below.loggedByLoad();
-        this.outermost = LoggedFailures.reported(this);
-    }
-
-    /**
-     * Creates the exception for a run that stopped because it was interrupted or passed its deadline.
-     *
-     * @param message  Where the run stopped
-     * @param cause    An {@link InterruptedException} or a {@link java.util.concurrent.TimeoutException}
-     * @param deadline The deadline the run passed, or {@code null} if it was interrupted
-     * @return The exception, which belongs to no rule
-     */
-    static ReportedFailure stop(String message, Exception cause, Deadline deadline) {
-        return new ReportedFailure(message, cause, null, null, true, deadline);
     }
 
     /**
@@ -141,20 +136,8 @@ final class ReportedFailure extends RuleExecutionException {
     }
 
     /**
-     * Creates the exception for one rule's condition or action.
-     *
-     * @param message  What failed
-     * @param cause    Why
-     * @param ruleName The rule's name
-     * @param kind     Whether its condition or its action failed
-     */
-    ReportedFailure(String message, Throwable cause, String ruleName, ExpressionKind kind) {
-        this(message, cause, ruleName, kind, false, null);
-    }
-
-    /**
      * Returns the innermost failure of a {@code run()} this one's cause chain holds, however many runs deep. Only
-     * {@link Failures#below} asks, and only a failure that {@link #recorded()} it.
+     * {@link NestedFailures#below} asks, and only a failure that {@link #recorded()} it.
      *
      * @return That failure, or this one if its cause chain holds none, or if it was serialized before it recorded one
      */
@@ -164,7 +147,7 @@ final class ReportedFailure extends RuleExecutionException {
 
     /**
      * Returns the first {@link Error} in this failure's cause chain, however many runs deep, as
-     * {@link Failures#below} found it when this was built.
+     * {@link NestedFailures#below} found it when this was built.
      *
      * @return The error, or {@code null} if there is none
      */
@@ -174,8 +157,8 @@ final class ReportedFailure extends RuleExecutionException {
 
     /**
      * Returns the failure a nested run or load logged that names this failure's cause chain, however many runs deep,
-     * as {@link Failures#below} found it when this was built. Only {@link Failures#below} asks, and only a failure
-     * that {@link #recorded()} it.
+     * as {@link NestedFailures#below} found it when this was built. Only {@link NestedFailures#below} asks, and only a
+     * failure that {@link #recorded()} it.
      *
      * @return That failure, this one if an exception with a message of its own is wrapped around it, or
      *         {@link #innermost()} if it was serialized before it recorded one or its chain holds none
@@ -201,6 +184,17 @@ final class ReportedFailure extends RuleExecutionException {
      */
     LoggedFailures.Outermost builtIn() {
         return outermost;
+    }
+
+    /**
+     * Keeps the outermost run in progress on the thread this failure was built on, once the failure is recorded with
+     * the thread's record (see {@link LoggedFailures#reported}). Only {@link NestedFailures#report} and
+     * {@link NestedFailures#stop} call this, as soon as they have built the failure.
+     *
+     * @param builtIn That run, as {@link LoggedFailures#reported} returned it, or {@code null} if none was in progress
+     */
+    void builtIn(LoggedFailures.Outermost builtIn) {
+        this.outermost = builtIn;
     }
 
     /**

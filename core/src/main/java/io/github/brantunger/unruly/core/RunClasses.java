@@ -309,7 +309,7 @@ final class RunClasses {
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
     // may not be there. OneStepStack makes the field updater that every change to a rule set's idle copies and open
-    // compilers goes through, which a load would otherwise make (#1220). The twelve before the last five have no
+    // compilers goes through, which a load would otherwise make (#1220). The thirteen before the last five have no
     // static initializer: they are what a rule's or a run's first failure would otherwise be the first to load, which
     // can overflow deep in a stack as initializing a class can (#1066, #1093), so they are loaded here. So are the
     // last five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be
@@ -326,8 +326,9 @@ final class RunClasses {
                 ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                 CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
                 LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
-                AbstractRulesEngine.BeforeRun.class, Failures.Below.class, Failures.Reach.class, Failures.Deeper.class,
-                ListenerNotifier.ListenerFatal.class, IsoInstant.class, CopyPermits.Returned.class,
+                AbstractRulesEngine.BeforeRun.class, NestedFailures.class, NestedFailures.Below.class,
+                Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class,
+                CopyPermits.Returned.class,
                 RuleCompilationException.class, InvalidExpressionException.class,
                 InvalidExpressionException.Issue.class, MessageText.class);
     }
@@ -344,7 +345,8 @@ final class RunClasses {
     // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
     // the JVM's first to read a file could leave every later run of every engine, and every file read on a virtual
     // thread, failing for the life of the JVM (#1210). Failures' Teardown is what every run makes as it ends, before it
-    // closes its values. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
+    // closes its values, and LoggedFailures' Ring is what the first failure a run reports, or a nested run logs,
+    // makes. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
     // first retire() makes to read the copies an earlier call took, are preloaded too (#1220).
     // Initializing a class doesn't load its nested or outer classes, so RuleSet's and RuleEvaluation.Outcome's, in the
     // list above, don't load these.
@@ -356,7 +358,7 @@ final class RunClasses {
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
-                Failures.Teardown.class, OneStepStack.Node.class, OneStepStack.Walk.class);
+                Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class);
     }
 
     // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a

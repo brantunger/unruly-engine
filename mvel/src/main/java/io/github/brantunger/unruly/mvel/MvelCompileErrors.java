@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.MessageText;
-import org.jspecify.annotations.Nullable;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
@@ -95,29 +94,33 @@ final class MvelCompileErrors {
     /**
      * A place in an expression's text, as MVEL's own compile errors give one. Not private, so
      * {@link MvelExpressionLanguage#prepare()} can load it: a failed load's first use of it, maybe deep in a stack,
-     * could overflow loading it (#1097).
-     *
-     * @param line   The line, counting from 1
-     * @param column The column, counting from 1
+     * could overflow loading it (#1097). A plain class, not a record: nothing compares or prints one, and a record's
+     * own methods would link through {@code ObjectMethods}, which can fail for good when first called deep in the
+     * stack (#996).
      */
-    record Position(int line, int column) {
+    // Each accessor is named after the field it returns, as a record's are.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    static final class Position {
+        private final int line;
+        private final int column;
 
-        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
-        // which can fail for good when first called deep in the stack (#996). equals compares the components last
-        // first, as ObjectMethods does.
-        @Override
-        public final boolean equals(@Nullable Object other) {
-            return this == other || other instanceof Position that && column == that.column && line == that.line;
+        /**
+         * @param line   The line, counting from 1
+         * @param column The column, counting from 1
+         */
+        Position(int line, int column) {
+            this.line = line;
+            this.column = column;
         }
 
-        @Override
-        public final int hashCode() {
-            return Integer.hashCode(line) * 31 + Integer.hashCode(column);
+        /** The line, counting from 1. */
+        int line() {
+            return line;
         }
 
-        @Override
-        public final String toString() {
-            return "Position[line=" + line + ", column=" + column + "]";
+        /** The column, counting from 1. */
+        int column() {
+            return column;
         }
     }
 

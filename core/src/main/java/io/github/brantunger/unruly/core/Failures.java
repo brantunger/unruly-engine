@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -30,8 +29,8 @@ import java.util.Set;
 public final class Failures {
 
     /**
-     * How much of an exception's message an error message includes; see {@link #describe}. {@code MessageText}
-     * publishes it.
+     * How much of an exception's message an error message includes; see {@link NestedFailures#describe}.
+     * {@code MessageText} publishes it.
      */
     static final int MAX_DESCRIPTION_LENGTH = MessageText.MAX_TEXT_LENGTH;
 
@@ -47,7 +46,8 @@ public final class Failures {
     /**
      * How many different exceptions, through causes and suppressed exceptions, the engine reads to learn whether one
      * already reaches another (see {@link #reaches}), or to find a fatal {@link Error} or any {@link Error} suppressed
-     * in what was caught (see {@link #fatalError} and {@link #errorInChain}); one past that many isn't found.
+     * in what was caught (see {@link #fatalError} and {@link NestedFailures#errorInChain}); one past that many isn't
+     * found.
      */
     static final int MAX_EXCEPTIONS_READ = 10_000;
 
@@ -66,10 +66,10 @@ public final class Failures {
     // deadline or interrupted, or the very instance given. Written as numbers that pick plain code rather than as
     // lambdas, so the first failure in the JVM links no call site, which could overflow deep in a stack (#1093).
     private static final int FATAL = 0;
-    private static final int ANY_ERROR = 1;
+    static final int ANY_ERROR = 1;
     private static final int INTERRUPT = 2;
-    private static final int STOP = 3;
-    private static final int SAME = 4;
+    static final int STOP = 3;
+    static final int SAME = 4;
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
 
@@ -155,13 +155,13 @@ public final class Failures {
      * @param chain An exception and its causes (see {@link #causeChain})
      * @return The fatal error {@link #fatalError} returns for it, or {@code null}
      */
-    private static Error fatalErrorIn(List<Throwable> chain) {
+    static Error fatalErrorIn(List<Throwable> chain) {
         Error fatal = fatalIn(chain);
         return fatal != null ? fatal : (Error) suppressedMatching(chain, FATAL, null);
     }
 
     /** Finds the first fatal {@link Error} in a cause chain itself, or {@code null} if there is none. */
-    private static Error fatalIn(List<Throwable> chain) {
+    static Error fatalIn(List<Throwable> chain) {
         for (Throwable t : chain) {
             if (isFatal(t)) {
                 return (Error) t;
@@ -181,7 +181,7 @@ public final class Failures {
      * @return The first exception found, or {@code null} if there is none, or if it's past the
      *         {@value #MAX_EXCEPTIONS_READ} exceptions read
      */
-    private static Throwable suppressedMatching(List<Throwable> chain, int match, Object target) {
+    static Throwable suppressedMatching(List<Throwable> chain, int match, Object target) {
         Throwable[][] suppressed = null;
         for (int i = 0; i < chain.size(); i++) {
             Throwable[] ofLink = chain.get(i).getSuppressed();
@@ -364,43 +364,6 @@ public final class Failures {
         Deeper(List<Throwable> exceptions) {
             this.exceptions = exceptions;
         }
-    }
-
-    /**
-     * Finds the {@link Error} of any kind in what was caught: the throwable itself, or one of its causes, or failing
-     * that one suppressed on any of them, at any depth, read as {@link #fatalError} reads them. This is what a
-     * cancelled run asks before it reports a stop, because an error from Java code a rule calls, such as a method, a
-     * getter or a lambda held in a fact, reaches the engine wrapped in the expression language's own exception, or
-     * suppressed on an exception of its own, as a {@code try}-with-resources whose {@code close()} fails leaves it, and
-     * a run past its deadline or interrupted would otherwise report it as a stop that names no rule rather than as that
-     * rule's failure.
-     *
-     * <p>
-     * Unlike {@link #fatalError}, which looks for the first error the engine must not absorb (see {@link #isFatal})
-     * and so may pass over a non-fatal one above it, this finds the first error in the chain whether it is fatal or
-     * not.
-     * </p>
-     *
-     * <p>
-     * A failure of a {@code run()} started from a condition or action answers for the chain below it: it recorded the
-     * error in its own cause chain when it was built, so an error many nested runs down is still found, although each
-     * run adds a link and only {@value #MAX_CAUSE_CHAIN_LENGTH} links are read (see {@link #below}).
-     * </p>
-     *
-     * <p>
-     * At most {@value #MAX_EXCEPTIONS_READ} exceptions are read, as {@link Reach} reads them, so an error suppressed
-     * past that many is missed.
-     * </p>
-     *
-     * @param thrown What was caught, or {@code null}
-     * @return The first error in {@code thrown}'s cause chain, or else the first found among the suppressed exceptions
-     *         of its links and what they lead to, in the order {@link Reach} reads them, or {@code null} if there is
-     *         none among the exceptions read
-     */
-    static Error errorInChain(Throwable thrown) {
-        List<Throwable> chain = causeChain(thrown);
-        Error error = below(chain).error();
-        return error != null ? error : (Error) suppressedMatching(chain, ANY_ERROR, null);
     }
 
     static void throwIfPresent(Error fatal) {
@@ -720,175 +683,17 @@ public final class Failures {
     }
 
     /**
-     * Describes an exception for an error message:
-     * <ul>
-     *     <li>its message, or its class name if it has none (NPEs and bare RuntimeExceptions carry no message)</li>
-     *     <li>the class of its root cause when that has no message either, and the root cause's class and message
-     *     when an exception above it has none: MVEL copies a cause's missing message into its own as
-     *     {@code ": null"}, which would hide what went wrong</li>
-     *     <li>at most {@value #MAX_DESCRIPTION_LENGTH} characters of the message: MVEL pads its messages with spaces up
-     *     to the error's column, so a long expression produced messages hundreds of thousands of characters long</li>
-     *     <li>the message {@link #escape escaped}, because the engine didn't write it: a language quotes the fact
-     *     values a failing expression read, and those come from request data far more often than names do</li>
-     *     <li>its class name and a note that its message is unavailable when {@code getMessage()} throws (see
-     *     {@link #messageOf}), and likewise for a cause</li>
-     * </ul>
-     * The message is shortened before it's escaped, so the count of what was left out counts the exception's own
-     * characters. Every message is shortened as {@link #clip} shortens it, never inside an escape, with up to 5 fewer
-     * characters shown: the message of an exception the engine built, or of one that copies such a message, holds
-     * escapes already, and the count counts it as it's held, escaped where it was escaped. The exception is never
-     * changed: its {@code getMessage()} still reads as the language wrote it.
-     * A failure of a {@code run()} or a {@code load()} started from a condition, an action, the output supplier, a
-     * listener callback or a language is described by the innermost failure it logged only, as
-     * {@code a nested run() failed: } or {@code a nested load() failed: } and that failure, so a failure nested many
-     * runs deep isn't repeated once per level (see {@link #nestedRunFailure}). That holds while every exception
-     * wrapped around it adds nothing to it (see {@link #below}). Otherwise the first exception from the top of the
-     * chain with a message of its own, one that has the nested failure's text with words around it too, is described
-     * by that message, shortened and escaped, with the nested failure as a note,
-     * {@code (after a nested run() failed: ...)} or {@code (after a nested load() failed: ...)}, so neither is lost.
-     * The code that wrapped it is the call-out in progress in the innermost run in progress on the thread, such as
-     * the condition, the action, the listener callback, the output supplier or the language call the run is in (see
-     * {@link LoggedFailures#callOut()}). When no run that call-out started logged that failure, but a run that had
-     * ended before it started, in the same outermost run, such as one an earlier sibling, an earlier rule, the same
-     * rule's condition or a listener started, however deep, the note reads {@code (caused by ..., already logged)}
-     * instead, and so it does for a {@link ReportedFailure} built in an earlier outermost run on the thread (see
-     * {@link LoggedFailures#loggedBelow(ReportedFailure)}). A failure thrown as is in an earlier outermost run, such as
-     * facts a nested run rejected, isn't found at all, so the exception around it reads by its own message, with no
-     * nested run's note, and a {@link ReportedFailure} built in the same outermost run before the last
-     * {@value LoggedFailures#MAX_LOGGED} is noted as a nested run's.
-     * Where every exception wrapped around such a failure logged already adds nothing to it, as when the code throws it
-     * on as is or as {@code new RuntimeException(e)}, it's described by its text alone, followed by
-     * {@code (already logged)}, not as a nested run's: the text as {@link #loggedText} shortens it, so the note comes
-     * after any count of what was left out. That holds only for what such code throws itself: a run further out, around
-     * the run whose rule threw it, still names the failure as a nested run's.
-     * The note's text is shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole, a hidden root
-     * cause's note included, before it's escaped, so the count of what was left out counts the characters as they were
-     * written (see {@link #noteText}). A nested failure's text is mostly text the engine has already escaped, so where
-     * it's shortened, in a note or alone (see {@link #loggedText}), it's shortened as {@link #clip} shortens it too:
-     * never inside an escape, and counting the characters of the nested failure's message as it's held. A fatal
-     * {@link Error} logged already, wrapped in an exception that says something of its own (see
-     * {@link #wrapsLoggedFatal}), is a note the same way, described with its class, as
-     * {@link #describeWithClass} describes it: {@code (after a nested run() failed: ...)} or
-     * {@code (after a nested load() failed: ...)} when what the call-out that wrapped it started logged it, or else
-     * {@code (caused by ..., already logged)} when the error is in the cause chain, or
-     * {@code (with suppressed ..., already logged)} when it's found among the suppressed exceptions of the chain's
-     * links or what they lead to (see {@link #fatalError}).
-     * The note is read from what was logged when this is called, so a caller describes what it caught before it asks
-     * {@link LoggedFailures#unlogged}, which records a fatal error it's told of.
-     *
-     * @param e The exception to describe
-     * @return A description of the exception for an error message
-     */
-    static String describe(Throwable e) {
-        // Read once, so where the fatal error is and what's around it are told from the same chain.
-        List<Throwable> chain = causeChain(e);
-        Below below = below(chain);
-        Throwable logged = below.logged();
-        if (logged == null) {
-            Error fatal = fatalErrorIn(chain);
-            LoggedFailures.LoggedAt at = fatal == null ? null : LoggedFailures.loggedAt(fatal);
-            Throwable news = at == null ? null : newsAbove(chain, fatal);
-            if (news != null) {
-                // The error found is in the chain itself whenever the chain holds one, and suppressed on it otherwise.
-                String how = fatalIn(chain) != null ? "caused by " : "with suppressed ";
-                String note = at == LoggedFailures.LoggedAt.NOT_BELOW
-                        ? alreadyLogged(how, describeWithClass(fatal))
-                        : "after " + nested(at == LoggedFailures.LoggedAt.NESTED_LOAD) + describeWithClass(fatal);
-                return withNote(news, note);
-            }
-            String text = clip(messageOr(e, e.getClass().getName()));
-            return text + causeNote(chain, shownOf(readableMessage(e)));
-        }
-        String nested = nested(below.loggedByLoad());
-        Throwable news = below.news();
-        if (news == null) {
-            return below.loggedBelow() ? nested + loggedText(logged) : loggedText(logged) + " (already logged)";
-        }
-        // The failure is in the chain, which is where it was found.
-        return withNote(news, below.loggedBelow() ? "after " + nested + noteText(logged)
-                : alreadyLogged("caused by ", noteText(logged)));
-    }
-
-    /**
-     * Describes what a language threw from a call other than compiling an expression, such as {@code prepare},
-     * {@code newCompiler}, {@code factNamesRead}, {@code checkFactName}, {@code warmUp} or {@code newSession}, or
-     * from a condition or an action a run evaluates, as {@link #describe} does, unless it's an overflow (see
-     * {@link #isOverflow}): its class alone would say nothing of why. Compiling an expression says why in words of its
-     * own (see {@code RuleListCompiler.overflowReason()}).
-     *
-     * @param e        What the language threw
-     * @param loadTime {@code true} for a call made about the rules, {@code newCompiler}, {@code factNamesRead},
-     *                 {@code checkFactName} or {@code warmUp}, whose overflow may come from rule text too long or too
-     *                 deeply nested for the language; {@code false} for {@code newSession}, which a run makes for its
-     *                 copy, {@code prepare}, which reads no rule text, and a condition or an action that a run
-     *                 evaluates
-     * @return {@code the stack overflowed}, followed for a load-time call by
-     *         {@code : the rule text may be too long or too deeply nested for the language}, or else the description
-     */
-    static String describeCallOut(Throwable e, boolean loadTime) {
-        if (!isOverflow(e)) {
-            return describe(e);
-        }
-        return loadTime ? "the stack overflowed: the rule text may be too long or too deeply nested for the language"
-                : "the stack overflowed";
-    }
-
-    /** Says what failed below a description: {@code a nested run() failed: } or {@code a nested load() failed: }. */
-    private static String nested(boolean byLoad) {
-        return "a nested " + (byLoad ? "load()" : "run()") + " failed: ";
-    }
-
-    /**
-     * Says a failure was logged already, by no run the call-out that wrapped it started, for the note
-     * {@link #describe} adds: {@code caused by ..., already logged} or {@code with suppressed ..., already logged}.
-     *
-     * @param how  {@code "caused by "} or {@code "with suppressed "}, where the failure was found
-     * @param text The failure's text
-     * @return The note
-     */
-    private static String alreadyLogged(String how, String text) {
-        return how + text + ", already logged";
-    }
-
-    /**
-     * Describes an exception that says something of its own by its message, shortened and escaped, with a note.
-     *
-     * @param news The exception
-     * @param note The note, which goes in parentheses after the message
-     * @return The description
-     */
-    private static String withNote(Throwable news, String note) {
-        return clip(messageOr(news, news.getClass().getName())) + " (" + note + ")";
-    }
-
-    /**
-     * Tells whether what was caught wraps a fatal {@link Error} that was logged already on this thread (see
-     * {@link LoggedFailures#loggedAt}) in an exception that says something of its own (see {@link #newsAbove}), such
-     * as {@code new IllegalStateException("audit write failed", e)} around what a nested {@code run()} threw. Nothing
-     * logged that exception's message, so the code that caught it logs it, as {@link #describe} describes it, and
-     * rethrows the error.
-     *
-     * @param thrown What was caught
-     * @return {@code true} if the caller logs it for what's wrapped around the error
-     */
-    static boolean wrapsLoggedFatal(Throwable thrown) {
-        Error fatal = fatalError(thrown);
-        return fatal != null && LoggedFailures.loggedAt(fatal) != null && newsAbove(thrown, fatal) != null;
-    }
-
-
-    /**
-     * Returns the text of a nested failure for the note {@link #describe} adds after an exception's own message: the
-     * text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a whole before it's
-     * escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold news, run after run.
-     * The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s message included, so it's
-     * shortened as {@link #clip} shortens it, never inside an escape. Its text names the root cause if it's
-     * hidden, so the note of the exception around it doesn't.
+     * Returns the text of a nested failure for the note {@link NestedFailures#describe} adds after an exception's own
+     * message: the text {@link #loggedText} returns, shortened to {@value #MAX_DESCRIPTION_LENGTH} characters as a
+     * whole before it's escaped, as {@link #quoteAll} shortens a list, because the nested failure may itself hold
+     * news, run after run. The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s
+     * message included, so it's shortened as {@link #clip} shortens it, never inside an escape. Its text names the
+     * root cause if it's hidden, so the note of the exception around it doesn't.
      *
      * @param logged The nested failure
      * @return Its text, shortened, then escaped
      */
-    private static String noteText(Throwable logged) {
+    static String noteText(Throwable logged) {
         String message = messageOr(logged, logged.getClass().getName());
         if (logged instanceof ReportedFailure) {
             return clip(message);
@@ -901,17 +706,18 @@ public final class Failures {
 
     /**
      * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
-     * {@link ReportedFailure}, which the engine wrote, or else the exception described as {@link #describe} describes
-     * one whose cause chain holds no nested failure, which escapes a message a language wrote and shortens it as
-     * {@link #clip} shortens it, never inside an escape: the engine wrote most such messages, such as a rule that fails
-     * to compile or a fact it rejects, and escaped the names and text in them already. The note of a root
-     * cause it would otherwise hide is left out when the message already has it, as a message the engine wrote from
-     * a language's exception does, so it isn't there twice, as {@link #describeWithClass} leaves it out.
+     * {@link ReportedFailure}, which the engine wrote, or else the exception described as
+     * {@link NestedFailures#describe} describes one whose cause chain holds no nested failure, which escapes a message
+     * a language wrote and shortens it as {@link #clip} shortens it, never inside an escape: the engine wrote most
+     * such messages, such as a rule that fails to compile or a fact it rejects, and escaped the names and text in them
+     * already. The note of a root cause it would otherwise hide is left out when the message already has it, as a
+     * message the engine wrote from a language's exception does, so it isn't there twice, as
+     * {@link #describeWithClass} leaves it out.
      *
      * @param logged The failure
      * @return Its text
      */
-    private static String loggedText(Throwable logged) {
+    static String loggedText(Throwable logged) {
         if (logged instanceof ReportedFailure) {
             return messageOf(logged);
         }
@@ -925,21 +731,21 @@ public final class Failures {
      * and message when an exception above it has none, unless the part of the first exception's text that the
      * description shows already has it, the class's name for a root cause with no message, as
      * {@code new RuntimeException(cause)}'s message has it, and the message otherwise: the first message for
-     * {@link #describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's first
-     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them (see {@link #shownOf}), searched raw,
-     * without the note of what was left out: a root cause's message found only past the cut isn't shown, and searching
-     * all of a long text took time that grew with the square of its length. A message that can't be read (see
-     * {@link #messageOf}) hides the root cause as a missing one does, and a root cause whose message can't be read is
-     * named with the note that it's unavailable. Only a text that can be read can already show the root cause's
+     * {@link NestedFailures#describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's
+     * first {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them (see {@link #shownOf}), searched
+     * raw, without the note of what was left out: a root cause's message found only past the cut isn't shown, and
+     * searching all of a long text took time that grew with the square of its length. A message that can't be read
+     * (see {@link #messageOf}) hides the root cause as a missing one does, and a root cause whose message can't be
+     * read is named with the note that it's unavailable. Only a text that can be read can already show the root cause's
      * message: two notes that messages are unavailable read the same whatever the messages were.
      *
      * @param chain An exception and its causes
      * @param shown The part of the first exception's text the description shows, as {@link #shownOf} returns it, or
-     *              {@code null} if it shows none that can be read: of {@link #describe}'s message, or of
+     *              {@code null} if it shows none that can be read: of {@link NestedFailures#describe}'s message, or of
      *              {@link #describeWithClass}'s {@code toString()}
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
-    private static String causeNote(List<Throwable> chain, @Nullable String shown) {
+    static String causeNote(List<Throwable> chain, @Nullable String shown) {
         return escape(rawCauseNote(chain, shown));
     }
 
@@ -989,7 +795,7 @@ public final class Failures {
      * @param text The text, or {@code null} if there's none that can be read
      * @return The part shown, or {@code null} if {@code text} is
      */
-    private static @Nullable String shownOf(@Nullable String text) {
+    static @Nullable String shownOf(@Nullable String text) {
         if (text == null || text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
@@ -999,11 +805,11 @@ public final class Failures {
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
      * calls outside any rule, such as the output factory: shortened to {@value #MAX_DESCRIPTION_LENGTH} characters,
-     * then escaped, as {@link #clip} does, like {@link #describe}, so a message the engine escaped is never cut inside
-     * an escape, and naming a root cause it would otherwise hide as {@link #describe} does. The root cause counts as
-     * shown only when the part of the {@code toString()} this shows, its first {@value #MAX_DESCRIPTION_LENGTH}
-     * characters as {@link #clip} keeps them, has its message, so neither a class name that pushes the message past
-     * the cut nor a {@code toString()} that leaves the message out hides it. The
+     * then escaped, as {@link #clip} does, like {@link NestedFailures#describe}, so a message the engine escaped is
+     * never cut inside an escape, and naming a root cause it would otherwise hide as {@link NestedFailures#describe}
+     * does. The root cause counts as shown only when the part of the {@code toString()} this shows, its first
+     * {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #clip} keeps them, has its message, so neither a class name
+     * that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it. The
      * note is left out when the text already has it, as the message of a {@code run()} started from that code does
      * unless it was shortened, so it isn't there twice. When {@code toString()} throws, its class name stands in with a
      * note that its message is unavailable (see {@link #textOf}), which shows no root cause.
@@ -1097,7 +903,7 @@ public final class Failures {
      * @param e The exception
      * @return Its {@code toString()}, or {@code null} if that throws
      */
-    private static @Nullable String readableText(Throwable e) {
+    static @Nullable String readableText(Throwable e) {
         try {
             return e.toString();
         } catch (Throwable thrown) {
@@ -1348,299 +1154,6 @@ public final class Failures {
      */
     private static int keptLength(String text, int limit) {
         return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
-    }
-
-    /**
-     * Finds the failure a {@code run()} or a {@code load()} started by the code that threw {@code e} logged. That run
-     * or load already logged it, and a run told its listeners. Only a failure an engine threw counts: a
-     * {@link ReportedFailure}, of any engine, or a failure a nested run or load on this thread logged and threw as is,
-     * such as a fact it rejected or a rule that failed to compile (see {@link LoggedFailures}). A
-     * {@link RuleExecutionException} a language or a rule throws itself was never logged. Nor was an exception wrapped
-     * around that failure with a message of its own (see {@link #below}), so a chain that holds one is news, and is
-     * taken for no nested run's failure here.
-     *
-     * @param e What was caught, or {@code null}
-     * @return That failure, the innermost if there are several (see {@link #below}), or {@code null} if {@code e}'s
-     *         cause chain holds none, or an exception with a message of its own is wrapped around it
-     */
-    static Throwable nestedRunFailure(Throwable e) {
-        Below below = below(e);
-        return below.news() == null ? below.logged() : null;
-    }
-
-    /**
-     * Tells whether a {@code run()} started by the code that threw {@code e} stopped for the same reason as the run
-     * around it, and so already logged that stop.
-     *
-     * @param e        What was caught
-     * @param deadline The deadline the run around it passed, or {@code null} if its thread was interrupted
-     * @return {@code true} if the innermost {@link ReportedFailure} in {@code e}'s cause chain is that same stop, or
-     *         one is found among the suppressed exceptions of its links and what they lead to, as
-     *         {@link #fatalError} reads them, as a {@code try}-with-resources whose {@code close()} started that run
-     *         leaves it
-     */
-    static boolean nestedRunStopped(Throwable e, Deadline deadline) {
-        List<Throwable> chain = causeChain(e);
-        ReportedFailure innermost = below(chain).innermost();
-        if (innermost != null && innermost.isStopFor(deadline)) {
-            return true;
-        }
-        return suppressedMatching(chain, STOP, deadline) != null;
-    }
-
-    /**
-     * Finds the innermost {@link ReportedFailure} in an exception's cause chain, however many nested runs deep (see
-     * {@link #below}).
-     *
-     * @param e What was caught, or {@code null}
-     * @return The innermost {@link ReportedFailure} in {@code e}'s cause chain, or {@code null} if there is none
-     */
-    static ReportedFailure innermostReported(Throwable e) {
-        return below(e).innermost();
-    }
-
-    /**
-     * What an exception's cause chain holds of the engine's own failures: the innermost {@link ReportedFailure}, the
-     * first {@link Error}, the failure a nested run or load logged that names the chain, and the first exception
-     * wrapped around that failure that says something of its own.
-     *
-     * @param innermost    The innermost failure of a nested {@code run()}, or {@code null} if there is none
-     * @param error        The first error, or {@code null} if there is none
-     * @param logged       The failure a nested run or load logged that names the chain, or {@code null} if there is
-     *                     none (see {@link #below})
-     * @param loggedByLoad {@code true} if a {@code load()} logged {@code logged}, {@code false} if a {@code run()} did
-     * @param news         The first exception from the top of the chain, above {@code logged}, with a message of its
-     *                     own, which nothing has logged, or {@code null} if there is none, and {@code logged} names
-     *                     the chain whole
-     * @param loggedBelow  {@code true} if a run the call-out in progress in the innermost run in progress on this
-     *                     thread started logged {@code logged}, however deep below it (see
-     *                     {@link LoggedFailures#callOut()}), or a run on another thread did, or it names the chain of a
-     *                     {@link ReportedFailure} built in the same outermost run before the last
-     *                     {@value LoggedFailures#MAX_LOGGED}, or one built outside any run, or one deserialized;
-     *                     {@code false} if a run that had ended before that call-out started did, such as one an
-     *                     earlier call-out of the same run started, or {@code logged} names a {@link ReportedFailure}'s
-     *                     chain and that failure was built in an earlier outermost run on this thread (see
-     *                     {@link LoggedFailures#loggedBelow(ReportedFailure)}), or if there is no {@code logged}
-     */
-    record Below(ReportedFailure innermost, Error error, Throwable logged, boolean loggedByLoad, Throwable news,
-                 boolean loggedBelow) {
-
-        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
-        // which can fail for good when first called deep in the stack (#996). equals compares the components last
-        // first, as ObjectMethods does.
-        @Override
-        public final boolean equals(Object other) {
-            return this == other || other instanceof Below that && loggedBelow == that.loggedBelow
-                    && Objects.equals(news, that.news) && loggedByLoad == that.loggedByLoad
-                    && Objects.equals(logged, that.logged) && Objects.equals(error, that.error)
-                    && Objects.equals(innermost, that.innermost);
-        }
-
-        @Override
-        public final int hashCode() {
-            int hash = Objects.hashCode(innermost);
-            hash = hash * 31 + Objects.hashCode(error);
-            hash = hash * 31 + Objects.hashCode(logged);
-            hash = hash * 31 + Boolean.hashCode(loggedByLoad);
-            hash = hash * 31 + Objects.hashCode(news);
-            return hash * 31 + Boolean.hashCode(loggedBelow);
-        }
-
-        @Override
-        public final String toString() {
-            return "Below[innermost=" + innermost + ", error=" + error + ", logged=" + logged
-                    + ", loggedByLoad=" + loggedByLoad + ", news=" + news + ", loggedBelow=" + loggedBelow + "]";
-        }
-    }
-
-    /**
-     * Reads an exception's cause chain for the innermost {@link ReportedFailure}, the first {@link Error} and the
-     * failure a nested run or load logged, in one walk. Every nested run adds a link to the chain and only
-     * {@value #MAX_CAUSE_CHAIN_LENGTH} links are read, so a failure or an error more than that many runs down would be
-     * out of reach; but each {@link ReportedFailure} recorded all three for its own chain when it was built, so the
-     * walk stops at the first one that did. One serialized before they were recorded answers for nothing: the walk
-     * goes on past it, and if it finds no failure that recorded them, the last of those in the chain is the
-     * innermost, as before.
-     *
-     * <p>
-     * The failure logged is the first link above that one that a nested run or load on this thread recorded as
-     * logged (see {@link LoggedFailures#find}), which names the chain whole: a {@code load()} that failed for several
-     * rules is named by the failure that lists them all, not by the first rule's, which it logged too. Failing that,
-     * it's the one the {@link ReportedFailure} recorded, so a failure many runs down is named, not each run's failure
-     * around it; and failing that, the innermost {@link ReportedFailure}.
-     * </p>
-     *
-     * <p>
-     * That failure names the chain only while every link above it adds nothing to it (see {@link #isNews}): a
-     * {@link ReportedFailure} or another exception the engine built around it (see
-     * {@link LoggedFailures#builtByEngine}), which the engine wrote, or an exception with no message, one whose message
-     * is its cause's {@code toString()}, as {@code new RuntimeException(cause)} makes, or its cause's message, or one
-     * whose message is the nested failure's text. Otherwise the first link that says something of its own is the
-     * news, which nothing has logged, even when its message has the nested failure's text with words of its own around
-     * it: the code that caught the chain logs it, and describes it with the nested failure as a note (see
-     * {@link #describe}).
-     * </p>
-     *
-     * @param e What was caught, or {@code null}
-     * @return The innermost failure, the first error, the failure logged and the first link above it with a message of
-     *         its own, each {@code null} if the chain has none
-     */
-    static Below below(Throwable e) {
-        return below(causeChain(e));
-    }
-
-    /**
-     * Reads a cause chain as {@link #below(Throwable)} reads an exception's.
-     *
-     * @param chain An exception and its causes (see {@link #causeChain})
-     * @return What the chain holds of the engine's own failures
-     */
-    private static Below below(List<Throwable> chain) {
-        ReportedFailure innermost = null;
-        int innermostAt = -1;
-        Error error = null;
-        LoggedFailures.Logged logged = null;
-        int loggedAt = -1;
-        for (int i = 0; i < chain.size(); i++) {
-            Throwable t = chain.get(i);
-            if (t instanceof ReportedFailure failure) {
-                if (failure.recorded()) {
-                    Error first = error != null ? error : failure.error();
-                    // Where the failure that names the chain was logged is told by the link the code that caught
-                    // it was given: the failure a nested run threw as is, or this one, which a run built.
-                    return logged != null
-                            ? below(chain, loggedAt, failure.innermost(), first, logged)
-                            : below(chain, i, failure.innermost(), first, failure.logged(), failure.loggedByLoad(),
-                                    LoggedFailures.loggedBelow(failure));
-                }
-                innermost = failure;
-                innermostAt = i;
-                continue;
-            }
-            if (error == null && t instanceof Error found) {
-                error = found;
-            }
-            if (logged == null) {
-                logged = LoggedFailures.find(t);
-                loggedAt = i;
-            }
-        }
-        // A failure that recorded nothing was serialized, which says nothing of where it was built, so it's taken for
-        // a nested run's, as one from another thread is.
-        return logged != null
-                ? below(chain, loggedAt, innermost, error, logged)
-                : below(chain, innermostAt, innermost, error, innermost, false, innermost != null);
-    }
-
-    /**
-     * Makes what {@link #below} found, when the failure logged is one a nested run or load on this thread recorded.
-     *
-     * @param chain    The cause chain
-     * @param loggedAt Where in {@code chain} the failure logged is
-     */
-    private static Below below(List<Throwable> chain, int loggedAt, ReportedFailure innermost, Error error,
-                               LoggedFailures.Logged logged) {
-        return below(chain, loggedAt, innermost, error, logged.failure(), logged.byLoad(),
-                LoggedFailures.loggedBelow(logged));
-    }
-
-    /**
-     * Makes what {@link #below} found, with the first link above the failure logged that says something of its own.
-     *
-     * @param chain    The cause chain
-     * @param loggedAt Where in {@code chain} the failure logged is, or the failure that recorded it; {@code -1} if
-     *                 there is none
-     */
-    private static Below below(List<Throwable> chain, int loggedAt, ReportedFailure innermost, Error error,
-                               Throwable logged, boolean byLoad, boolean loggedBelow) {
-        return new Below(innermost, error, logged, byLoad, firstNews(chain, loggedAt, logged), loggedBelow);
-    }
-
-    /**
-     * Finds the first link of a cause chain, from the top, above a failure a nested run or load logged, that says
-     * something of its own (see {@link #isNews}).
-     *
-     * @param chain    The cause chain
-     * @param loggedAt Where in {@code chain} that failure is, or the failure that recorded it
-     * @param nested   That failure
-     * @return The link, or {@code null} if every link above {@code loggedAt} adds nothing to {@code nested}
-     */
-    private static Throwable firstNews(List<Throwable> chain, int loggedAt, Throwable nested) {
-        for (int i = 0; i < loggedAt; i++) {
-            if (isNews(chain.get(i), chain.get(i + 1), nested)) {
-                return chain.get(i);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Tells whether one link of a cause chain, above a failure a nested run or load logged, says something that
-     * failure doesn't: it has a message of its own, one that can be read, isn't its cause's {@code toString()} or
-     * message, and isn't the nested failure's text, as the engine writes it or as it is. So an exception rethrown with
-     * its cause's message, as {@code new IllegalStateException(e.getMessage(), e)} rethrows the failure of a run whose
-     * own nested run failed, adds nothing. A message with words of its own around that text is news. A
-     * {@link ReportedFailure} never is, nor another exception the engine built around the failure, whatever its
-     * message reads (see {@link LoggedFailures#builtByEngine}): the engine wrote it, around the nested failure, and
-     * it's known by the very instance, not by its text, which an application's exception can repeat. The same test
-     * tells a fatal {@link Error} a nested run logged from something new wrapped around it (see {@link #newsAbove}).
-     *
-     * @param link   The link
-     * @param cause  The next link, its cause
-     * @param nested The failure logged below it
-     * @return {@code true} if nothing has logged what {@code link} says
-     */
-    private static boolean isNews(Throwable link, Throwable cause, Throwable nested) {
-        if (link instanceof ReportedFailure || LoggedFailures.isEngineWrapper(link)) {
-            return false;
-        }
-        String message = readableMessage(link);
-        return message != null && !message.equals(readableText(cause))
-                && !message.equals(readableMessage(cause)) && !message.equals(loggedText(nested))
-                && !message.equals(readableMessage(nested));
-    }
-
-    /**
-     * Finds what, wrapped around a fatal {@link Error} in what was caught, says something of its own (see
-     * {@link #isNews}), which nothing logged when a nested run logged the error. A fatal error suppressed on a link
-     * (see {@link #fatalError}), rather than in the cause chain, is taken for below every link, so the last link, such
-     * as the body's exception a {@code try}-with-resources threw, is news when it says something of its own too. One
-     * found in neither, as a {@code getCause()} that gives a different chain each time it's read leaves it, is taken
-     * for the last link.
-     *
-     * @param thrown What was caught
-     * @param fatal  The fatal error among its causes, or suppressed on one of them (see {@link #fatalError})
-     * @return The first link from the top above {@code fatal} with a message of its own, or {@code null} if there is
-     *         none
-     */
-    static Throwable newsAbove(Throwable thrown, Error fatal) {
-        return newsAbove(causeChain(thrown), fatal);
-    }
-
-    /**
-     * Finds what says something of its own around a fatal {@link Error} in a cause chain read once, as
-     * {@link #newsAbove(Throwable, Error)} finds it in what was caught.
-     *
-     * @param chain An exception and its causes (see {@link #causeChain}), which isn't changed
-     * @param fatal The fatal error in the chain, or suppressed on a link of it
-     * @return The first link from the top above {@code fatal} with a message of its own, or {@code null} if there is
-     *         none
-     */
-    // The very same instance: an equal one is another error.
-    @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private static Throwable newsAbove(List<Throwable> chain, Error fatal) {
-        int fatalAt = 0;
-        // Bounded by the chain, which a getCause() of its own may not give the same way twice.
-        while (fatalAt < chain.size() - 1 && chain.get(fatalAt) != fatal) {
-            fatalAt++;
-        }
-        if (chain.get(fatalAt) != fatal && suppressedMatching(chain, SAME, fatal) != null) {
-            // Suppressed on a link, so below every link.
-            List<Throwable> links = new ArrayList<>(chain);
-            links.add(fatal);
-            return firstNews(links, chain.size(), fatal);
-        }
-        return firstNews(chain, fatalAt, fatal);
     }
 
     /**

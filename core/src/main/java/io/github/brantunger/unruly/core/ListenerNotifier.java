@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.core;
 import org.slf4j.Logger;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.function.Consumer;
 
 import io.github.brantunger.unruly.api.RuleListener;
@@ -164,9 +163,9 @@ final class ListenerNotifier {
         if (thrown != null) {
             Error fatal = thrown.fatal();
             // Asked before unlogged() records a fatal error it's told of for the first time.
-            boolean wrapped = !thrown.ofTold() && Failures.wrapsLoggedFatal(thrown.thrown());
+            boolean wrapped = !thrown.ofTold() && NestedFailures.wrapsLoggedFatal(thrown.thrown());
             boolean logs = thrown.ofTold() ? LoggedFailures.unloggedFatal(fatal)
-                    : LoggedFailures.unlogged(thrown.thrown());
+                    : NestedFailures.unlogged(thrown.thrown());
             if (logs) {
                 Failures.logError(log, listenerFatalMessage(thrown, callback, wrapped));
             }
@@ -210,11 +209,11 @@ final class ListenerNotifier {
             Error fatal = thrown.fatal();
             // Described before unlogged() records a fatal error it's told of for the first time.
             String msg = listenerFatalMessage(thrown, forRule(callback, rule),
-                    Failures.wrapsLoggedFatal(thrown.thrown()));
+                    NestedFailures.wrapsLoggedFatal(thrown.thrown()));
             RuleExecutionException failure = new RuleExecutionException(msg, fatal, rule.rule().getRuleName());
             // Already on its way out of run(), so a second fatal error from onError can't replace it, but it's kept.
             keepSecondFatal(failure, fatal,
-                    reportFailure(rule, failure, LoggedFailures.unlogged(thrown.thrown())));
+                    reportFailure(rule, failure, NestedFailures.unlogged(thrown.thrown())));
             fatalFailure.set(failure);
             throw fatal;
         }
@@ -231,8 +230,8 @@ final class ListenerNotifier {
         ListenerFatal thrown = listenerFatal(runs, callback, call);
         if (thrown != null) {
             // Asked before unlogged() records a fatal error it's told of for the first time.
-            boolean wrapped = Failures.wrapsLoggedFatal(thrown.thrown());
-            if (LoggedFailures.unlogged(thrown.thrown())) {
+            boolean wrapped = NestedFailures.wrapsLoggedFatal(thrown.thrown());
+            if (NestedFailures.unlogged(thrown.thrown())) {
                 Failures.logError(log, listenerFatalMessage(thrown, forRule(callback, rule), wrapped));
             }
             throw thrown.fatal();
@@ -241,15 +240,15 @@ final class ListenerNotifier {
 
     /**
      * Logs what a listener's {@code onError} wrapped a fatal {@link Error} logged already in, when that says something
-     * of its own (see {@link Failures#wrapsLoggedFatal}), at ERROR, as {@link #listenerFatalMessage} says it. Nothing
-     * else logs it: the error itself is rethrown, or kept on the failure's own, and isn't logged there again.
+     * of its own (see {@link NestedFailures#wrapsLoggedFatal}), at ERROR, as {@link #listenerFatalMessage} says it.
+     * Nothing else logs it: the error itself is rethrown, or kept on the failure's own, and isn't logged there again.
      *
      * @param thrown The fatal error a listener threw from {@code onError}, and what it threw it in
      * @param rule   The rule whose failure {@code onError} closed
      * @return The fatal error
      */
     private Error logWrappedFromOnError(ListenerFatal thrown, CompiledRule rule) {
-        if (Failures.wrapsLoggedFatal(thrown.thrown())) {
+        if (NestedFailures.wrapsLoggedFatal(thrown.thrown())) {
             Failures.logError(log, listenerFatalMessage(thrown, forRule("onError", rule), true));
         }
         return thrown.fatal();
@@ -261,9 +260,9 @@ final class ListenerNotifier {
 
     /**
      * Says that a listener threw a fatal {@link Error} in a callback, and, when it wrapped one logged already in an
-     * exception with a message of its own (see {@link Failures#wrapsLoggedFatal}), what that says, with the error as a
-     * note, as {@link Failures#describe} describes it. When reading that throws, as it can when the JVM has no memory
-     * left, only the first part is said, so the caller still rethrows the error.
+     * exception with a message of its own (see {@link NestedFailures#wrapsLoggedFatal}), what that says, with the error
+     * as a note, as {@link NestedFailures#describe} describes it. When reading that throws, as it can when the JVM has
+     * no memory left, only the first part is said, so the caller still rethrows the error.
      *
      * @param thrown   The fatal error, and what the listener threw it in
      * @param callback The callback, and the rule it was for, if any
@@ -278,7 +277,7 @@ final class ListenerNotifier {
         }
         try {
             Faults.at(Faults.Step.FAILURE_DESCRIBING);
-            return plain + ": " + Failures.describe(thrown.thrown());
+            return plain + ": " + NestedFailures.describe(thrown.thrown());
         } catch (Throwable e) {
             return plain;
         }
@@ -286,34 +285,42 @@ final class ListenerNotifier {
 
     /**
      * The first fatal {@link Error} a listener threw in a callback, and what it threw it in: the error itself, or an
-     * exception that has it among its causes.
-     *
-     * @param fatal  The fatal error
-     * @param thrown What the listener threw
-     * @param ofTold {@code true} if it's the very fatal error of the exception the callback told listeners of, which
-     *               is the run's own, whatever run logged it
+     * exception that has it among its causes. A plain class, not a record: nothing compares or prints one, and a
+     * record's own methods would link through {@code ObjectMethods}, which can fail for good when first called deep
+     * in the stack (#996).
      */
-    record ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
+    // Each accessor is named after the field it returns, as a record's are.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    static final class ListenerFatal {
+        private final Error fatal;
+        private final Throwable thrown;
+        private final boolean ofTold;
 
-        // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
-        // which can fail for good when first called deep in the stack (#996). equals compares the components last
-        // first, as ObjectMethods does.
-        @Override
-        public final boolean equals(Object other) {
-            return this == other || other instanceof ListenerFatal that && ofTold == that.ofTold
-                    && Objects.equals(thrown, that.thrown) && Objects.equals(fatal, that.fatal);
+        /**
+         * @param fatal  The fatal error
+         * @param thrown What the listener threw
+         * @param ofTold {@code true} if it's the very fatal error of the exception the callback told listeners of,
+         *               which is the run's own, whatever run logged it
+         */
+        ListenerFatal(Error fatal, Throwable thrown, boolean ofTold) {
+            this.fatal = fatal;
+            this.thrown = thrown;
+            this.ofTold = ofTold;
         }
 
-        @Override
-        public final int hashCode() {
-            int hash = Objects.hashCode(fatal);
-            hash = hash * 31 + Objects.hashCode(thrown);
-            return hash * 31 + Boolean.hashCode(ofTold);
+        /** The fatal error. */
+        Error fatal() {
+            return fatal;
         }
 
-        @Override
-        public final String toString() {
-            return "ListenerFatal[fatal=" + fatal + ", thrown=" + thrown + ", ofTold=" + ofTold + "]";
+        /** What the listener threw. */
+        Throwable thrown() {
+            return thrown;
+        }
+
+        /** Whether it's the very fatal error of the exception the callback told listeners of, the run's own. */
+        boolean ofTold() {
+            return ofTold;
         }
     }
 
@@ -395,7 +402,7 @@ final class ListenerNotifier {
     /**
      * Logs what a listener threw, where it isn't the error {@code run()} goes on to throw. A failure of a
      * {@code run()} or a {@code load()} the listener started, and a fatal {@link Error} such a run logged, isn't logged
-     * at WARN, as that run or load logged it already (see {@link LoggedFailures#logged}), unless an exception wrapped
+     * at WARN, as that run or load logged it already (see {@link NestedFailures#logged}), unless an exception wrapped
      * around it says something of its own: that's logged, described with the nested failure as a note, as
      * {@code ... (after a nested run() failed: ...)}, or, around a fatal error, with its class. The failure the
      * callback told the listener of, rethrown or wrapped, isn't one, nor is its fatal error: it's described with its
@@ -411,14 +418,14 @@ final class ListenerNotifier {
     private void logListenerException(String callback, Throwable thrown, Throwable told) {
         Error fatal = Failures.fatalError(thrown);
         boolean rethrowsTold = fatal != null ? fatal == Failures.fatalError(told)
-                : Failures.below(thrown).logged() == Failures.below(told).logged();
-        boolean hasNested = fatal == null && !rethrowsTold && Failures.below(thrown).logged() != null;
+                : NestedFailures.below(thrown).logged() == NestedFailures.below(told).logged();
+        boolean hasNested = fatal == null && !rethrowsTold && NestedFailures.below(thrown).logged() != null;
         // Escaped, like every message the engine logs: a listener's message can quote request data. The stack trace,
         // which prints the message as it is, goes to DEBUG for whoever debugs the listener; it's left out if printing
         // it throws, as a listener's own exception can.
-        if (rethrowsTold || !LoggedFailures.logged(thrown)) {
+        if (rethrowsTold || !NestedFailures.logged(thrown)) {
             Failures.logWarn(log, "Listener threw exception in {}: {}", callback,
-                    hasNested ? Failures.describe(thrown) : Failures.describeWithClass(thrown));
+                    hasNested ? NestedFailures.describe(thrown) : Failures.describeWithClass(thrown));
         }
         logStackTrace(log, "Listener threw exception in " + callback, thrown);
     }
@@ -447,7 +454,7 @@ final class ListenerNotifier {
      * fatal itself. The failure's own error is still the one {@code run()} rethrows, so this one is logged like a
      * second fatal error in one callback, and added to the exception listeners were told about, where
      * {@link RuleListener#onRunError} finds it, and to the rethrown error (see {@link Failures#keepAlso}). One a run
-     * the listener started logged already isn't logged at WARN again (see {@link LoggedFailures#logged}); its stack
+     * the listener started logged already isn't logged at WARN again (see {@link NestedFailures#logged}); its stack
      * trace is still logged at DEBUG.
      *
      * @param reported     The exception every listener's {@code onError} got
@@ -464,7 +471,7 @@ final class ListenerNotifier {
             }
             Failures.keepAlso(rethrown, fromListener);
             // Says which one onRunError can see: the loop has already logged any later fatal error.
-            if (!LoggedFailures.logged(fromListener)) {
+            if (!NestedFailures.logged(fromListener)) {
                 Failures.logWarn(log, "Listener threw exception in onError, kept on the failure: {}",
                         Failures.describeWithClass(fromListener));
             }
@@ -478,8 +485,8 @@ final class ListenerNotifier {
      * started isn't logged again, as that run or load logged it, nor is a fatal {@link Error} a run logged already
      * (see {@link LoggedFailures}), unless the rule wrapped a nested failure, or a fatal {@link Error} logged already,
      * in an exception with a message of its own, which is logged, with the nested failure as a note (see
-     * {@link Failures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's {@code onError}
-     * wrapped such an error in (see {@link #logWrappedFromOnError}).
+     * {@link NestedFailures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's
+     * {@code onError} wrapped such an error in (see {@link #logWrappedFromOnError}).
      * An interrupt in {@code cause} has set the thread's interrupt status again already: every caller with a cause is
      * reached through {@link AbstractRulesEngine#stopped}, which sets it first. Returns the exception for the
      * caller to throw, unless
@@ -487,9 +494,9 @@ final class ListenerNotifier {
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.
      */
     RuleExecutionException failure(CompiledRule rule, ExpressionKind kind, String msg, Throwable cause) {
-        ReportedFailure error = new ReportedFailure(msg, cause, rule.rule().getRuleName(), kind);
+        ReportedFailure error = NestedFailures.report(msg, cause, rule.rule().getRuleName(), kind);
         // A failed run() started by this rule has already logged its failure, or the fatal error it rethrew.
-        Error listenerFatal = reportFailure(rule, error, LoggedFailures.unlogged(cause));
+        Error listenerFatal = reportFailure(rule, error, NestedFailures.unlogged(cause));
         // A fatal error in what the rule threw comes first; one from a listener's onError is rethrown otherwise.
         Error fatal = Failures.fatalError(cause);
         if (fatal == null && listenerFatal != null) {

@@ -70,7 +70,7 @@ class NameCutBeforeEscapeTest {
         assertEquals(NAME, root.getClass().getName());
 
         assertEquals("java.lang.RuntimeException (caused by " + "a".repeat(198) + "... (16 more characters))",
-                Failures.describe(new RuntimeException((String) null, root)));
+                NestedFailures.describe(new RuntimeException((String) null, root)));
     }
 
     /** A root cause with no message, defined again under a name a Java source can't give it. */

@@ -19,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * which takes more stack than the engine's checks make room for. The code that handles a failure runs only when
  * something fails, so the JVM's first failure deep in a stack paid for the link there, and could overflow:
  * {@code run()} then threw a {@link StackOverflowError} in place of the failure, and listeners missed {@code onError}
- * or {@code onRunError}. So {@link Failures}, which reads and describes what was thrown, and {@link ListenerNotifier},
+ * or {@code onRunError}. So {@link Failures}, which reads and describes what was thrown, {@link NestedFailures}, which
+ * reads it for the engine's own failures and builds the one a run reports, {@link LoggedFailures}, which records what
+ * was logged, and {@link ListenerNotifier},
  * which tells listeners of it, use neither, nor does {@link UniqueMatchRulesEngine}, whose own code fails a run that
  * matches more than one rule, nor {@link Closing}, which closes what a failed borrow made. #1097: nor
  * {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
@@ -34,8 +36,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class FailureCodeLambdaTest {
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {Failures.class, ListenerNotifier.class, UniqueMatchRulesEngine.class, Closing.class,
-            CopyPermits.class, RuleCompilationException.class})
+    @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
+            UniqueMatchRulesEngine.class, Closing.class, CopyPermits.class, RuleCompilationException.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {

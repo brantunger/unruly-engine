@@ -81,8 +81,49 @@ class LoggedFailuresTest {
             assertSame(failure, LoggedFailures.loggedByRun(failure));
             assertSame(failure, LoggedFailures.loggedByLoad(failure));
             assertNull(LoggedFailures.find(failure));
-            assertNull(Failures.nestedRunFailure(failure));
+            assertNull(NestedFailures.nestedRunFailure(failure));
             assertNull(ring());
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
+    /** An exception equal to every other of its class, as a language that compares its exceptions by text might. */
+    private static final class EqualToAll extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        EqualToAll(String message) {
+            super(message);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof EqualToAll;
+        }
+
+        @Override
+        public int hashCode() {
+            return 0;
+        }
+    }
+
+    @Test
+    @DisplayName("the record holds the very instance a nested run logged and threw as is: an equal one is still news")
+    void equalInstanceIsStillNews() {
+        EqualToAll logged = new EqualToAll("rejected");
+        EqualToAll equal = new EqualToAll("rejected");
+        LoggedFailures.enter();
+        try {
+            LoggedFailures.enter();
+            try {
+                LoggedFailures.loggedByRun(logged);
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertNotNull(LoggedFailures.find(logged), "the very instance");
+            assertNull(LoggedFailures.find(equal), "an equal one");
+            assertSame(logged, NestedFailures.nestedRunFailure(new IllegalStateException(logged)));
+            assertNull(NestedFailures.nestedRunFailure(new IllegalStateException(equal)));
         } finally {
             LoggedFailures.leave();
         }
@@ -118,7 +159,7 @@ class LoggedFailuresTest {
             } finally {
                 LoggedFailures.leave();
             }
-            assertNotNull(new ReportedFailure("built", null).builtIn());
+            assertNotNull(NestedFailures.report("built", null).builtIn());
             assertNotNull(field(runs, "outermost"));
         } finally {
             LoggedFailures.leave();
@@ -166,12 +207,12 @@ class LoggedFailuresTest {
             assertTrue(LoggedFailures.find(byLoad).byLoad());
             assertNull(LoggedFailures.find(new IllegalArgumentException("by run")));
             assertEquals("wrapped (after a nested load() failed: by load)",
-                    Failures.describe(new IllegalStateException("wrapped", byLoad)));
+                    NestedFailures.describe(new IllegalStateException("wrapped", byLoad)));
         } finally {
             LoggedFailures.leave();
         }
         assertNull(LoggedFailures.find(byRun));
-        assertEquals("wrapped", Failures.describe(new IllegalStateException("wrapped", byLoad)));
+        assertEquals("wrapped", NestedFailures.describe(new IllegalStateException("wrapped", byLoad)));
     }
 
     @Test
@@ -209,7 +250,7 @@ class LoggedFailuresTest {
                     LoggedFailures.leave();
                 }
             }
-            assertTrue(LoggedFailures.logged(first));
+            assertTrue(NestedFailures.logged(first));
             assertFalse(LoggedFailures.unloggedFatal(first));
         } finally {
             LoggedFailures.leave();
@@ -229,7 +270,7 @@ class LoggedFailuresTest {
                 assertTrue(LoggedFailures.unloggedFatal(last));
             }
             assertFalse(LoggedFailures.unloggedFatal(last));
-            assertFalse(LoggedFailures.logged(first));
+            assertFalse(NestedFailures.logged(first));
             assertTrue(LoggedFailures.unloggedFatal(first), "logged again");
             assertFalse(LoggedFailures.unloggedFatal(first), "and recorded again");
         } finally {
@@ -470,21 +511,22 @@ class LoggedFailuresTest {
             try {
                 LoggedFailures.enter();
                 try {
-                    nested = new ReportedFailure("by a nested run", null);
+                    nested = NestedFailures.report("by a nested run", null);
                 } finally {
                     LoggedFailures.leave();
                 }
                 assertEquals("wrapped (after a nested run() failed: by a nested run)",
-                        Failures.describe(new IllegalStateException("wrapped", nested)), "the run that started it");
+                        NestedFailures.describe(new IllegalStateException("wrapped", nested)),
+                        "the run that started it");
             } finally {
                 LoggedFailures.leave();
             }
             assertEquals("wrapped (after a nested run() failed: by a nested run)",
-                    Failures.describe(new IllegalStateException("wrapped", nested)), "a run around that one");
+                    NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a run around that one");
             LoggedFailures.enter();
             try {
                 assertEquals("wrapped (caused by by a nested run, already logged)",
-                        Failures.describe(new IllegalStateException("wrapped", nested)), "a later sibling");
+                        NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a later sibling");
             } finally {
                 LoggedFailures.leave();
             }
@@ -492,11 +534,11 @@ class LoggedFailuresTest {
             LoggedFailures.leave();
         }
         assertEquals("wrapped (caused by by a nested run, already logged)",
-                Failures.describe(new IllegalStateException("wrapped", nested)), "no run in progress");
+                NestedFailures.describe(new IllegalStateException("wrapped", nested)), "no run in progress");
         LoggedFailures.enter();
         try {
             assertEquals("wrapped (caused by by a nested run, already logged)",
-                    Failures.describe(new IllegalStateException("wrapped", nested)), "a later outermost run");
+                    NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a later outermost run");
         } finally {
             LoggedFailures.leave();
         }
@@ -512,7 +554,7 @@ class LoggedFailuresTest {
             LoggedFailures.enter();
             try {
                 for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
-                    reported.add(new ReportedFailure("reported " + i, null));
+                    reported.add(NestedFailures.report("reported " + i, null));
                 }
             } finally {
                 LoggedFailures.leave();
@@ -520,9 +562,9 @@ class LoggedFailuresTest {
             LoggedFailures.enter();
             try {
                 assertEquals("wrapped (after a nested run() failed: reported 0)",
-                        Failures.describe(new IllegalStateException("wrapped", reported.get(0))), "pushed out");
+                        NestedFailures.describe(new IllegalStateException("wrapped", reported.get(0))), "pushed out");
                 assertEquals("wrapped (caused by reported 32, already logged)",
-                        Failures.describe(new IllegalStateException("wrapped", reported.get(32))), "the newest");
+                        NestedFailures.describe(new IllegalStateException("wrapped", reported.get(32))), "the newest");
             } finally {
                 LoggedFailures.leave();
             }
@@ -538,7 +580,7 @@ class LoggedFailuresTest {
         Thread other = new Thread(() -> {
             LoggedFailures.enter();
             try {
-                reported.set(new ReportedFailure("on another thread", null));
+                reported.set(NestedFailures.report("on another thread", null));
             } finally {
                 LoggedFailures.leave();
             }
@@ -548,7 +590,7 @@ class LoggedFailuresTest {
         LoggedFailures.enter();
         try {
             assertEquals("wrapped (after a nested run() failed: on another thread)",
-                    Failures.describe(new IllegalStateException("wrapped", reported.get())));
+                    NestedFailures.describe(new IllegalStateException("wrapped", reported.get())));
         } finally {
             LoggedFailures.leave();
         }
@@ -586,7 +628,7 @@ class LoggedFailuresTest {
                     + " already logged)", executor.submit(() -> {
                         LoggedFailures.enter();
                         try {
-                            return Failures.describe(new IllegalStateException("wrapped", kept.get()));
+                            return NestedFailures.describe(new IllegalStateException("wrapped", kept.get()));
                         } finally {
                             LoggedFailures.leave();
                         }
@@ -601,8 +643,8 @@ class LoggedFailuresTest {
      * {@code new RuntimeException(e)}, whose message is its {@code toString()}.
      */
     private static void assertThrownOnReads(String expected, ReportedFailure reported, String where) {
-        assertEquals(expected, Failures.describe(reported), where + ", as is");
-        assertEquals(expected, Failures.describe(new RuntimeException(reported)), where + ", wrapped");
+        assertEquals(expected, NestedFailures.describe(reported), where + ", as is");
+        assertEquals(expected, NestedFailures.describe(new RuntimeException(reported)), where + ", wrapped");
     }
 
     @Test
@@ -616,7 +658,7 @@ class LoggedFailuresTest {
             try {
                 LoggedFailures.enter();
                 try {
-                    nested = new ReportedFailure("by a nested run", null);
+                    nested = NestedFailures.report("by a nested run", null);
                 } finally {
                     LoggedFailures.leave();
                 }
@@ -653,7 +695,7 @@ class LoggedFailuresTest {
             LoggedFailures.enter();
             try {
                 for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
-                    reported.add(new ReportedFailure("reported " + i, null));
+                    reported.add(NestedFailures.report("reported " + i, null));
                 }
             } finally {
                 LoggedFailures.leave();
@@ -678,7 +720,7 @@ class LoggedFailuresTest {
         Thread other = new Thread(() -> {
             LoggedFailures.enter();
             try {
-                reported.set(new ReportedFailure("on another thread", null));
+                reported.set(NestedFailures.report("on another thread", null));
             } finally {
                 LoggedFailures.leave();
             }
@@ -735,7 +777,7 @@ class LoggedFailuresTest {
     @DisplayName("an exception the engine built around a nested failure adds nothing to it whatever it says, while an "
             + "equal one of an application's is news, and the record is forgotten with the outermost run and bounded")
     void engineWrapperKnownByInstance() {
-        ReportedFailure inner = new ReportedFailure("inner failed", null);
+        ReportedFailure inner = NestedFailures.report("inner failed", null);
         IllegalArgumentException engines = new IllegalArgumentException("check failed: inner failed", inner);
         IllegalArgumentException applications = new IllegalArgumentException("check failed: inner failed", inner);
         String named = "a nested run() failed: inner failed";
@@ -746,10 +788,10 @@ class LoggedFailuresTest {
             assertFalse(LoggedFailures.isEngineWrapper(engines), "nothing built yet");
             assertSame(engines, LoggedFailures.builtByEngine(engines));
             assertTrue(LoggedFailures.isEngineWrapper(engines));
-            assertEquals(named, Failures.describe(engines));
-            assertSame(inner, Failures.nestedRunFailure(engines));
+            assertEquals(named, NestedFailures.describe(engines));
+            assertSame(inner, NestedFailures.nestedRunFailure(engines));
             assertFalse(LoggedFailures.isEngineWrapper(applications));
-            assertEquals("check failed: inner failed (after " + named + ")", Failures.describe(applications));
+            assertEquals("check failed: inner failed (after " + named + ")", NestedFailures.describe(applications));
             for (int i = 1; i < LoggedFailures.MAX_LOGGED; i++) {
                 LoggedFailures.builtByEngine(new IllegalStateException("built " + i));
             }
@@ -789,7 +831,7 @@ class LoggedFailuresTest {
             try {
                 assertTrue(LoggedFailures.unloggedFatal(fatal));
                 LoggedFailures.loggedByRun(rejection);
-                reported = new ReportedFailure("reported by a nested run", null);
+                reported = NestedFailures.report("reported by a nested run", null);
             } finally {
                 LoggedFailures.leave();
             }
@@ -831,7 +873,7 @@ class LoggedFailuresTest {
                 try {
                     assertTrue(LoggedFailures.unloggedFatal(fatal));
                     LoggedFailures.loggedByRun(rejection);
-                    reported = new ReportedFailure("reported by a nested run", null);
+                    reported = NestedFailures.report("reported by a nested run", null);
                 } finally {
                     LoggedFailures.leave();
                 }
@@ -880,7 +922,7 @@ class LoggedFailuresTest {
                 try {
                     assertTrue(LoggedFailures.unloggedFatal(fatal));
                     LoggedFailures.loggedByRun(rejection);
-                    reported = new ReportedFailure("reported by a nested run", null);
+                    reported = NestedFailures.report("reported by a nested run", null);
                 } finally {
                     LoggedFailures.leave();
                 }
@@ -889,7 +931,7 @@ class LoggedFailuresTest {
             }
             assertTrue(LoggedFailures.unloggedFatal(new InternalError("the parent's own")));
             LoggedFailures.loggedByRun(new IllegalStateException("the parent's own"));
-            new ReportedFailure("the parent's own", null);
+            NestedFailures.report("the parent's own", null);
             LoggedFailures.enter();
             try {
                 assertBelow(false, fatal, rejection, reported, "a later sibling");
@@ -923,7 +965,7 @@ class LoggedFailuresTest {
             try {
                 LoggedFailures.enter();
                 try {
-                    reported = new ReportedFailure("reported by a nested run", null);
+                    reported = NestedFailures.report("reported by a nested run", null);
                 } finally {
                     LoggedFailures.leave();
                 }

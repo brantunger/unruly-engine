@@ -151,7 +151,8 @@ class FirstRunClassInitializationTest {
                     ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                     CancelTimer.class, RuleExecutionException.class, ReportedFailure.class,
                     LoggedFailures.Logged.class, LoggedFailures.Outermost.class, ListenerNotifier.OnError.class,
-                    ListenerNotifier.OnRunError.class, AbstractRulesEngine.BeforeRun.class, Failures.Below.class,
+                    ListenerNotifier.OnRunError.class, AbstractRulesEngine.BeforeRun.class,
+                    NestedFailures.class, NestedFailures.Below.class,
                     Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class,
                     IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
                     InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class)

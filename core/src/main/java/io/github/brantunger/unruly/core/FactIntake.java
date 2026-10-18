@@ -322,8 +322,8 @@ final class FactIntake {
                 // exception is returned as it came, so a caller still reads exactly what the language said. A failed
                 // run() or load() the check started has already logged its failure; the language's own instance is
                 // what's recorded as logged here.
-                if (logged && Failures.nestedRunFailure(e) == null) {
-                    Failures.logError(log, Failures.describe(e));
+                if (logged && NestedFailures.nestedRunFailure(e) == null) {
+                    Failures.logError(log, NestedFailures.describe(e));
                     LoggedFailures.loggedByRun(e);
                 }
                 return e;
@@ -335,9 +335,9 @@ final class FactIntake {
         }
         Failures.keepInterruptStatus(failure);
         String msg = "The '" + Failures.quote(language) + "' expression language failed to check fact name '"
-                + Failures.quote(name) + "': " + Failures.describeCallOut(failure, true);
+                + Failures.quote(name) + "': " + NestedFailures.describeCallOut(failure, true);
         Error fatal = Failures.fatalError(failure);
-        boolean logs = (logged || fatal != null) && LoggedFailures.unlogged(failure);
+        boolean logs = (logged || fatal != null) && NestedFailures.unlogged(failure);
         if (logs) {
             Failures.logError(log, msg);
         }

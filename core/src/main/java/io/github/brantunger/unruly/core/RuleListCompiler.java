@@ -308,7 +308,7 @@ final class RuleListCompiler {
                     }
                 } catch (Throwable e) {
                     failed(compilationFailure(named + " failed to tell which facts its rules read: "
-                            + Failures.describeCallOut(e, true), e, null));
+                            + NestedFailures.describeCallOut(e, true), e, null));
                     continue;
                 }
                 if (holdsNull) {
@@ -323,7 +323,7 @@ final class RuleListCompiler {
         // A failed run() or load() a language started while compiling or checking a name has already logged its
         // failure. One logged here is recorded, so a run or load around this one's doesn't log it again.
         private void failed(RuleCompilationException failure) {
-            if (logged && Failures.nestedRunFailure(failure) == null) {
+            if (logged && NestedFailures.nestedRunFailure(failure) == null) {
                 Failures.logError(log, failure.getMessage());
                 LoggedFailures.loggedByLoad(failure);
             }
@@ -453,7 +453,7 @@ final class RuleListCompiler {
                 // class again.
                 String reason = Failures.isOverflow(rejected)
                         ? Failures.clip(Failures.messageOr(rejected, rejected.getClass().getName()))
-                        : Failures.describe(rejected);
+                        : NestedFailures.describe(rejected);
                 failures.add(compilationFailure("Declared fact '" + Failures.quote(name) + "' can't be used: " + reason,
                         rejected, null));
             }
@@ -497,7 +497,7 @@ final class RuleListCompiler {
         Failures.keepInterruptStatus(cause);
         Error fatal = Failures.fatalError(cause);
         if (fatal != null) {
-            if (LoggedFailures.unlogged(cause)) {
+            if (NestedFailures.unlogged(cause)) {
                 Failures.logError(log, msg);
             }
             throw fatal;
@@ -597,7 +597,7 @@ final class RuleListCompiler {
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language failed to " + failedTo
-                    + ": " + Failures.describeCallOut(e, !preparing), e, null);
+                    + ": " + NestedFailures.describeCallOut(e, !preparing), e, null);
         }
         if (compiler == null) {
             throw compilationFailure("The '" + Failures.quote(name) + "' expression language returned no compiler",
@@ -663,7 +663,7 @@ final class RuleListCompiler {
             // expression compiled with too little stack left, such as by a load called deep in a stack or on a thread
             // with a small one (#1013).
             // A class an overflow left unusable isn't one: no change to the rule or the depth helps (#1116).
-            String reason = Failures.isOverflow(e) ? overflowReason() : Failures.describe(e);
+            String reason = Failures.isOverflow(e) ? overflowReason() : NestedFailures.describe(e);
             throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
                     List.of());
         }
