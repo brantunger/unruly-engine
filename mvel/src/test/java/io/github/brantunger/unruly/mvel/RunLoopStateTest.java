@@ -5,7 +5,6 @@ import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.MVEL;
-import org.mvel2.ParserConfiguration;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -31,26 +30,26 @@ class RunLoopStateTest {
     @Test
     @DisplayName("a run configuration answers as many calls as each run allows, then throws, until the next run")
     void runLimitThrowsUntilTheNextRun() {
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
         // While the expression compiles, before its first run, MVEL may ask any number of times.
         for (int call = 0; call < 100; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
         }
 
-        Imports.startRun(configuration);
+        configuration.startRun();
         for (int call = 0; call < 3; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
         }
-        assertNull(Imports.runLoop(configuration));
+        assertNull(configuration.runLoop());
         Imports.RunLoop loop = assertThrows(Imports.RunLoop.class, configuration::getClassLoader);
 
         assertSame(loop, assertThrows(Imports.RunLoop.class, configuration::getClassLoader));
-        assertSame(loop, Imports.runLoop(configuration));
-        assertNull(Imports.analysisLoop(configuration));
+        assertSame(loop, configuration.runLoop());
+        assertNull(configuration.analysisLoop());
 
         // The next run starts afresh: it may not reach the text that loops.
-        Imports.startRun(configuration);
-        assertNull(Imports.runLoop(configuration));
+        configuration.startRun();
+        assertNull(configuration.runLoop());
         for (int call = 0; call < 3; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
         }
@@ -60,15 +59,15 @@ class RunLoopStateTest {
     @Test
     @DisplayName("each run has the whole limit")
     void eachRunHasTheLimit() {
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newRunConfiguration(3, 3);
 
         for (int run = 0; run < 10; run++) {
-            Imports.startRun(configuration);
+            configuration.startRun();
             for (int call = 0; call < 3; call++) {
                 assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
             }
         }
-        assertNull(Imports.runLoop(configuration));
+        assertNull(configuration.runLoop());
     }
 
     @Test
@@ -79,24 +78,25 @@ class RunLoopStateTest {
         // part, from two places, so a long expression may ask more than a fixed limit would allow.
         String text = "/*" + " ".repeat(50_000) + "*/ x == 1";
         long perSite = MvelAnalysis.classLoaderCallsPerSite(text.length());
-        ParserConfiguration configuration = MvelExpression.compile(text, IMPORTS).newCompiled().configuration();
+        Imports.SharedLookupConfiguration configuration = MvelExpression.compile(text, IMPORTS).newCompiled()
+                .configuration();
 
         assertEquals(MvelAnalysis.classLoaderCallLimit(text.length()),
                 MvelExpression.classLoaderCallsPerRun(text.length()));
-        Imports.startRun(configuration);
+        configuration.startRun();
         CallSitesTest.askedUntilStopped(configuration);
-        CallSitesTest.assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(configuration), perSite);
+        CallSitesTest.assertStoppedAtTheLimitForOnePlace(configuration.classLoaderCalls(), perSite);
     }
 
     @Test
     @DisplayName("a configuration for compiling only throws what MVEL's analysis went round in, whatever is called")
     void analysisConfigurationThrowsAnalysisLoop() {
-        ParserConfiguration configuration = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(configuration, 0, 0);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newConfiguration();
+        configuration.limitClassLoaderCalls(0, 0);
 
         Imports.AnalysisLoop loop = assertThrows(Imports.AnalysisLoop.class, configuration::getClassLoader);
-        assertSame(loop, Imports.analysisLoop(configuration));
-        assertNull(Imports.runLoop(configuration));
+        assertSame(loop, configuration.analysisLoop());
+        assertNull(configuration.runLoop());
     }
 
     /** Imports of their own, so no other test's names found not to be classes change which calls MVEL makes. */
@@ -111,7 +111,7 @@ class RunLoopStateTest {
         // in a CompileException of its own.
         String text = "s.substring(java.lang.Math.abs(-1))";
         MvelExpression.Copy copy = MvelExpression.compile(text, ownImports(), 0).newCompiled();
-        Imports.startRun(copy.configuration());
+        copy.configuration().startRun();
         RuntimeException wrapped = assertThrows(RuntimeException.class,
                 () -> MVEL.executeExpression(copy.expression(), (Object) null, new HashMap<>(Map.of("s", "abc"))));
         // A named guard: MVEL wraps it here.
@@ -145,9 +145,9 @@ class RunLoopStateTest {
     private static void runsWithin(Imports imports, String text, long calls, Map<String, Object> variables) {
         MvelExpression.Copy copy = MvelExpression.newCopy(text, imports, calls);
         for (int run = 0; run < 60; run++) {
-            Imports.startRun(copy.configuration());
+            copy.configuration().startRun();
             MVEL.executeExpression(copy.expression(), new HashMap<>(variables));
-            assertNull(Imports.runLoop(copy.configuration()), text);
+            assertNull(copy.configuration().runLoop(), text);
         }
     }
 
@@ -176,7 +176,7 @@ class RunLoopStateTest {
     }
 
     /** A map whose get asks a configuration for the class loader until it runs out, then throws something else. */
-    private static Map<String, Object> exhausting(ParserConfiguration configuration, Throwable thrown) {
+    private static Map<String, Object> exhausting(Imports.SharedLookupConfiguration configuration, Throwable thrown) {
         return new AbstractMap<>() {
             @Override
             public Set<Entry<String, Object>> entrySet() {
@@ -191,7 +191,7 @@ class RunLoopStateTest {
 
             @Override
             public Object get(Object key) {
-                while (Imports.runLoop(configuration) == null) {
+                while (configuration.runLoop() == null) {
                     try {
                         configuration.getClassLoader();
                     } catch (Imports.RunLoop loop) {
@@ -226,13 +226,13 @@ class RunLoopStateTest {
     void fatalErrorAfterLoopIsThrown() {
         MvelExpression expression = MvelExpression.compile("m.k", ownImports());
         MvelSession session = new MvelSession();
-        ParserConfiguration configuration = session.compiled(expression).configuration();
+        Imports.SharedLookupConfiguration configuration = session.compiled(expression).configuration();
         OutOfMemoryError fatal = new OutOfMemoryError("fatal");
         Map<String, Object> m = exhausting(configuration, fatal);
 
         assertSame(fatal, assertThrows(OutOfMemoryError.class,
                 () -> expression.evaluate(LanguageTestContexts.evaluation(Map.of("m", m)), session)));
-        assertEquals(0, Imports.runLoop(configuration).getSuppressed().length);
+        assertEquals(0, configuration.runLoop().getSuppressed().length);
     }
 
     @Test

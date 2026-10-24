@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
 import org.mvel2.CompileException;
-import org.mvel2.ParserConfiguration;
 import org.mvel2.ast.ASTNode;
 import org.mvel2.compiler.AbstractParser;
 import org.mvel2.compiler.CompiledExpression;
@@ -10,7 +9,6 @@ import org.mvel2.compiler.ExpressionCompiler;
 import java.nio.CharBuffer;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -55,6 +53,8 @@ final class MvelAnalysis extends ExpressionCompiler {
 
     private final String source;
     private final transient Imports imports;
+    // The configuration of the pass's own parser context, which counts MVEL's calls for the class loader.
+    private final transient Imports.SharedLookupConfiguration configuration;
     private String rejected;
 
     /**
@@ -64,12 +64,17 @@ final class MvelAnalysis extends ExpressionCompiler {
      * @param imports The imports to compile it with
      */
     MvelAnalysis(String source, Imports imports) {
+        this(source, imports, imports.newConfiguration());
+    }
+
+    private MvelAnalysis(String source, Imports imports, Imports.SharedLookupConfiguration configuration) {
         // As MVEL.analysisCompile does: the text as it is, so MVEL's positions are positions in it.
-        super(source.toCharArray(), MvelExpression.newParserContext(imports));
+        super(source.toCharArray(), MvelExpression.newParserContext(imports, configuration));
         this.source = source;
         this.imports = imports;
+        this.configuration = configuration;
         setVerifyOnly(true);
-        Imports.limitClassLoaderCalls(pCtx.getParserConfiguration(), classLoaderCallLimit(source.length()),
+        configuration.limitClassLoaderCalls(classLoaderCallLimit(source.length()),
                 classLoaderCallsPerSite(source.length()));
     }
 
@@ -116,7 +121,7 @@ final class MvelAnalysis extends ExpressionCompiler {
      * @throws CompileException if the analysis went round in a loop, with the {@link Imports.AnalysisLoop} as its cause
      */
     private void throwIfLooped() {
-        Imports.AnalysisLoop loop = Imports.analysisLoop(pCtx.getParserConfiguration());
+        Imports.AnalysisLoop loop = configuration.analysisLoop();
         if (loop != null) {
             throw new CompileException(loop.getMessage(), expr, 0, loop);
         }
@@ -172,10 +177,10 @@ final class MvelAnalysis extends ExpressionCompiler {
 
     /**
      * Returns the names the expression's own inline imports brought in while the pass ran, as
-     * {@link Imports#inlineImportedNames} tells: MVEL looks them up in this expression only, before its facts. A
-     * static field or enum constant of a class the expression imports with {@code import a.B.*;} counts too where
-     * MVEL took its name as an input or a variable, as it does for a name used before the import (see
-     * {@link Imports#staticMemberNames}): the expression reads the field by it as it runs, not the fact. Only the
+     * {@link Imports.SharedLookupConfiguration#inlineImportedNames} tells: MVEL looks them up in this expression only,
+     * before its facts. A static field or enum constant of a class the expression imports with {@code import a.B.*;}
+     * counts too where MVEL took its name as an input or a variable, as it does for a name used before the import: the
+     * expression reads the field by it as it runs, not the fact. Only the
      * expression's own context is read, so a name used before the import in a def or closure body, or assigned in a
      * for body, which MVEL compiles in a context of its own, isn't among them. With strong typing, every declared fact
      * is an input, whether the expression uses it or not, so a declared fact named like such a field counts.
@@ -183,24 +188,7 @@ final class MvelAnalysis extends ExpressionCompiler {
      * @return The names, empty if the expression imports nothing of its own
      */
     Set<String> inlineImportedNames() {
-        ParserConfiguration configuration = pCtx.getParserConfiguration();
-        Set<String> names = Imports.inlineImportedNames(configuration);
-        Set<String> members = Imports.staticMemberNames(configuration);
-        if (!members.isEmpty()) {
-            addMembers(members, pCtx.getInputs(), names);
-            addMembers(members, pCtx.getVariables(), names);
-        }
-        return names;
-    }
-
-    // Adds to names each of the members that is a key of the parser context's inputs or variables, which MVEL creates
-    // before it reads the expression, as it verifies it.
-    private static void addMembers(Set<String> members, Map<String, ?> declared, Set<String> names) {
-        for (String name : declared.keySet()) {
-            if (members.contains(name)) {
-                names.add(name);
-            }
-        }
+        return configuration.inlineImportedNames(pCtx.getInputs(), pCtx.getVariables());
     }
 
     /**

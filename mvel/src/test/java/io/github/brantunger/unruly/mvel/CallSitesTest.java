@@ -66,9 +66,9 @@ class CallSitesTest {
     }
 
     /** A configuration for MVEL's analysis of a text, with the limits the engine sets for it. */
-    private static ParserConfiguration analysisConfiguration(String text) {
-        ParserConfiguration configuration = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(configuration, MvelAnalysis.classLoaderCallLimit(text.length()),
+    private static Imports.SharedLookupConfiguration analysisConfiguration(String text) {
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newConfiguration();
+        configuration.limitClassLoaderCalls(MvelAnalysis.classLoaderCallLimit(text.length()),
                 MvelAnalysis.classLoaderCallsPerSite(text.length()));
         return configuration;
     }
@@ -104,12 +104,12 @@ class CallSitesTest {
     @DisplayName("MVEL's analysis going round in a loop is stopped once one place has asked more than the limit for "
             + "it: an upgrade that makes the rounds ask from different places fails here")
     void analysisLoopStoppedAtTheLimitForOnePlace(String text) throws InterruptedException {
-        ParserConfiguration configuration = analysisConfiguration(text);
+        Imports.SharedLookupConfiguration configuration = analysisConfiguration(text);
         onDaemon(text, () -> assertThrows(Throwable.class,
                 () -> MVEL.analysisCompile(text, new ParserContext(configuration))));
 
-        assertNotNull(Imports.analysisLoop(configuration));
-        assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(configuration),
+        assertNotNull(configuration.analysisLoop());
+        assertStoppedAtTheLimitForOnePlace(configuration.classLoaderCalls(),
                 MvelAnalysis.classLoaderCallsPerSite(text.length()));
     }
 
@@ -120,12 +120,12 @@ class CallSitesTest {
         String text = "java.lang.String.class (2)";
         MvelExpression.Copy copy = MvelExpression.newCopy(text, IMPORTS,
                 MvelExpression.classLoaderCallsPerRun(text.length()));
-        Imports.startRun(copy.configuration());
+        copy.configuration().startRun();
         onDaemon(text, () -> assertThrows(Throwable.class,
                 () -> MVEL.executeExpression(copy.expression(), new HashMap<String, Object>())));
 
-        assertNotNull(Imports.runLoop(copy.configuration()));
-        assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(copy.configuration()),
+        assertNotNull(copy.configuration().runLoop());
+        assertStoppedAtTheLimitForOnePlace(copy.configuration().classLoaderCalls(),
                 MvelAnalysis.classLoaderCallsPerSite(text.length()));
     }
 
@@ -136,10 +136,10 @@ class CallSitesTest {
         // FirstUseScenario checks that the JVM's first walks of each kind load and link nothing, which only holds if
         // its rules do walk the stack: MVEL's analysis of the one, and a copy's first run of the other.
         String wrapped = FirstUseScenario.WRAPPED_CHAIN;
-        ParserConfiguration analysis = analysisConfiguration(wrapped);
+        Imports.SharedLookupConfiguration analysis = analysisConfiguration(wrapped);
         MVEL.analysisCompile(wrapped, new ParserContext(analysis));
-        assertTrue(Imports.classLoaderCalls(analysis) > CallSites.UNCOUNTED_CALLS,
-                () -> "the analysis asked " + Imports.classLoaderCalls(analysis) + " times");
+        assertTrue(analysis.classLoaderCalls() > CallSites.UNCOUNTED_CALLS,
+                () -> "the analysis asked " + analysis.classLoaderCalls() + " times");
 
         String argument = FirstUseScenario.CHAIN_ARGUMENT;
         MvelExpression.Copy copy = MvelExpression.newCopy(argument, IMPORTS,
@@ -149,10 +149,10 @@ class CallSitesTest {
         Map<String, Object> facts = new HashMap<>();
         facts.put("s", m);
         facts.put("m", m);
-        Imports.startRun(copy.configuration());
+        copy.configuration().startRun();
         assertEquals(Boolean.TRUE, MVEL.executeExpression(copy.expression(), facts));
-        assertTrue(Imports.classLoaderCalls(copy.configuration()) > CallSites.UNCOUNTED_CALLS,
-                () -> "the run asked " + Imports.classLoaderCalls(copy.configuration()) + " times");
+        assertTrue(copy.configuration().classLoaderCalls() > CallSites.UNCOUNTED_CALLS,
+                () -> "the run asked " + copy.configuration().classLoaderCalls() + " times");
     }
 
     @Test
@@ -160,15 +160,15 @@ class CallSitesTest {
     void compilingACopyIsNotCounted() {
         MvelExpression.Copy copy = MvelExpression.compile("java.lang.Math.abs(-1) + java.util.List.of().size()",
                 IMPORTS).newCompiled();
-        assertEquals(0, Imports.classLoaderCalls(copy.configuration()));
+        assertEquals(0, copy.configuration().classLoaderCalls());
 
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(10_000, 10);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newRunConfiguration(10_000, 10);
         // Every call from this line is from one place, and none counts before a run starts.
         for (int call = 0; call < 1_000; call++) {
             configuration.getClassLoader();
         }
-        assertEquals(0, Imports.classLoaderCalls(configuration));
-        assertNull(Imports.runLoop(configuration));
+        assertEquals(0, configuration.classLoaderCalls());
+        assertNull(configuration.runLoop());
     }
 
     /** Asks for the class loader from one place until the configuration throws, and returns what it threw. */
@@ -185,16 +185,16 @@ class CallSitesTest {
     @Test
     @DisplayName("each run counts the calls from each place afresh")
     void eachRunCountsAfresh() {
-        ParserConfiguration configuration = IMPORTS.newRunConfiguration(10_000, 10);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newRunConfiguration(10_000, 10);
 
         for (int run = 0; run < 3; run++) {
-            Imports.startRun(configuration);
-            assertEquals(0, Imports.classLoaderCalls(configuration));
-            assertNull(Imports.runLoop(configuration));
+            configuration.startRun();
+            assertEquals(0, configuration.classLoaderCalls());
+            assertNull(configuration.runLoop());
             Error loop = askedUntilStopped(configuration);
 
-            assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(configuration), 10);
-            assertSame(loop, Imports.runLoop(configuration));
+            assertStoppedAtTheLimitForOnePlace(configuration.classLoaderCalls(), 10);
+            assertSame(loop, configuration.runLoop());
             // Every call after the one that passed the limit throws it again, from any place, until the run ends.
             assertSame(loop, assertThrows(Imports.RunLoop.class, configuration::getClassLoader));
         }
@@ -203,10 +203,10 @@ class CallSitesTest {
     @Test
     @DisplayName("calls from two places in turn are counted for each, not together, whichever calls are walked")
     void eachPlaceHasItsOwnCount() {
-        ParserConfiguration analysis = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(analysis, 100_000, 6_000);
-        ParserConfiguration run = IMPORTS.newRunConfiguration(100_000, 6_000);
-        Imports.startRun(run);
+        Imports.SharedLookupConfiguration analysis = IMPORTS.newConfiguration();
+        analysis.limitClassLoaderCalls(100_000, 6_000);
+        Imports.SharedLookupConfiguration run = IMPORTS.newRunConfiguration(100_000, 6_000);
+        run.startRun();
 
         // After the first 100, each line makes 5,000 calls, and the two 10,000. A walk every other call, or every
         // fourth, would count them all at one of the two.
@@ -216,8 +216,8 @@ class CallSitesTest {
             run.getClassLoader();
             run.getClassLoader();
         }
-        assertNull(Imports.analysisLoop(analysis));
-        assertNull(Imports.runLoop(run));
+        assertNull(analysis.analysisLoop());
+        assertNull(run.runLoop());
     }
 
     /** Asks for the class loader from {@code depth} frames further down the stack. */
@@ -233,10 +233,10 @@ class CallSitesTest {
     @DisplayName("calls from places that change, as many as the stack is deep, are stopped by the limit in all")
     void placesThatChangeAreStoppedByTheLimitInAll() {
         // A walk counts the calls since the one before at the walked site, so the limit for one place exceeds a gap.
-        ParserConfiguration analysis = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(analysis, 500, 2 * LONGEST_GAP);
-        ParserConfiguration run = IMPORTS.newRunConfiguration(500, 2 * LONGEST_GAP);
-        Imports.startRun(run);
+        Imports.SharedLookupConfiguration analysis = IMPORTS.newConfiguration();
+        analysis.limitClassLoaderCalls(500, 2 * LONGEST_GAP);
+        Imports.SharedLookupConfiguration run = IMPORTS.newRunConfiguration(500, 2 * LONGEST_GAP);
+        run.startRun();
 
         // Each call is from a stack one frame deeper than the one before, so from a place of its own.
         for (int depth = 0; depth < 500; depth++) {
@@ -245,18 +245,18 @@ class CallSitesTest {
         }
         assertThrows(Imports.AnalysisLoop.class, () -> askFrom(analysis, 500));
         assertThrows(Imports.RunLoop.class, () -> askFrom(run, 500));
-        assertEquals(500, Imports.classLoaderCalls(analysis));
-        assertEquals(500, Imports.classLoaderCalls(run));
+        assertEquals(500, analysis.classLoaderCalls());
+        assertEquals(500, run.classLoaderCalls());
     }
 
     @Test
     @DisplayName("in a run, calls whose stacks differ only below the frames read at its top, at the same depth, are "
             + "from one place; in MVEL's analysis, the whole stack tells them apart")
     void runReadsTheTopOfTheStackAnalysisAllOfIt() {
-        ParserConfiguration analysis = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(analysis, 100_000, 3_000);
-        ParserConfiguration run = IMPORTS.newRunConfiguration(100_000, 3_000);
-        Imports.startRun(run);
+        Imports.SharedLookupConfiguration analysis = IMPORTS.newConfiguration();
+        analysis.limitClassLoaderCalls(100_000, 3_000);
+        Imports.SharedLookupConfiguration run = IMPORTS.newRunConfiguration(100_000, 3_000);
+        run.startRun();
         int deeperThanTheTop = CallSites.RUN_FRAMES;
 
         // The two lines differ, below the frames askFrom adds, at the same depth: 2,000 calls from each.
@@ -264,7 +264,7 @@ class CallSitesTest {
             askFrom(analysis, deeperThanTheTop);
             askFrom(analysis, deeperThanTheTop);
         }
-        assertNull(Imports.analysisLoop(analysis));
+        assertNull(analysis.analysisLoop());
         // In the run they are one place's: after a count drawn from the walks passes the limit, the limit again.
         assertThrows(Imports.RunLoop.class, () -> {
             for (int call = 0; call < 5_000; call++) {
@@ -281,9 +281,9 @@ class CallSitesTest {
         Stream<String> texts = Stream.concat(GluedCallRejectionTest.nearMissesRun(),
                 GluedCallRejectionTest.gluedMembersRun()).map(arguments -> (String) arguments.get()[0]);
         texts.forEach(text -> {
-            ParserConfiguration configuration = analysisConfiguration(text);
+            Imports.SharedLookupConfiguration configuration = analysisConfiguration(text);
             MVEL.analysisCompile(text, new ParserContext(configuration));
-            long calls = Imports.classLoaderCalls(configuration);
+            long calls = configuration.classLoaderCalls();
             assertTrue(calls <= CallSites.UNCOUNTED_CALLS, () -> text + ": " + calls + " calls");
         });
     }
@@ -312,41 +312,54 @@ class CallSitesTest {
     }
 
     @Test
+    @DisplayName("counted() on a count by the whole stack stops calls from one place at the limit for one place")
+    void countedStopsOnePlaceAtItsLimit() {
+        CallSites sites = new CallSites(true, 10);
+
+        // Every call is from this line, so from one place.
+        while (!sites.counted()) {
+            assertTrue(sites.calls() < 10_000, "never stopped");
+        }
+        assertStoppedAtTheLimitForOnePlace(sites.calls(), 10);
+    }
+
+    @Test
     @DisplayName("a configuration read back, whose count of places isn't kept, counts afresh, and one without a limit "
             + "for one place, as one written before there was one reads, is stopped by the limit in all")
     void configurationReadBack() throws Exception {
-        ParserConfiguration written = IMPORTS.newRunConfiguration(10_000, 10);
-        Imports.startRun(written);
+        Imports.SharedLookupConfiguration written = IMPORTS.newRunConfiguration(10_000, 10);
+        written.startRun();
         askedUntilStopped(written);
-        ParserConfiguration read = readBack(written);
+        Imports.SharedLookupConfiguration read = readBack(written);
 
-        Imports.startRun(read);
-        assertEquals(0, Imports.classLoaderCalls(read));
+        read.startRun();
+        assertEquals(0, read.classLoaderCalls());
         askedUntilStopped(read);
-        assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(read), 10);
+        assertStoppedAtTheLimitForOnePlace(read.classLoaderCalls(), 10);
 
-        ParserConfiguration analysis = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(analysis, 10_000, 10);
-        ParserConfiguration analysisRead = readBack(analysis);
+        Imports.SharedLookupConfiguration analysis = IMPORTS.newConfiguration();
+        analysis.limitClassLoaderCalls(10_000, 10);
+        Imports.SharedLookupConfiguration analysisRead = readBack(analysis);
         askedUntilStopped(analysisRead);
-        assertStoppedAtTheLimitForOnePlace(Imports.classLoaderCalls(analysisRead), 10);
-        assertNotNull(Imports.analysisLoop(analysisRead));
+        assertStoppedAtTheLimitForOnePlace(analysisRead.classLoaderCalls(), 10);
+        assertNotNull(analysisRead.analysisLoop());
 
-        ParserConfiguration noLimitPerSite = IMPORTS.newRunConfiguration(500, 0);
-        Imports.startRun(noLimitPerSite);
+        Imports.SharedLookupConfiguration noLimitPerSite = IMPORTS.newRunConfiguration(500, 0);
+        noLimitPerSite.startRun();
         askedUntilStopped(noLimitPerSite);
-        assertEquals(500, Imports.classLoaderCalls(noLimitPerSite));
+        assertEquals(500, noLimitPerSite.classLoaderCalls());
     }
 
     /** Writes a configuration out and reads it back, as Java's serialization does. */
-    private static ParserConfiguration readBack(ParserConfiguration configuration) throws Exception {
+    private static Imports.SharedLookupConfiguration readBack(Imports.SharedLookupConfiguration configuration)
+            throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
             out.writeObject(configuration);
         }
         try (ObjectInputStream in = new ObjectInputStream(
                 new ByteArrayInputStream(bytes.toByteArray()))) {
-            return (ParserConfiguration) in.readObject();
+            return (Imports.SharedLookupConfiguration) in.readObject();
         }
     }
 

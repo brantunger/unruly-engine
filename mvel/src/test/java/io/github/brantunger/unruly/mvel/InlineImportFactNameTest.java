@@ -16,6 +16,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -178,5 +179,19 @@ class InlineImportFactNameTest {
                 rule("r", "true", "import java.util.Date; output.put('r', new Date(0))"))));
 
         assertEquals("Declared fact 'Date' can't be used: " + rejection("Date"), ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("the names an expression imports inline are a set of their own, which changing leaves the next answer "
+            + "as it was")
+    void inlineImportedNamesAreACopy() {
+        MvelAnalysis analysis = new MvelAnalysis("import java.util.Date; new Date(0) != null",
+                new Imports(Set.of(), Set.of(), InlineImportFactNameTest.class.getClassLoader()));
+        analysis.compile();
+
+        Set<String> names = analysis.inlineImportedNames();
+        assertEquals(Set.of("Date"), names);
+        names.clear();
+        assertEquals(Set.of("Date"), analysis.inlineImportedNames());
     }
 }

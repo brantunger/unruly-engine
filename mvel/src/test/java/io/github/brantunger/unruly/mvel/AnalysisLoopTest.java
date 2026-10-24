@@ -85,27 +85,27 @@ class AnalysisLoopTest {
     @Test
     @DisplayName("a configuration answers as many calls as the limit allows, and then throws on every call")
     void limitAllowsExactlyTheCalls() {
-        ParserConfiguration configuration = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(configuration, 3, 3);
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newConfiguration();
+        configuration.limitClassLoaderCalls(3, 3);
 
         for (int call = 0; call < 3; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
         }
-        assertNull(Imports.analysisLoop(configuration));
+        assertNull(configuration.analysisLoop());
         Imports.AnalysisLoop loop = assertThrows(Imports.AnalysisLoop.class, configuration::getClassLoader);
         assertSame(loop, assertThrows(Imports.AnalysisLoop.class, configuration::getClassLoader));
-        assertSame(loop, Imports.analysisLoop(configuration));
+        assertSame(loop, configuration.analysisLoop());
     }
 
     @Test
     @DisplayName("a configuration without a limit answers every call")
     void noLimitByDefault() {
-        ParserConfiguration configuration = IMPORTS.newConfiguration();
+        Imports.SharedLookupConfiguration configuration = IMPORTS.newConfiguration();
 
         for (int call = 0; call < 100_000; call++) {
             assertSame(IMPORTS.classLoader(), configuration.getClassLoader());
         }
-        assertNull(Imports.analysisLoop(configuration));
+        assertNull(configuration.analysisLoop());
     }
 
     /**

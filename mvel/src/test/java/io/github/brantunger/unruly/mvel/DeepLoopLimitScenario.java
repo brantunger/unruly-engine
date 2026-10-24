@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.mvel;
 
-import org.mvel2.ParserConfiguration;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -37,7 +35,7 @@ final class DeepLoopLimitScenario {
     // call.
     private static int deepest;
     private static int target;
-    private static ParserConfiguration configuration;
+    private static Imports.SharedLookupConfiguration configuration;
     private static Error thrown;
 
     private DeepLoopLimitScenario() {
@@ -67,7 +65,7 @@ final class DeepLoopLimitScenario {
                     // Too deep for the calls, or for a walk of the stack before #1102: the next depth is tried.
                     continue;
                 }
-                long calls = Imports.classLoaderCalls(configuration);
+                long calls = configuration.classLoaderCalls();
                 stops.add(calls);
                 names.add(thrown.getClass().getSimpleName());
                 if (calls < CALLS) {
@@ -82,14 +80,14 @@ final class DeepLoopLimitScenario {
     }
 
     // A configuration for MVEL's analysis, or for a run, started, with the scenario's limits.
-    private static ParserConfiguration limited(boolean run) {
+    private static Imports.SharedLookupConfiguration limited(boolean run) {
         if (run) {
-            ParserConfiguration limited = IMPORTS.newRunConfiguration(CALLS, CALLS_PER_SITE);
-            Imports.startRun(limited);
+            Imports.SharedLookupConfiguration limited = IMPORTS.newRunConfiguration(CALLS, CALLS_PER_SITE);
+            limited.startRun();
             return limited;
         }
-        ParserConfiguration limited = IMPORTS.newConfiguration();
-        Imports.limitClassLoaderCalls(limited, CALLS, CALLS_PER_SITE);
+        Imports.SharedLookupConfiguration limited = IMPORTS.newConfiguration();
+        limited.limitClassLoaderCalls(CALLS, CALLS_PER_SITE);
         return limited;
     }
 

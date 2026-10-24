@@ -87,9 +87,10 @@ final class CallSites {
     private static final long PRIME = 0x9E37_79B9_7F4A_7C15L;
     // Where the gaps between walks start, the same for every pass and run, so a count can be repeated.
     private static final long FIRST_GAP_STATE = 0x2545_F491_4F6C_DD1DL;
-    // What tells the site of the call under way.
-    private static final LongSupplier WHOLE_STACK = CallSites::hashOfStack;
-    private static final LongSupplier TOP_AND_DEPTH = CallSites::hashOfTopAndDepth;
+    // What tells the site of the call under way, which Imports.LoopGuard counts a call at too. Created here, so
+    // preparing MVEL, which initializes this class, links them.
+    static final LongSupplier WHOLE_STACK = CallSites::hashOfStack;
+    static final LongSupplier TOP_AND_DEPTH = CallSites::hashOfTopAndDepth;
     // What the walks read the stack with: classes of their own, not lambdas or method references, which the JVM links
     // the first time each runs, and linking one makes a class. The first walk may be deep in a stack, where that could
     // overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads them.
@@ -157,7 +158,8 @@ final class CallSites {
     }
 
     /**
-     * Counts a call for the class loader.
+     * Counts a call for the class loader, at the site the stack tells. Only for tests: the engine counts each call
+     * through {@code Imports.LoopGuard}, which calls {@link #countedAt} itself, from as many frames up the stack.
      *
      * @return {@code true} if the call's site has now made more calls than it may, counted at every call, or more sites
      *         were walked than this count may keep: {@value #MAX_SITES}, unless a test gave it fewer
@@ -168,11 +170,12 @@ final class CallSites {
 
     /**
      * Counts a call for the class loader, from the site a function tells, which is asked only for a call that is
-     * walked. Only for tests, which give each call's site: {@link #counted()} reads it from the stack. If the function
-     * throws {@link StackOverflowError}, as a walk of the stack with no room does, or an {@link InternalError} with one
-     * in its cause chain and no {@link LinkageError} before it (see {@link Throwables#isOverflow}), as such a walk
-     * may on JDK 25 and 26, the walk is skipped: the calls it would have counted count at no site, and the next walk
-     * comes where it would have (#1102). Any other {@link InternalError} is thrown as it is, one around a
+     * walked: {@link #WHOLE_STACK} or {@link #TOP_AND_DEPTH}, as {@link #counted()} and {@code Imports.LoopGuard} read
+     * it from the stack, or, in tests, a function that gives each call's site. If the function throws
+     * {@link StackOverflowError}, as a walk of the stack with no room does, or an {@link InternalError} with one in its
+     * cause chain and no {@link LinkageError} before it (see {@link Throwables#isOverflow}), as such a walk may on JDK
+     * 25 and 26, the walk is skipped: the calls it would have counted count at no site, and the next walk comes where
+     * it would have (#1102). Any other {@link InternalError} is thrown as it is, one around a
      * {@link NoClassDefFoundError} an overflow caused too, which says a class was left unusable (#1116).
      *
      * @param site Tells the call's site

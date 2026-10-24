@@ -178,7 +178,8 @@ final class ExactNameClassLoader extends ClassLoader {
 
     // Whether the application's class loader serves the class file of every class it finds itself, as the JDK's
     // own and a plain URLClassLoader do (see Imports.servesEveryClassFile), so a name without one is refused before it
-    // is asked.
+    // is asked. Its accessor is named after it, as a record's is.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
     private final boolean classFileFirst;
 
     // The names of classes the application's class loader has loaded through this one, when it serves every class
@@ -252,6 +253,26 @@ final class ExactNameClassLoader extends ClassLoader {
         this.classFileFirst = classFileFirst;
         this.mostClasses = mostClasses;
         this.roots = roots;
+    }
+
+    /**
+     * Returns what this class loader tells the name of each class it loads, which records the first part of each such
+     * name, or the name of one with no package, while an expression compiles.
+     *
+     * @return The class name roots
+     */
+    ClassNameRoots classNameRoots() {
+        return roots;
+    }
+
+    /**
+     * Tells whether this class loader refuses a name the application's class loader serves no class file for, as for
+     * one that serves the class file of every class it finds itself (see {@link Imports#servesEveryClassFile}).
+     *
+     * @return {@code true} if a name is looked up as a class file before the application's class loader is asked
+     */
+    boolean classFileFirst() {
+        return classFileFirst;
     }
 
     /**
