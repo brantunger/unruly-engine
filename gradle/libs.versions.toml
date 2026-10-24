@@ -14,9 +14,9 @@ apiguardian-api = "org.apiguardian:apiguardian-api:1.1.2"
 checkstyle = { module = "com.puppycrawl.tools:checkstyle", version.ref = "checkstyle" }
 cyclonedx-plugin = "org.cyclonedx.bom:org.cyclonedx.bom.gradle.plugin:3.4.1"
 # Only the tests of the documented Jackson mix-ins use Jackson; no artifact depends on it.
-jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.3"
-jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3"
-jackson3-databind = "tools.jackson.core:jackson-databind:3.2.3"
+jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.4"
+jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.4"
+jackson3-databind = "tools.jackson.core:jackson-databind:3.2.4"
 jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 japicmp-plugin = "me.champeau.gradle.japicmp:me.champeau.gradle.japicmp.gradle.plugin:0.4.6"
 # Only the unpublished benchmarks project uses JMH; no artifact depends on it.
@@ -26,7 +26,7 @@ jspecify = "org.jspecify:jspecify:1.0.1"
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 module-info-plugin = "org.gradlex.extra-java-module-info:org.gradlex.extra-java-module-info.gradle.plugin:1.14.2"
-mvel2 = "org.mvel:mvel2:2.5.4.Final"
+mvel2 = "org.mvel:mvel2:2.6.0.Final"
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 slf4j-api = "org.slf4j:slf4j-api:2.0.20"
 slf4j-simple = "org.slf4j:slf4j-simple:2.0.20"
