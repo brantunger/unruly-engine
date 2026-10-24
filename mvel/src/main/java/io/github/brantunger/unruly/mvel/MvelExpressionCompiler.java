@@ -26,7 +26,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
     static final String LOGGER_NAME = "io.github.brantunger.unruly.engine";
 
     private final Imports imports;
-    private final FactNames factNames;
+    private final MvelFactNames factNames;
     // Every expression compiled, for warmUp(). Only load()'s thread compiles and warms up, so a plain list will do.
     private final List<MvelExpression> compiled = new ArrayList<>();
     // Every name the compiled expressions could read a fact by, for factNamesRead(), kept by load()'s thread too: a
@@ -42,7 +42,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      */
     MvelExpressionCompiler(Imports imports) {
         this.imports = imports;
-        this.factNames = new FactNames(imports);
+        this.factNames = new MvelFactNames(imports);
     }
 
     /**
@@ -90,9 +90,9 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
      *
      * <p>
      * An expression that imports names of its own is scanned on its own, even once {@link #namesRead} is forgotten,
-     * and the names it imports that it also names are rejected as facts' names (see {@link FactNames#inlineImported}),
-     * as MVEL reads each of them in it as the import. If it has a word too long to scan, every name it imports counts
-     * as named.
+     * and the names it imports that it also names are rejected as facts' names (see
+     * {@link MvelFactNames#inlineImported}), as MVEL reads each of them in it as the import. If it has a word too long
+     * to scan, every name it imports counts as named.
      * </p>
      *
      * @param source   The expression

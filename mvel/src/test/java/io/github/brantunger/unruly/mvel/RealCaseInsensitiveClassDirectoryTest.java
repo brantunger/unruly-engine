@@ -38,9 +38,9 @@ import static org.junit.jupiter.api.Assertions.*;
  *     <li>{@link ExactNameClassLoader#loadClass(String)}, for a bare fact name, which
  *     {@link CaseInsensitiveClassDirectoryTest} fakes. MVEL doesn't catch the error there, so without the loader the
  *     rule wouldn't compile;</li>
- *     <li>{@code FactNames.isClass}, for a fact name looked up in an imported package, which {@code FactNamesTest}
- *     fakes: the class file is found in another case, and only loading it tells the engine the name isn't a class
- *     after all;</li>
+ *     <li>{@code MvelFactNames.isClass}, for a fact name looked up in an imported package, which
+ *     {@code MvelFactNamesTest} fakes: the class file is found in another case, and only loading it tells the engine
+ *     the name isn't a class after all;</li>
  *     <li>{@code core.ImportResolver}, for an import string that only finds a class file in another case, which
  *     {@code core.UnloadableImportTest} fakes: it reads the message to tell this apart from a class that exists but
  *     can't be loaded.</li>

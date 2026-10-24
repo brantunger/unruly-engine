@@ -385,13 +385,13 @@ final class RunClasses {
     // Those are the streams' that a load uses, to sort its rules and to read their tags for its checksum (a failure's
     // description uses none, #1093, nor does saying which rules failed to compile, #1097), and MatchOps' kinds, which a
     // language's first load may be the first to use, as MVEL's does to check a name it looks up as a class's
-    // (ExactNameClassLoader.isBinaryName and inNestedLookup), ClassValue's, which caches an output's setters and a
-    // fact's properties, and those of the method handles that call them and convert a widened value,
-    // which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a load's first method
-    // reference to a compiler's method makes. None is the JDK's string concatenation's: the engine is compiled to build
-    // its strings without it (#965). A class that isn't there, as in a JDK release that has none of the name, is
-    // skipped, and in a native image none is named. The method handles' hidden classes, which the JDK makes when they
-    // are first needed, can't be named. Last, ExceptionInInitializerError, which no load or run uses,
+    // (ExactNameClassLoader.ClassLookup.isBinaryName and ExactNameClassLoader.inNestedLookup), ClassValue's, which
+    // caches an output's setters and a fact's properties, and those of the method handles that call them and convert a
+    // widened value, which differ between JDK releases: 21's, then 25's and later ones'. Then the method handle a
+    // load's first method reference to a compiler's method makes. None is the JDK's string concatenation's: the engine
+    // is compiled to build its strings without it (#965). A class that isn't there, as in a JDK release that has none
+    // of the name, is skipped, and in a native image none is named. The method handles' hidden classes, which the JDK
+    // makes when they are first needed, can't be named. Last, ExceptionInInitializerError, which no load or run uses,
     // but which HotSpot creates to record that a class's static initializer failed: a load whose first initialization
     // of a hidden class overflowed deep in a stack overflowed in its static initializer too, which left it unusable for
     // the life of the JVM, so that every class's static initializer that throws, anywhere in the JVM, was reported as

@@ -48,7 +48,7 @@ final class CalledCodeFailures {
     private static final String REFLECTION_PACKAGE = "jdk.internal.reflect.";
     // Where the engine creates the failures it throws, and where this language rejects a fact's name.
     private static final String ENGINE_PACKAGE = "io.github.brantunger.unruly.core.";
-    private static final String FACT_NAMES = FactNames.class.getName();
+    private static final String FACT_NAMES = MvelFactNames.class.getName();
     // MVEL wraps what the code threw in a few of its exceptions; a chain that loops back on itself never ends.
     private static final int MAX_DEPTH = 32;
 

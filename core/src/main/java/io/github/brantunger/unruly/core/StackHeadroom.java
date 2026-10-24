@@ -80,7 +80,7 @@ final class StackHeadroom {
      * {@code prepare()} initializes, of which MVEL's take most. Four times as many as the fewest that left nothing
      * behind when measured. It was measured with SLF4J not yet started and the JVM's first build preparing MVEL along
      * with the engine's classes, as a build whose builder names MVEL does: made from each of the last 900 depths of a
-     * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code FactNames} unusable, at 6 depths on
+     * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code MvelFactNames} unusable, at 6 depths on
      * JDK 21 and 2 on JDK 25, and 240 left nothing, on both, and twice on JDK 21; the engine's own classes were left
      * unusable by no check, even of 80 frames. The JVM's first build runs it while it is still interpreted, at about
      * 170 bytes a frame on x64, once for the engine's classes and, if it prepares a language, again for that: it
@@ -88,11 +88,11 @@ final class StackHeadroom {
      * load or {@code validate()} that first uses a language, as a load does with MVEL found with
      * {@link java.util.ServiceLoader} and not named, that prepares a language of a class no engine has prepared yet
      * runs it again, compiled if runs have made it hot, at about 50 bytes a frame, so it reserves about 48 KB:
-     * measured with it compiled at the first build, 640 frames left {@code FactNames} unusable at 29 of 1,500 depths,
-     * and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't swept
-     * on its own: it prepares the language alone, without the engine's classes the measured build initialized too.
-     * The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after them
-     * that, when the engine prepares the language, at {@code build()} or a first load, initializes no class with a
+     * measured with it compiled at the first build, 640 frames left {@code MvelFactNames} unusable at 29 of 1,500
+     * depths, and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't
+     * swept on its own: it prepares the language alone, without the engine's classes the measured build initialized
+     * too. The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after
+     * them that, when the engine prepares the language, at {@code build()} or a first load, initializes no class with a
      * static initializer that it hasn't, as MVEL's evaluation of a property read, two method calls, one with a literal
      * argument, a comparison with {@code null} and an assignment, and its compile of a call of a method the value
      * doesn't have, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow and
@@ -101,8 +101,8 @@ final class StackHeadroom {
      * the JDK's methods and MVEL's {@code prepare()} also initialized {@code BigInteger} and {@code BigDecimal}
      * (#1115), on JDK 21, 25 and 26, each time at the first depth whose check passed, in a new JVM, which found more
      * than the sweep above: the fewest from which every larger reserve measured left nothing behind were the same with
-     * them as without, 320 at a first build, interpreted, where 120 to 200 passed and 240 and 280 did not, and 720 at
-     * a first use, compiled, where 560 passed and 640 did not, as MVEL's own {@code FactNames} and
+     * them as without, 320 at a first build, interpreted, where 120 to 200 passed and 240 and 280 did not, and 720 at a
+     * first use, compiled, where 560 passed and 640 did not, as MVEL's own {@code MvelFactNames} and
      * {@code ErrorReporting} still need the most.
      */
     static final int INITIALIZING_FRAMES = 960;

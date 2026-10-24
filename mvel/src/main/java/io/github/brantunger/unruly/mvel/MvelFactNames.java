@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.language.MessageText;
 import org.mvel2.compiler.AbstractParser;
 
 import java.util.HashSet;
@@ -31,7 +30,7 @@ import java.util.stream.Collectors;
  *     in, as MVEL would read the fact in the class's place (see {@link ClassNameRoots})</li>
  * </ul>
  */
-final class FactNames {
+final class MvelFactNames {
 
     /**
      * How many names that aren't classes are remembered, because fact names can be unbounded (IDs, JSON keys) and
@@ -43,9 +42,9 @@ final class FactNames {
      * random eviction still finds most of them. Eviction doesn't weigh a name's length, so a long name can evict
      * many short ones to make room: one of {@value #MAX_CACHED_MISS_LENGTH} characters, into a cache whose characters
      * are all taken by names of 255, evicts 256 of them. A longer name isn't remembered, so no one name takes more than
-     * a sixteenth of what the cache may hold.
+     * a sixteenth of what the cache may hold. As many as the rule list's class loader remembers names of each kind.
      */
-    static final int MAX_CACHED_MISSES = 4096;
+    static final int MAX_CACHED_MISSES = ExactNameClassLoader.ClassLookup.MAX_REMEMBERED_NAMES;
 
     /**
      * The most characters (UTF-16 units), all names together, remembered as not being a class: as many as
@@ -58,10 +57,6 @@ final class FactNames {
      * {@link #MAX_CACHED_MISS_CHARS}, so at least sixteen names fill the cache.
      */
     static final int MAX_CACHED_MISS_LENGTH = MAX_CACHED_MISS_CHARS / 16;
-
-    // The least of a class name a message that also quotes a fact's name keeps room for: the fact's name gets the
-    // room first, but not all of it, so the class name is never the count alone.
-    private static final int MIN_CLASS_NAME_SHOWN = 100;
 
     private static final Set<String> RESERVED = reservedWords();
 
@@ -93,7 +88,7 @@ final class FactNames {
      *                    names of the classes found while the rule list compiled, and the names of those with no
      *                    package
      */
-    FactNames(Imports ruleImports) {
+    MvelFactNames(Imports ruleImports) {
         this(ruleImports, new SplittableRandom());
     }
 
@@ -106,7 +101,7 @@ final class FactNames {
      *                    package
      * @param evictions   Picks the name to evict when the cache is full; used only under a lock
      */
-    FactNames(Imports ruleImports, SplittableRandom evictions) {
+    MvelFactNames(Imports ruleImports, SplittableRandom evictions) {
         importedClassNames = ruleImports.classes().stream()
                 .map(Class::getSimpleName)
                 .collect(Collectors.toUnmodifiableSet());
@@ -145,15 +140,15 @@ final class FactNames {
             // The other way round: MVEL would read the fact where the rules mean the class. Checked first, so a name
             // that is also a class MVEL resolves gets this reason. The name is quoted twice, each within the room the
             // other leaves.
-            throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
-                    + "use a class whose package starts with '", name, "', and MVEL would read the fact in the "
-                    + "class's place"));
+            throw new IllegalArgumentException(MessageQuotes.quotedWithClass("'", name, "' cannot be used as a fact "
+                    + "name: the rules use a class whose package starts with '", name, "', and MVEL would read the "
+                    + "fact in the class's place"));
         }
         if (classNameRoots.containsWithoutPackage(name)) {
             // Likewise for a class with no package, whose whole name the fact has. Checked after the first parts, so
             // a name that is both gets the first part's reason.
-            throw new IllegalArgumentException(quotedWithClass("'", name, "' cannot be used as a fact name: the rules "
-                    + "use the class '", name, "', and MVEL would read the fact in the class's place"));
+            throw new IllegalArgumentException(MessageQuotes.quotedWithClass("'", name, "' cannot be used as a fact "
+                    + "name: the rules use the class '", name, "', and MVEL would read the fact in the class's place"));
         }
         if (RESERVED.contains(name) || importedClassNames.contains(name) || inlineImportedNames.contains(name)
                 || isPackageClass(name)) {
@@ -164,118 +159,14 @@ final class FactNames {
 
     /**
      * Makes the exception that rejects a fact name: the name quoted within the message (see
-     * {@link #quotedWithin(String, String, String)}), then {@code after}.
+     * {@link MessageQuotes#quotedWithin(String, String, String)}), then {@code after}.
      *
      * @param name  The rejected name
      * @param after What the message says after the name, from its closing quote on
      * @return The exception
      */
     private static IllegalArgumentException rejected(String name, String after) {
-        return new IllegalArgumentException(quotedWithin("'", name, after));
-    }
-
-    /**
-     * Writes a message that quotes a name within {@value MessageText#MAX_TEXT_LENGTH} characters, as
-     * {@link #quotedWithin(String, String, String, int)} does: a message MVEL throws when it rejects a fact name or an
-     * option, which the engine shortens and escapes when it reports it. A message that fits is reported whole, so a
-     * long name of characters that escape isn't cut inside an escape, and the count of what was left out counts the
-     * name's own characters. The message is longer than {@value MessageText#MAX_TEXT_LENGTH} characters, and the engine
-     * shortens it when it reports it, when the text around the name leaves less room than the count takes for a name
-     * that doesn't fit whole, or is itself longer than that for an empty name. A message that quotes a class's name
-     * too quotes both with {@link #quotedWithClass}, so the class's name is fitted as well.
-     *
-     * @param before What the message says before the name, up to its opening quote
-     * @param name   The name, not escaped
-     * @param after  What the message says after the name, from its closing quote on
-     * @return The message
-     */
-    static String quotedWithin(String before, String name, String after) {
-        return quotedWithin(before, name, after, MessageText.MAX_TEXT_LENGTH);
-    }
-
-    /**
-     * Writes a message that quotes a name: {@code before}, the name quoted within what the rest of the message leaves
-     * of {@code room} (see {@link MessageText#quoteWithin}), and {@code after}. When the name doesn't fit whole, and
-     * {@code before} and {@code after} leave less room than the count of what was left out takes (22 characters
-     * and the count's digits), the name is shown as that count alone and the message is longer than
-     * {@code room}: {@code quotedWithin("<", "a".repeat(50), ">", 12)} gives 26 characters. Nothing is thrown.
-     *
-     * @param before What the message says before the name, up to its opening quote
-     * @param name   The name, not escaped
-     * @param after  What the message says after the name, from its closing quote on
-     * @param room   The most characters the message may take
-     * @return The message
-     */
-    static String quotedWithin(String before, String name, String after, int room) {
-        return before + MessageText.quoteWithin(name, room - before.length() - after.length()) + after;
-    }
-
-    /**
-     * Writes a message that quotes a fact's name and a class's name within {@value MessageText#MAX_TEXT_LENGTH}
-     * characters, as {@link #quotedWithin(String, String, String)} quotes one name: {@code before}, the fact's name,
-     * {@code between}, the class's name and {@code after}, each name quoted within the room the rest leaves (see
-     * {@link MessageText#quoteWithin}). A class name can hold any character a class file allows, and be long, so it
-     * is escaped and shortened like any name. The fact's name, which is what the call that declared the fact can
-     * change, gets the room first, but the class's name keeps room for at least its first
-     * {@value #MIN_CLASS_NAME_SHOWN} characters, or up to 5 fewer, where raw text that reads as an escape, or a
-     * surrogate pair, would be cut (see {@link MessageText#escapeWithin(String, int, int)}), and gets what the fact's
-     * name leaves.
-     *
-     * @param before    What the message says before the fact's name
-     * @param name      The fact's name, not escaped
-     * @param between   What the message says between the two names
-     * @param className The class's name, not escaped
-     * @param after     What the message says after the class's name
-     * @return The message
-     */
-    static String quotedWithClass(String before, String name, String between, String className, String after) {
-        int room = MessageText.MAX_TEXT_LENGTH - before.length() - between.length() - after.length();
-        String least = MessageText.escapeWithin(className, MIN_CLASS_NAME_SHOWN, Integer.MAX_VALUE);
-        String quotedName = MessageText.quoteWithin(name, room - least.length());
-        return before + quotedName + between + MessageText.quoteWithin(className, room - quotedName.length()) + after;
-    }
-
-    /**
-     * Writes a message that lists names within {@value MessageText#MAX_TEXT_LENGTH} characters: {@code before}, then
-     * the names, each quoted as {@link MessageText#quote} quotes it, between single quotes and separated by
-     * {@code ", "}, as the engine lists names, such as {@code 'lodash', 'os.path'}. Names are listed whole, in order,
-     * until the next one doesn't fit; then {@code , and N more} for the rest, where N counts the names left out. The
-     * first name is always listed, quoted within the room the rest leaves (see {@link MessageText#quoteWithin}) if it
-     * doesn't fit whole.
-     *
-     * @param before What the message says before the first name's opening quote
-     * @param names  The names, not escaped; at least one
-     * @return The message
-     */
-    static String quotedAllWithin(String before, List<String> names) {
-        int room = MessageText.MAX_TEXT_LENGTH - before.length();
-        StringBuilder list = new StringBuilder();
-        int listed = 0;
-        while (listed < names.size()) {
-            String quoted = (listed == 0 ? "'" : ", '") + MessageText.quote(names.get(listed)) + "'";
-            if (list.length() + quoted.length() + andMore(names.size() - listed - 1).length() > room) {
-                break;
-            }
-            list.append(quoted);
-            listed++;
-        }
-        if (listed == 0) {
-            String rest = andMore(names.size() - 1);
-            list.append('\'').append(MessageText.quoteWithin(names.get(0), room - "''".length() - rest.length()))
-                    .append('\'');
-            listed = 1;
-        }
-        return before + list + andMore(names.size() - listed);
-    }
-
-    /**
-     * Says how many names a list left out.
-     *
-     * @param count How many names were left out
-     * @return {@code , and N more}, or an empty string if none were
-     */
-    private static String andMore(int count) {
-        return count == 0 ? "" : ", and " + count + " more";
+        return new IllegalArgumentException(MessageQuotes.quotedWithin("'", name, after));
     }
 
     private boolean isPackageClass(String name) {
@@ -372,11 +263,12 @@ final class FactNames {
      */
     private boolean isClass(String pkg, String name) {
         String className = pkg + '.' + name;
-        if (ExactNameClassLoader.refuses(className) || !mayBeClass(classLoader, className)) {
+        if (ExactNameClassLoader.ClassLookup.refuses(className)
+                || !ExactNameClassLoader.ClassLookup.mayBeClass(classLoader, className)) {
             return false;
         }
         try {
-            Class.forName(className, false, classLoader);
+            ExactNameClassLoader.ClassLookup.forName(className, false, classLoader);
             return true;
         } catch (ClassNotFoundException e) {
             return false;
@@ -390,35 +282,6 @@ final class FactNames {
             // LinkageError — reads as "not a class" rather than failing a run MVEL would have completed.
             return false;
         }
-    }
-
-    /**
-     * Tells whether a class loader may have a class by a name, without asking it to load one: whether it serves the
-     * class file, which keeps no lock object in a parallel-capable loader, as asking it to load the class would (see
-     * {@link #isClass}). In a native image, which serves no class file it wasn't configured to, and whose loaders keep
-     * no such lock, any name may be a class. A name this answers {@code true} for may still not be a class, such as
-     * {@code date} for {@code Date.class} in a class directory on a case-insensitive file system, so only loading it
-     * tells.
-     *
-     * @param loader     The class loader
-     * @param binaryName The class's binary name, such as {@code java.util.Map$Entry}
-     * @return {@code false} if the class loader has no class by that name
-     */
-    static boolean mayBeClass(ClassLoader loader, String binaryName) {
-        return inNativeImage() || loader.getResource(binaryName.replace('.', '/') + ".class") != null;
-    }
-
-    /**
-     * Tells whether this call is running in a native image, as GraalVM's own {@code ImageInfo.inImageRuntimeCode}
-     * does, without a dependency on its SDK. The property is {@code "runtime"} only in an image, and
-     * {@code "buildtime"} while one is being built, where class loading is an ordinary JVM's and the lock the class
-     * file lookup avoids is real, so the value is compared and not merely tested for. It is read on every call and
-     * never into a field: a field an image's build filled in would answer {@code "buildtime"} for the image's whole
-     * life. Only a name no cache knows gets this far: neither of this check's, nor, for a name in a rule, the rule
-     * list's own (see {@link Imports}).
-     */
-    private static boolean inNativeImage() {
-        return "runtime".equals(System.getProperty("org.graalvm.nativeimage.imagecode"));
     }
 
     // Read by char on purpose, unlike core.ImportResolver's check of a package name, which reads code points: MVEL

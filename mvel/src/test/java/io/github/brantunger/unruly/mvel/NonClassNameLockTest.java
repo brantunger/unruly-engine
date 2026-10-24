@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.ChildJvm;
+import io.github.brantunger.unruly.mvel.ExactNameClassLoader.ClassLookup;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -67,7 +68,7 @@ class NonClassNameLockTest {
         List<String> read = new ArrayList<>();
         for (String name : names) {
             expected.add(name + " " + name.codePoints().allMatch(c -> c == '.' || Character.isJavaIdentifierPart(c)));
-            read.add(name + " " + ExactNameClassLoader.isBinaryName(name));
+            read.add(name + " " + ClassLookup.isBinaryName(name));
         }
 
         assertEquals(expected, read);
@@ -132,7 +133,7 @@ class NonClassNameLockTest {
     @DisplayName("with the JDK's class loaders, a name with no class file is remembered, up to a bound and a length")
     void missesBounded() {
         ExactNameClassLoader loader = new ExactNameClassLoader(ClassLoader.getSystemClassLoader(), 2);
-        String longName = "a".repeat(ExactNameClassLoader.MAX_CACHED_MISS_LENGTH + 1);
+        String longName = "a".repeat(ClassLookup.MAX_REMEMBERED_NAME_LENGTH + 1);
 
         assertAll(
                 () -> assertThrows(ClassNotFoundException.class, () -> loader.loadClass(longName)),
@@ -142,7 +143,7 @@ class NonClassNameLockTest {
                 () -> assertThrows(ClassNotFoundException.class, () -> loader.loadClass("a.C")),
                 () -> assertThrows(ClassNotFoundException.class, () -> loader.loadClass("a.D")),
                 () -> assertEquals(2, loader.cachedMisses()),
-                () -> assertEquals(255, ExactNameClassLoader.MAX_CACHED_MISS_LENGTH));
+                () -> assertEquals(255, ClassLookup.MAX_REMEMBERED_NAME_LENGTH));
     }
 
     @Test
@@ -170,7 +171,7 @@ class NonClassNameLockTest {
     @DisplayName("a class file found, or found missing, is looked up once, when looked up first")
     void classFileLookedUpOnce() throws ClassNotFoundException {
         RecordingClassLoader parent = new RecordingClassLoader();
-        ExactNameClassLoader loader = new ExactNameClassLoader(parent, ExactNameClassLoader.MAX_CACHED_CLASSES, true);
+        ExactNameClassLoader loader = new ExactNameClassLoader(parent, ClassLookup.MAX_REMEMBERED_NAMES, true);
 
         assertEquals(String.class, loader.loadClass("java.lang.String"));
         assertEquals(String.class, loader.loadClass("java.lang.String"));
@@ -184,6 +185,6 @@ class NonClassNameLockTest {
     @Test
     @DisplayName("it remembers as many classes as the fact-name cache remembers misses")
     void cacheBoundIsFactNamesBound() {
-        assertEquals(FactNames.MAX_CACHED_MISSES, ExactNameClassLoader.MAX_CACHED_CLASSES);
+        assertEquals(MvelFactNames.MAX_CACHED_MISSES, ClassLookup.MAX_REMEMBERED_NAMES);
     }
 }

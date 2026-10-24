@@ -136,7 +136,7 @@ class PackageImportLockTest {
     @DisplayName("with the JDK's class loaders, a name too long for the rule list's class loader still reads as"
             + " a fact")
     void longNameStillAFact() {
-        String name = "z".repeat(ExactNameClassLoader.MAX_NAME_LENGTH);
+        String name = "z".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_LENGTH);
         RulesEngine<Map<String, Object>> engine = loaded(ClassLoader.getSystemClassLoader(),
                 rule(name + " == 1", "output.put('k', 1)"), "java.util");
 
@@ -146,7 +146,7 @@ class PackageImportLockTest {
     @Test
     @DisplayName("with the JDK's class loaders, new of a chain with too many parts still fails when it runs, as before")
     void longChainStillNotAClass() {
-        String chain = "a.".repeat(ExactNameClassLoader.MAX_NAME_PARTS - 1) + "a";
+        String chain = "a.".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_PARTS - 1) + "a";
         RulesEngine<Map<String, Object>> engine = loaded(ClassLoader.getSystemClassLoader(),
                 rule("true", "x = new " + chain + "();"), "java.util");
 

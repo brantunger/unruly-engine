@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.Throwables;
 import org.mvel2.MVEL;
+import org.mvel2.ParserConfiguration;
 
 /**
  * Reads the stack trace of an exception the module didn't create, such as one a class's static initializer or the
@@ -15,6 +16,17 @@ final class ExceptionReads {
 
     /** The package of MVEL's classes, taken from MVEL itself so that a relocated copy is matched too. */
     static final String MVEL_PACKAGE = MVEL.class.getPackageName() + ".";
+
+    /**
+     * The class loader of the MVEL running the rules: the one MVEL's {@code addPackageImport} loads a class with,
+     * through {@code Class.forName}, so {@link Imports#nullStaticField} looks the class up with it too; the context
+     * class loader while MVEL's optimizer sets up and while the warm-up runs (see {@link MvelExpression}); and the one
+     * {@link ExactNameClassLoader} takes a class in MVEL's package from first, when the JIT's class loader links an
+     * accessor against it.
+     */
+    // PMD asks for the context class loader instead, which is the one that may not see MVEL.
+    @SuppressWarnings("PMD.UseProperClassLoader")
+    static final ClassLoader MVEL_LOADER = ParserConfiguration.class.getClassLoader();
 
     private ExceptionReads() {
     }

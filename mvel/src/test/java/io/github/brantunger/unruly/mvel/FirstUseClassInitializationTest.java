@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * #945: MVEL's first load, run or failing load may be nested deep in another run's stack, and a
  * {@link StackOverflowError} inside a class's static initializer leaves the class unusable for the life of the JVM: a
- * first load that overflowed in this module's {@code FactNames} made every later MVEL engine fail, and a failing load
- * that overflowed in {@code MvelCompileErrors} made every later compile error report {@link NoClassDefFoundError}
+ * first load that overflowed in this module's {@code MvelFactNames} made every later MVEL engine fail, and a failing
+ * load that overflowed in {@code MvelCompileErrors} made every later compile error report {@link NoClassDefFoundError}
  * instead. So {@link MvelExpressionLanguage#prepare()}, which the engine calls when it builds an engine with MVEL,
  * initializes them, then evaluates a property read, a method call and a method call with a literal argument once each
  * through MVEL's public API, which loads classes MVEL evaluates them with ahead of a first run, so a first run deep in

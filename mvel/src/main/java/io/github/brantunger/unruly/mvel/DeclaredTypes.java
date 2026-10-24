@@ -63,12 +63,12 @@ final class DeclaredTypes {
         }
         for (Map.Entry<String, Class<?>> fact : declared.entrySet()) {
             if (isDynamic(fact.getValue())) {
-                throw new IllegalArgumentException(FactNames.quotedWithClass(CANT_APPLY + "fact '", fact.getKey(),
+                throw new IllegalArgumentException(MessageQuotes.quotedWithClass(CANT_APPLY + "fact '", fact.getKey(),
                         "' is declared as ", fact.getValue().getName(), ", whose members MVEL can't check"));
             }
         }
         if (isDynamic(context.outputType())) {
-            throw new IllegalArgumentException(FactNames.quotedWithin(CANT_APPLY + "the output type is ",
+            throw new IllegalArgumentException(MessageQuotes.quotedWithin(CANT_APPLY + "the output type is ",
                     context.outputType().getName(), ", and an action writes to the output; build the engine with "
                             + "outputType(...)"));
         }
@@ -90,7 +90,7 @@ final class DeclaredTypes {
     private static boolean strongTyping(Map<String, String> options) {
         for (String key : options.keySet()) {
             if (!STRONG_TYPING.equals(key)) {
-                throw new IllegalArgumentException(FactNames.quotedWithin("MVEL has no option '", key,
+                throw new IllegalArgumentException(MessageQuotes.quotedWithin("MVEL has no option '", key,
                         "'; its only option is " + STRONG_TYPING));
             }
         }
@@ -98,7 +98,7 @@ final class DeclaredTypes {
         return switch (value) {
             case "true" -> true;
             case "false" -> false;
-            default -> throw new IllegalArgumentException(FactNames.quotedWithin("MVEL's " + STRONG_TYPING
+            default -> throw new IllegalArgumentException(MessageQuotes.quotedWithin("MVEL's " + STRONG_TYPING
                     + " option must be true or false, but was '", value, "'"));
         };
     }

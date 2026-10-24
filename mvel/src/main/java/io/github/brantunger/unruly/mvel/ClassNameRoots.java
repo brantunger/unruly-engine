@@ -11,11 +11,11 @@ import java.util.function.Supplier;
 
 /**
  * The first part of the name of each class a rule list's expressions use, such as {@code java} for
- * {@code java.lang.Integer}, which {@link FactNames} rejects as a fact's name: MVEL would read a fact of that name in
- * the class's place. And the name of each class with no package they use, such as {@code Limits}, which
- * {@link FactNames} rejects as a fact's name for the same reason; a class nested in one, such as {@code Limits$Tier},
- * counts as the class it is nested in, {@code Limits}. The two are kept apart, so each is rejected with its own
- * reason.
+ * {@code java.lang.Integer}, which {@link MvelFactNames} rejects as a fact's name: MVEL would read a fact of that name
+ * in the class's place. And the name of each class with no package they use, such as {@code Limits}, which
+ * {@link MvelFactNames} rejects as a fact's name for the same reason; a class nested in one, such as
+ * {@code Limits$Tier}, counts as the class it is nested in, {@code Limits}. The two are kept apart, so each is rejected
+ * with its own reason.
  *
  * <p>
  * Only a class the rule list's {@link ExactNameClassLoader} loads while {@link #recordWhile} compiles an expression
@@ -26,7 +26,7 @@ import java.util.function.Supplier;
  * as the expression runs, such as one in the arguments of a call to a function the expression defines. A class MVEL
  * knows by its simple name without looking it up, such as {@code Integer}, or that the engine imports by itself, adds
  * nothing. Nor does any lookup made after the rule list's expressions compiled: the engine's own, such as
- * {@link FactNames}' check of a fact's name in each imported package, and those made while a later compiled copy is
+ * {@link MvelFactNames}' check of a fact's name in each imported package, and those made while a later compiled copy is
  * made or runs. So a name accepted once is accepted for the rule list's whole life. Each rule list has its own, so a
  * name one list's rules use as a class's package is still a fact's name in another.
  * </p>
@@ -98,9 +98,10 @@ final class ClassNameRoots {
      * follows a dot, with only whitespace or comments between, such as {@code b.c} in {@code f().b.c}, a property of
      * what comes before it, isn't looked up. Each name is looked up at most once, and none whose first part is
      * recorded already, and of each name only the parts the class loader would look up: at most
-     * {@value ExactNameClassLoader#MAX_NAME_PARTS} parts and {@value ExactNameClassLoader#MAX_NAME_LENGTH} characters.
-     * So the scan reads the text once, and looks up at most that many names for each name in it. A name that isn't a
-     * class, or one whose class can't be loaded, records nothing.
+     * {@value ExactNameClassLoader.ClassLookup#MAX_NAME_PARTS} parts and
+     * {@value ExactNameClassLoader.ClassLookup#MAX_NAME_LENGTH} characters. So the scan reads the text once, and looks
+     * up at most that many names for each name in it. A name that isn't a class, or one whose class can't be loaded,
+     * records nothing.
      * </p>
      *
      * @param text     The expression's text
@@ -158,13 +159,13 @@ final class ClassNameRoots {
         }
         // Where each name to look up ends, the first two parts first, then one more part each, while the class
         // loader would look the name up.
-        int[] ends = new int[ExactNameClassLoader.MAX_NAME_PARTS - 1];
+        int[] ends = new int[ExactNameClassLoader.ClassLookup.MAX_NAME_PARTS - 1];
         int count = 0;
         int from = firstDot;
         while (count < ends.length) {
             int next = name.indexOf('.', from + 1);
             int end = next < 0 ? name.length() : next;
-            if (end > ExactNameClassLoader.MAX_NAME_LENGTH) {
+            if (end > ExactNameClassLoader.ClassLookup.MAX_NAME_LENGTH) {
                 break;
             }
             ends[count] = end;

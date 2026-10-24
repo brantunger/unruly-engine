@@ -113,7 +113,7 @@ class RunTimeDefinedClassLimitTest {
     @DisplayName("the class is defined in the JDK's application class loader, with no class file")
     void definedWithoutClassFile() {
         assertAll(
-                () -> assertTrue(Imports.isJdkLoader(jdkLoader()), jdkLoader().toString()),
+                () -> assertTrue(ExactNameClassLoader.ClassLookup.isJdkLoader(jdkLoader()), jdkLoader().toString()),
                 () -> assertNull(jdkLoader().getResource(QUALIFIED.replace('.', '/') + ".class")));
     }
 

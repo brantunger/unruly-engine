@@ -61,7 +61,7 @@ class RunTimeDefinedClassTest {
         ClassLoader loader = RunTimeDefinedClassTest.class.getClassLoader();
 
         assertAll(
-                () -> assertTrue(Imports.isJdkLoader(loader), loader.toString()),
+                () -> assertTrue(ExactNameClassLoader.ClassLookup.isJdkLoader(loader), loader.toString()),
                 () -> assertNull(loader.getResource(
                         RunTimeDefinedClassTest.class.getPackageName().replace('.', '/') + "/" + NAME + ".class")));
     }

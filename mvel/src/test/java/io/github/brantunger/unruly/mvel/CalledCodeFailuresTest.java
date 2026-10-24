@@ -71,7 +71,7 @@ class CalledCodeFailuresTest {
         IllegalArgumentException rejected = new IllegalArgumentException("rejected by the engine");
         rejected.setStackTrace(frameIn("io.github.brantunger.unruly.core.AbstractRulesEngine"));
         IllegalArgumentException badName = new IllegalArgumentException("rejected by the language");
-        badName.setStackTrace(frameIn(FactNames.class.getName()));
+        badName.setStackTrace(frameIn(MvelFactNames.class.getName()));
 
         assertSame(rejected, CalledCodeFailures.thrownByCalledCode(fromMvel(rejected)));
         assertSame(badName, CalledCodeFailures.thrownByCalledCode(fromMvel(badName)));

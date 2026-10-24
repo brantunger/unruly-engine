@@ -300,7 +300,7 @@ class ClassNameRootFactTest {
     @DisplayName("the engine's own check of a name in an imported package adds nothing, even once more compiles")
     void checkOfANameAddsNothing() {
         Imports imports = new Imports(Set.of("java.util"), Set.of(), ClassNameRootFactTest.class.getClassLoader());
-        FactNames names = new FactNames(imports);
+        MvelFactNames names = new MvelFactNames(imports);
         MvelExpression.compile("java == 1", imports);
         names.check("java");
         // The check loads java.util.Date to find that the name is a class.

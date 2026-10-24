@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.mvel.ExactNameClassLoader.ClassLookup;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.ParserConfiguration;
@@ -40,7 +41,7 @@ class ClassFileLookupTest {
     }
 
     private static ParserConfiguration configuration(ResourceRecordingLoader loader, Set<String> packages) {
-        return new Imports(packages, Set.of(), new ExactNameClassLoader(loader, ExactNameClassLoader.MAX_CACHED_CLASSES,
+        return new Imports(packages, Set.of(), new ExactNameClassLoader(loader, ClassLookup.MAX_REMEMBERED_NAMES,
                 true), ConcurrentHashMap.newKeySet(), Map.of()).newConfiguration();
     }
 
@@ -112,11 +113,11 @@ class ClassFileLookupTest {
     @DisplayName("the rule list's class loader refuses a name as it looks it up")
     void refusalAsTheLoaderLooksUp() {
         assertAll(
-                () -> assertFalse(ExactNameClassLoader.refuses("a.".repeat(80) + "a"), "81 parts"),
-                () -> assertTrue(ExactNameClassLoader.refuses("a.".repeat(81) + "a"), "82 parts"),
-                () -> assertFalse(ExactNameClassLoader.refuses("a.".repeat(79) + "a$B"), "80 parts and a '$'"),
-                () -> assertTrue(ExactNameClassLoader.refuses("a.".repeat(80) + "a$B"), "81 parts and a '$'"),
-                () -> assertFalse(ExactNameClassLoader.refuses("a".repeat(2_000)), "2,000 characters"),
-                () -> assertTrue(ExactNameClassLoader.refuses("a".repeat(2_001)), "2,001 characters"));
+                () -> assertFalse(ClassLookup.refuses("a.".repeat(80) + "a"), "81 parts"),
+                () -> assertTrue(ClassLookup.refuses("a.".repeat(81) + "a"), "82 parts"),
+                () -> assertFalse(ClassLookup.refuses("a.".repeat(79) + "a$B"), "80 parts and a '$'"),
+                () -> assertTrue(ClassLookup.refuses("a.".repeat(80) + "a$B"), "81 parts and a '$'"),
+                () -> assertFalse(ClassLookup.refuses("a".repeat(2_000)), "2,000 characters"),
+                () -> assertTrue(ClassLookup.refuses("a".repeat(2_001)), "2,001 characters"));
     }
 }

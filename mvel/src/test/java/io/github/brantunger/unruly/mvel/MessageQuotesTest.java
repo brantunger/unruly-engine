@@ -13,8 +13,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * engine never cuts them again inside an escape or with a second count. The cut itself is MessageText's (#1152), and
  * MessageTextTest tests it; these cases are MVEL's own.
  */
-@DisplayName("FactNames shortens text to fit a room once it's escaped, counting the text's own characters")
-class FactNamesEscapeWithinTest {
+@DisplayName("the class loader's refusal of a name, and the messages MessageQuotes writes, are shortened to fit a room "
+        + "once escaped, counting the text's own characters")
+class MessageQuotesTest {
 
     // A backslash that doesn't start a whole escape: an escape cut in half, in text with no backslash of its own.
     private static final Pattern CUT_ESCAPE = Pattern.compile("\\\\(?!u[0-9a-f]{4}|[nrt])");
@@ -25,7 +26,7 @@ class FactNamesEscapeWithinTest {
     @Test
     @DisplayName("an escape the text already holds is kept whole or left out, and the count counts the text as given")
     void refusalNotCutInsideItsEscapes() {
-        ExactNameClassLoader loader = new ExactNameClassLoader(FactNamesEscapeWithinTest.class.getClassLoader());
+        ExactNameClassLoader loader = new ExactNameClassLoader(MessageQuotesTest.class.getClassLoader());
         String refusal = assertThrows(ClassNotFoundException.class,
                 () -> loader.loadClass("a" + "\u0001".repeat(199) + "a".repeat(1900))).getMessage();
         int room = MessageText.MAX_TEXT_LENGTH - "failed to compile at line 1, column 1: null".length()
@@ -48,13 +49,14 @@ class FactNamesEscapeWithinTest {
     @DisplayName("a message quotes a name within what the rest leaves, and a name that doesn't fit as the count alone "
             + "when the rest leaves too little room")
     void quotedWithinTheRest() {
-        assertEquals("<n\\nm>", FactNames.quotedWithin("<", "n\nm", ">", 6));
-        assertEquals("<a... (25 more characters)>", FactNames.quotedWithin("<", "abcdefghijklmnopqrstuvwxyz", ">", 27));
+        assertEquals("<n\\nm>", MessageQuotes.quotedWithin("<", "n\nm", ">", 6));
+        assertEquals("<a... (25 more characters)>",
+                MessageQuotes.quotedWithin("<", "abcdefghijklmnopqrstuvwxyz", ">", 27));
         // #875: the rest can leave less room than the count takes, or none at all, as a long class name after the name
         // does; an empty name, of which nothing is left out, is still quoted as empty.
-        assertEquals("<... (50 more characters)>", FactNames.quotedWithin("<", "a".repeat(50), ">", 12));
+        assertEquals("<... (50 more characters)>", MessageQuotes.quotedWithin("<", "a".repeat(50), ">", 12));
         String after = "x".repeat(MessageText.MAX_TEXT_LENGTH);
-        assertEquals("<... (3 more characters)" + after, FactNames.quotedWithin("<", "n\nm", after));
-        assertEquals("<" + after, FactNames.quotedWithin("<", "", after));
+        assertEquals("<... (3 more characters)" + after, MessageQuotes.quotedWithin("<", "n\nm", after));
+        assertEquals("<" + after, MessageQuotes.quotedWithin("<", "", after));
     }
 }
