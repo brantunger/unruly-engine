@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.1](https://github.com/brantunger/unruly-engine/compare/v2.33.0...v2.33.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* the MVEL fact-name check looks a class file up first only when the rule list's class loader does, so a fact named like a class an application's own loader defines with no class file is rejected, not hidden, and all three is-this-a-class lookups read any error but a VirtualMachineError as no class ([#1274](https://github.com/brantunger/unruly-engine/issues/1274)) ([21e3bf0](https://github.com/brantunger/unruly-engine/commit/21e3bf0084520ce447ae6a84dfa02080c3a184b2))
+
 ## [2.33.0](https://github.com/brantunger/unruly-engine/compare/v2.32.1...v2.33.0) (2026-10-18)
 
 
