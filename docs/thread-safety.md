@@ -275,8 +275,12 @@ strong typing, names it in full (`could not resolve class`); a package import sk
 Without strong typing, `new com.example.Gen()` uses the running thread's context class loader (above).
 
 While MVEL compiles, the context class loader is the engine's wrapper of that loader, so a static initializer
-can't find a run-time class through it either. Other loaders, such as Spring Boot's, are asked for every
-well-formed name but a `java.` one with no JDK class file.
+can't find a run-time class through it either.
+
+Other loaders, such as Spring Boot's, are asked for every well-formed name but a `java.` one with no JDK class file,
+and each name may leave a lock object in a parallel-capable one or, as it delegates, in its parents, the JDK's
+application loader included. The [fact-name check](languages/mvel-fact-names.md) asks them too, with the same `java.`
+exception, per fact name and imported package: a fact named like a class they define with no class file is rejected.
 
 With MVEL's JIT made the default again, a loader set around `run()` instead fails the rule, and closing the engine
 doesn't release the one `load()` captured: the JIT holds it; see

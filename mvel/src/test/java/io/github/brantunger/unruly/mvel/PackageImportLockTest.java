@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * JDK's own class loaders, the class file is looked up first, as it is for a fact's name, and a name without one is
  * never loaded, and so with a plain {@code URLClassLoader} (#1130). Any other class loader is asked as before, as it
  * may define a class it serves no class file for, except for a name in a {@code java.} package the JDK serves no class
- * file for.
+ * file for, and so is it for a fact's name (#1255).
  */
 @DisplayName("a name in a rule that isn't a class leaves no lock object in the JDK's class loaders (#701)")
 class PackageImportLockTest {

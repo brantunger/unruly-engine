@@ -260,15 +260,31 @@ class NestedClassImportTest {
         }
     }
 
+    // #1255: the error failed the load, where the fact-name check and MVEL's own lookups read it as no class.
     @Test
-    @DisplayName("another error from looking a nested class up that isn't a LinkageError fails the rule list (#951)")
+    @DisplayName("another error from looking a nested class up that isn't a LinkageError fails when it runs, as a"
+            + " class that isn't there (#1255)")
     void nestedClassOtherError() throws IOException {
         Error other = new Error("not the image's");
         try (ThrowingLoader loader = new ThrowingLoader(other)) {
             RuntimeException ex = assertThrows(RuntimeException.class,
                     () -> run(loader, "output.put('k', new Outer.Nested().v())", "app.exp.Outer"));
 
-            assertTrue(Stream.iterate((Throwable) ex, t -> t != null, Throwable::getCause).anyMatch(t -> t == other),
+            assertTrue(ex.getMessage().contains("could not resolve class: Outer.Nested"), ex.getMessage());
+            assertTrue(Stream.iterate((Throwable) ex, t -> t != null, Throwable::getCause).noneMatch(t -> t == other),
+                    ex.toString());
+        }
+    }
+
+    @Test
+    @DisplayName("an error from looking a nested class up that means the JVM itself is failing fails the load")
+    void nestedClassVirtualMachineError() throws IOException {
+        StackOverflowError overflow = new StackOverflowError("simulated");
+        try (ThrowingLoader loader = new ThrowingLoader(overflow)) {
+            RuntimeException ex = assertThrows(RuntimeException.class,
+                    () -> run(loader, "output.put('k', new Outer.Nested().v())", "app.exp.Outer"));
+
+            assertTrue(Stream.iterate((Throwable) ex, t -> t != null, Throwable::getCause).anyMatch(t -> t == overflow),
                     ex.toString());
         }
     }
