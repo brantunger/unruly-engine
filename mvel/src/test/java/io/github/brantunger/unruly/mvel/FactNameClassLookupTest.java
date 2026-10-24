@@ -66,7 +66,10 @@ class FactNameClassLookupTest {
 
         assertEquals(Map.of("hit", true), output);
         assertEquals(List.of(), loader.loadedClasses.stream().filter(name -> name.endsWith("line_1")).toList());
-        assertTrue(loader.resources.contains("java/util/line_1.class"));
+        // A class loader of the application's own may define a class it serves no class file for, so the check asks
+        // for the class as MVEL does (#1255), looking up no class file of its own; the rule list's class loader still
+        // refuses a name in a java. package the JDK serves no class file for before asking it (#1130).
+        assertFalse(loader.resources.contains("java/util/line_1.class"));
     }
 
     @Test

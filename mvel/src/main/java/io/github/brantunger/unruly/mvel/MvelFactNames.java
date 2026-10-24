@@ -68,6 +68,9 @@ final class MvelFactNames {
     private final ClassNameRoots classNameRoots;
     private final List<String> packages;
     private final ClassLoader classLoader;
+    // Whether the rule list's class loader refuses a name the application's serves no class file for, so a name's
+    // class file is looked up before it is loaded (see isClass).
+    private final boolean classFileFirst;
     // Names found to be classes in an imported package. Bounded by the classes in those packages.
     private final Set<String> packageClassNames = ConcurrentHashMap.newKeySet();
     private final Set<String> misses = ConcurrentHashMap.newKeySet();
@@ -108,6 +111,7 @@ final class MvelFactNames {
         classNameRoots = ruleImports.classNameRoots();
         packages = List.copyOf(ruleImports.packages());
         classLoader = ruleImports.classLoader();
+        classFileFirst = ruleImports.classLoader().classFileFirst();
         slots = new String[packages.isEmpty() ? 0 : MAX_CACHED_MISSES];
         this.evictions = evictions;
     }
@@ -240,17 +244,28 @@ final class MvelFactNames {
     }
 
     /**
-     * Tells whether {@code pkg.name} is a class, as MVEL's own lookup would. MVEL tries to load the class, but a
-     * parallel-capable class loader, as the JDK's own loaders are, keeps a lock object for every name it is asked to
-     * load, found or not, for as long as the loader lives. So the class file is looked up first, which keeps nothing
-     * beyond what the JDK may cache softly, and only a class file that exists is loaded.
+     * Tells whether {@code pkg.name} is a class, as MVEL's own lookup would: by loading it with the rule list's class
+     * loader, as MVEL does. A parallel-capable class loader, as the JDK's own loaders are, keeps a lock object for
+     * every name it is asked to load, found or not, for as long as the loader lives. So when the rule list's class
+     * loader looks a name's class file up before it asks the application's (see
+     * {@link ExactNameClassLoader#classFileFirst}), as for the JDK's own loaders and a plain {@code URLClassLoader},
+     * the class file is looked up here first too, which keeps nothing beyond what the JDK may cache softly, and only a
+     * class file that exists is loaded. Under any other application class loader, which may define a class it serves
+     * no class file for, the name is loaded straight away, as MVEL loads it, so a fact named like such a class is
+     * rejected rather than hidden by it (#1255). That may leave a lock object, for each name checked in each imported
+     * package bar a {@code java.} one, whose names the rule list's class loader always looks up as class files first,
+     * in the application's class loader or, as it delegates, in its parents, the JDK's own included. Unless the
+     * expressions' scan can't tell which names the rules read a fact by (see
+     * {@link MvelExpressionCompiler#factNamesRead}), the engine checks only those, which MVEL has mostly looked up in
+     * each package already while it compiled the rules, so a fact the rules don't read is never asked for.
      * Loading it also rules out a false match from a class directory on a case-insensitive file system, where
      * {@code date.class} finds {@code Date.class}. A class that exists but can't be loaded isn't a class here either:
      * MVEL's own lookup of a name in an imported package ignores every error, so it reads the name as the fact. That
      * is why every error the load throws is read as "not a class", bar a {@link VirtualMachineError}, where the JVM
-     * itself is failing and a fact name isn't what to report. A name the rule list's class loader refuses to look up,
-     * as too long or with too many parts (see {@link ExactNameClassLoader}), isn't a class either, as MVEL reads it,
-     * so its class file isn't looked up.
+     * itself is failing and a fact name isn't what to report (see {@link ExactNameClassLoader.ClassLookup#isNoClass}).
+     * A name the rule list's class loader refuses to look up, as too long or with too many parts (see
+     * {@link ExactNameClassLoader}), isn't a class either, as MVEL reads it, so it is neither loaded nor its class
+     * file looked up.
      *
      * <p>
      * In a native image the class file isn't looked up at all. An image serves no class file as a resource unless
@@ -264,24 +279,10 @@ final class MvelFactNames {
     private boolean isClass(String pkg, String name) {
         String className = pkg + '.' + name;
         if (ExactNameClassLoader.ClassLookup.refuses(className)
-                || !ExactNameClassLoader.ClassLookup.mayBeClass(classLoader, className)) {
+                || classFileFirst && !ExactNameClassLoader.ClassLookup.mayBeClass(classLoader, className)) {
             return false;
         }
-        try {
-            ExactNameClassLoader.ClassLookup.forName(className, false, classLoader);
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        } catch (VirtualMachineError e) {
-            // Not Throwables.isFatal, which reads a StackOverflowError as one rule's failure: every error the JVM
-            // itself raises propagates out of this lookup today, and a fact-name check is no place to start absorbing
-            // one.
-            throw e;
-        } catch (Error e) {
-            // One catch for the rest, so an image's MissingReflectionRegistrationError — an Error, but not a
-            // LinkageError — reads as "not a class" rather than failing a run MVEL would have completed.
-            return false;
-        }
+        return ExactNameClassLoader.ClassLookup.forNameOrNull(className, classLoader) != null;
     }
 
     // Read by char on purpose, unlike core.ImportResolver's check of a package name, which reads code points: MVEL

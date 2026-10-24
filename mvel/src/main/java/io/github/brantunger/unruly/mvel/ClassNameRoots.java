@@ -101,7 +101,8 @@ final class ClassNameRoots {
      * {@value ExactNameClassLoader.ClassLookup#MAX_NAME_PARTS} parts and
      * {@value ExactNameClassLoader.ClassLookup#MAX_NAME_LENGTH} characters. So the scan reads the text once, and looks
      * up at most that many names for each name in it. A name that isn't a class, or one whose class can't be loaded,
-     * records nothing.
+     * records nothing, whatever {@link Error} the class loader throws for it, bar a {@link VirtualMachineError},
+     * which is thrown (see {@link ExactNameClassLoader.ClassLookup#isNoClass}).
      * </p>
      *
      * @param text     The expression's text
@@ -186,9 +187,14 @@ final class ClassNameRoots {
         try {
             loader.loadClass(name);
             return true;
-        } catch (ClassNotFoundException | LinkageError e) {
-            // Not a class, or one that can't be loaded, which MVEL can't read either.
+        } catch (ClassNotFoundException e) {
             return false;
+        } catch (Error e) {
+            // One that can't be loaded, which MVEL can't read either, unless the JVM itself is failing.
+            if (ExactNameClassLoader.ClassLookup.isNoClass(e)) {
+                return false;
+            }
+            throw e;
         }
     }
 

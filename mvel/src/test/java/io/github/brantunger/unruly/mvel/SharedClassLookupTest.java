@@ -63,7 +63,9 @@ class SharedClassLookupTest {
 
         assertEquals(Map.of("low", 5, "high", 5), output);
         assertEquals(List.of(Map.of("low", 2, "high", 2)), innerOutputs);
-        assertEquals(1, Collections.frequency(loader.loadedClasses, "app.util.amount"));
+        // Once by the expressions, whose copies share what they found, and once by the check of the fact's name, which
+        // asks a class loader of the application's own for the class as MVEL does (#1255) and remembers the miss.
+        assertEquals(2, Collections.frequency(loader.loadedClasses, "app.util.amount"));
         // A name in a java. package the JDK serves no class file for isn't asked at all (#1130).
         assertEquals(0, Collections.frequency(loader.loadedClasses, "java.util.amount"));
     }

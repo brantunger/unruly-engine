@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SplittableRandom;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -78,8 +80,11 @@ class MvelFactNamesMissCacheTest {
     void evictsThePickedName() {
         long seed = 849;
         RecordingClassLoader loader = new RecordingClassLoader();
-        MvelFactNames names = new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), loader),
-                new SplittableRandom(seed));
+        // Around a loader that looks a name's class file up first, which the check then does too, so each name it
+        // looks up is one class file asked for (#1255).
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), new ExactNameClassLoader(
+                loader, ExactNameClassLoader.ClassLookup.MAX_REMEMBERED_NAMES, true), ConcurrentHashMap.newKeySet(),
+                Map.of()), new SplittableRandom(seed));
         // The slots as the cache keeps them, picked from with the same random numbers, so the test knows which names
         // each eviction takes: the last name moves into the slot of the name evicted.
         List<String> slots = new ArrayList<>();

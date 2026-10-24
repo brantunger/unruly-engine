@@ -121,7 +121,9 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 
 Your facts' and output object's classes must be reachable from that loader too; see
 [Class loaders](../thread-safety.md#-class-loaders). Looking up a name's class file leaves a soft cache entry in the
-JDK's loaders, freed under memory pressure: not a leak.
+JDK's loaders, freed under memory pressure: not a leak. A loader asked without a class file check, such as Spring
+Boot's (see [Class loaders](../thread-safety.md#-class-loaders)), may keep a lock object per name, as may its parents,
+the JDK's application loader included.
 
 An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
 lookup even if unused. It fails at the name: `Can't import '...': it has 65 dot-separated parts, and an import may

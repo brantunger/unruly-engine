@@ -293,4 +293,34 @@ class ClassNameRootsTest {
         assertFalse(roots.contains("app"));
         assertEquals(List.of("app.util.Main.MAX_VALUE", "app.util.Main", "app.util"), recording.names);
     }
+
+    // #1255: an error that is neither a LinkageError nor the JVM's own escaped the scan, and failed the load, where
+    // MVEL and the fact-name check read the name as no class.
+    @Test
+    @DisplayName("a class the loader throws any other error for records nothing, and shorter names are still looked"
+            + " up")
+    void scanOfAClassThatThrowsAnotherErrorRecordsNothing() {
+        RecordingLoader recording = new RecordingLoader(new OtherError());
+
+        ClassNameRoots roots = scanned("app.util.Main.MAX_VALUE", recording);
+
+        assertFalse(roots.contains("app"));
+        assertEquals(List.of("app.util.Main.MAX_VALUE", "app.util.Main", "app.util"), recording.names);
+    }
+
+    @Test
+    @DisplayName("an error that means the JVM itself is failing is thrown from the scan")
+    void scanPassesOnAVirtualMachineError() {
+        StackOverflowError overflow = new StackOverflowError("simulated");
+        RecordingLoader recording = new RecordingLoader(overflow);
+
+        assertSame(overflow, assertThrows(StackOverflowError.class, () -> scanned("app.util.Main.MAX_VALUE",
+                recording)));
+        assertEquals(List.of("app.util.Main.MAX_VALUE"), recording.names);
+    }
+
+    /** An error that is neither a {@link LinkageError} nor a {@link VirtualMachineError}. */
+    private static final class OtherError extends Error {
+        private static final long serialVersionUID = 1L;
+    }
 }

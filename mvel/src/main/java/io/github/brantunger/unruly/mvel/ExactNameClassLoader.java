@@ -396,12 +396,19 @@ final class ExactNameClassLoader extends ClassLoader {
 
     /**
      * What every lookup of a class by name in the rule list shares: the bounds on a name looked up, whether a name can
-     * be a class's binary name, whether a class loader serves the class file for one, and which class loaders serve
-     * the class file of every class they find. This loader, {@link MvelFactNames}' check of a fact's name in each
-     * imported package and the configuration's lookup of a name among the imports (see {@link Imports}) read them,
-     * each with its own checks, in its own order, and each with its own answer for what a load throws. It holds no
-     * state and has no static initializer, and links no lambda or method reference: every name MVEL looks up comes
-     * here, the JVM's first maybe deep in a stack (#1103).
+     * be a class's binary name, whether a class loader serves the class file for one, which class loaders serve the
+     * class file of every class they find, and what an error a load throws means. This loader, {@link MvelFactNames}'
+     * check of a fact's name in each imported package and the configuration's lookup of a name among the imports (see
+     * {@link Imports}) read them, each with its own checks, in its own order. The fact-name check, the lookup of a
+     * class nested in an imported one and {@link ClassNameRoots}' lookup of a class an expression names read an
+     * error a load throws alike (see {@link #isNoClass}); this loader passes on all but those it reports as a
+     * missing class. The fact-name check looks a name's class file up first only when this loader does (see
+     * {@link ExactNameClassLoader#classFileFirst}), so the two agree on what is a class (#1255): under any other
+     * application class loader it loads the name, which may leave a lock object, for each fact name checked and each
+     * imported package not in {@code java.}, in that class loader or, as it delegates, in its parents, the JDK's own
+     * included, as MVEL's own lookup of a name the rules read mostly leaves already. It holds no state and has no
+     * static initializer, and links no lambda or method reference: every name MVEL looks up comes here, the JVM's
+     * first maybe deep in a stack (#1103).
      */
     static final class ClassLookup {
 
@@ -516,17 +523,43 @@ final class ExactNameClassLoader extends ClassLoader {
         }
 
         /**
-         * Loads a class by its binary name, as {@link Class#forName(String, boolean, ClassLoader)} does. What it throws
-         * is the caller's to read.
+         * Loads a class by its binary name, without initializing it, as {@link Class#forName(String, boolean,
+         * ClassLoader)} does, or answers that there is none, as MVEL reads a name it can't load (see
+         * {@link #isNoClass}).
          *
-         * @param name       The class's binary name
-         * @param initialize Whether to initialize the class
-         * @param loader     The class loader to load it with
-         * @return The class
-         * @throws ClassNotFoundException if {@code loader} has no class by that name
+         * @param name   The class's binary name
+         * @param loader The class loader to load it with
+         * @return The class, or {@code null} if {@code loader} has no class by that name, or if loading it throws an
+         *         {@link Error} that isn't a {@link VirtualMachineError}
+         * @throws VirtualMachineError if loading the class throws one; a {@link RuntimeException} the class loader
+         *                             throws is passed on too
          */
-        static Class<?> forName(String name, boolean initialize, ClassLoader loader) throws ClassNotFoundException {
-            return Class.forName(name, initialize, loader);
+        static Class<?> forNameOrNull(String name, ClassLoader loader) {
+            try {
+                return Class.forName(name, false, loader);
+            } catch (ClassNotFoundException e) {
+                return null;
+            } catch (Error e) {
+                if (isNoClass(e)) {
+                    return null;
+                }
+                throw e;
+            }
+        }
+
+        /**
+         * Tells whether an error a class loader threw for a name means the name is no class, as MVEL reads it: every
+         * {@link Error} does, a {@link LinkageError} such as a class file for a name that differs in case or a class
+         * it needs that is missing, a native image's {@code MissingReflectionRegistrationError} or any other, bar a
+         * {@link VirtualMachineError}, such as a {@link StackOverflowError}, where the JVM itself is failing and what
+         * the name is isn't what to report. Not {@code Throwables.isFatal}, which reads a stack overflow as one
+         * rule's failure, so would read it here as no class.
+         *
+         * @param error What the class loader threw
+         * @return {@code false} if the error is to be passed on
+         */
+        static boolean isNoClass(Error error) {
+            return !(error instanceof VirtualMachineError);
         }
 
         /**

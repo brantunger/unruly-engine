@@ -12,8 +12,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.SplittableRandom;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -36,13 +38,23 @@ class MvelFactNamesTest {
     /** Seeds the names a full cache evicts, so a test counting lookups after evictions sees the same ones each run. */
     private static final long EVICTION_SEED = 763;
 
+    /**
+     * The imports of {@code packages}, with the rule list's class loader around {@code loader} looking a name's class
+     * file up first, as it does around the JDK's own class loaders and a plain {@code URLClassLoader}, neither of
+     * which a test can extend to record what it is asked for. Around any other, the check loads a name straight
+     * away, as MVEL does (#1255), so it looks no class file up of its own.
+     */
+    private static Imports classFileFirst(Set<String> packages, ClassLoader loader) {
+        return new Imports(packages, Set.of(), new ExactNameClassLoader(loader,
+                ExactNameClassLoader.ClassLookup.MAX_REMEMBERED_NAMES, true), ConcurrentHashMap.newKeySet(), Map.of());
+    }
+
     private static MvelFactNames javaUtil(ClassLoader loader) {
-        return new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), loader));
+        return new MvelFactNames(classFileFirst(Set.of("java.util"), loader));
     }
 
     private static MvelFactNames javaUtilSeeded(ClassLoader loader) {
-        return new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), loader),
-                new SplittableRandom(EVICTION_SEED));
+        return new MvelFactNames(classFileFirst(Set.of("java.util"), loader), new SplittableRandom(EVICTION_SEED));
     }
 
     /**
@@ -104,7 +116,8 @@ class MvelFactNamesTest {
             assertThrows(IllegalArgumentException.class, () -> names.check("Date"));
         }
 
-        assertEquals(1, Collections.frequency(loader.resources, "java/util/Date.class"));
+        // Once by the check and once by the rule list's class loader before it loads the class, both on the first.
+        assertEquals(2, Collections.frequency(loader.resources, "java/util/Date.class"));
     }
 
     // #763: a full cache was cleared, so one name more than it holds left 1 cached; now one is evicted, and 4,096 kept.
@@ -137,6 +150,7 @@ class MvelFactNamesTest {
         }
         names.check("newName");
         int before = loader.resources.size();
+        assertEquals(MvelFactNames.MAX_CACHED_MISSES + 1, before, "each name was looked up once, so a lookup counts");
 
         for (int i = 0; i < MvelFactNames.MAX_CACHED_MISSES; i++) {
             names.check("name" + i);
@@ -159,6 +173,7 @@ class MvelFactNamesTest {
             names.check("name" + i);
         }
         int before = loader.resources.size();
+        assertEquals(cycle, before, "each name was looked up once, so a lookup counts");
 
         for (int i = 0; i < cycle; i++) {
             names.check("name" + i);
@@ -253,7 +268,7 @@ class MvelFactNamesTest {
     @DisplayName("a name the class loader refuses as too long isn't looked up on the class path, and is still cached")
     void refusedNameNotLookedUp() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        MvelFactNames names = new MvelFactNames(new Imports(Set.of("java.util", "java.time"), Set.of(), loader));
+        MvelFactNames names = new MvelFactNames(classFileFirst(Set.of("java.util", "java.time"), loader));
         String refused = "x".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_LENGTH - "java.util.".length() + 1);
         String tooLongToCache = "x".repeat(LONGEST_CACHED_MISS + 1);
 
@@ -264,6 +279,8 @@ class MvelFactNamesTest {
         assertEquals(List.of(), loader.resources);
         assertEquals(1, names.cachedMisses(), "the refused name is cached, as a name looked up and not found is");
         assertEquals(refused.length(), names.cachedMissChars());
+        names.check("shortName");
+        assertEquals(2, loader.resources.size(), "a name not refused is looked up in each package, so lookups count");
     }
 
     @Test
@@ -335,15 +352,20 @@ class MvelFactNamesTest {
     @DisplayName("a class file the loader lists but then can't find isn't a class")
     void listedButNotLoadable(@TempDir Path dir) throws IOException {
         URL found = dir.toUri().toURL();
+        List<String> lookups = new ArrayList<>();
         ClassLoader resourcesOnly = new ClassLoader(null) {
             @Override
             public URL getResource(String name) {
+                lookups.add(name);
                 return name.equals("pkg/Ghost.class") ? found : null;
             }
         };
-        MvelFactNames names = new MvelFactNames(new Imports(Set.of("pkg"), Set.of(), resourcesOnly));
+        MvelFactNames names = new MvelFactNames(classFileFirst(Set.of("pkg"), resourcesOnly));
 
         assertDoesNotThrow(() -> names.check("Ghost"));
+
+        // Once by the check and once by the rule list's class loader, which then finds no class to load.
+        assertEquals(List.of("pkg/Ghost.class", "pkg/Ghost.class"), lookups, "the class file was listed");
     }
 
     @Test
@@ -351,11 +373,13 @@ class MvelFactNamesTest {
     void classFileWithWrongName(@TempDir Path dir) throws IOException {
         List<String> lookups = new ArrayList<>();
         MvelFactNames names = new MvelFactNames(
-                new Imports(Set.of("pkg"), Set.of(), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
+                classFileFirst(Set.of("pkg"), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
 
         assertDoesNotThrow(() -> names.check("date"));
 
-        assertEquals(List.of("pkg/date.class"), lookups, "the class file is what the lookup found, wrong name and all");
+        // Once by the check and once by the rule list's class loader before it loads the class.
+        assertEquals(List.of("pkg/date.class", "pkg/date.class"), lookups,
+                "the class file is what the lookup found, wrong name and all");
     }
 
     @Test
@@ -383,6 +407,21 @@ class MvelFactNamesTest {
         assertEquals(List.of("java/util/Date.class"), lookups, "only a run in an image skips the lookup");
     }
 
+    // #1255: with a class loader of the application's own, the check looked the class file up first as it does with
+    // the JDK's, so it passed a fact MVEL then hid behind java.util.Date, which that loader loads without one.
+    @Test
+    @DisplayName("while an image is being built, a class loader of the application's own is asked for the class as"
+            + " MVEL asks it, with no class file looked up first")
+    void imageBuildTimeOtherLoaderLoadsTheClass() {
+        List<String> lookups = new ArrayList<>();
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), servesNoClassFile(lookups)));
+
+        withImageCode("buildtime", () -> assertThrows(IllegalArgumentException.class, () -> names.check("Date"),
+                "the loader loads java.util.Date as MVEL does, so a fact named Date is rejected"));
+
+        assertEquals(List.of(), lookups, "the check looks no class file up, and the JDK serves java.util's");
+    }
+
     @Test
     @DisplayName("in a native image a name that differs in case is ruled out by the load, with no class file looked up")
     void classFileWithWrongNameInImage(@TempDir Path dir) throws IOException {
@@ -390,7 +429,7 @@ class MvelFactNamesTest {
         // and stay protected from it. The same loader as the test above, so the two answers are comparable.
         List<String> lookups = new ArrayList<>();
         MvelFactNames names = new MvelFactNames(
-                new Imports(Set.of("pkg"), Set.of(), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
+                classFileFirst(Set.of("pkg"), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
 
         withImageCode("runtime", () -> assertDoesNotThrow(() -> names.check("date")));
 
@@ -399,14 +438,9 @@ class MvelFactNamesTest {
 
     @Test
     @DisplayName("a name the loader refuses with an error that isn't a linkage error isn't a class")
-    void unregisteredClassIsntAClass(@TempDir Path dir) throws IOException {
-        URL found = dir.toUri().toURL();
+    void unregisteredClassIsntAClass() {
+        // A class loader of the application's own, so the check asks it for the class with no class file looked up.
         ClassLoader unregistered = new ClassLoader(null) {
-            @Override
-            public URL getResource(String name) {
-                return name.equals("pkg/Thing.class") ? found : null;
-            }
-
             @Override
             protected Class<?> loadClass(String name, boolean resolve) {
                 throw new NotRegisteredError(name + " isn't registered for reflection");
@@ -420,17 +454,12 @@ class MvelFactNamesTest {
 
     @Test
     @DisplayName("the check doesn't read an error that means the JVM itself is failing as a name that isn't a class")
-    void virtualMachineErrorIsRethrown(@TempDir Path dir) throws IOException {
+    void virtualMachineErrorIsRethrown() {
         // What the check itself does, not what a caller of the engine sees: AbstractRulesEngine catches what escapes
         // a fact-name check, and only Failures.fatalError — which passes a StackOverflowError over — is rethrown, so
-        // a caller reads an IllegalArgumentException naming the fact instead.
-        URL found = dir.toUri().toURL();
+        // a caller reads an IllegalArgumentException naming the fact instead. A class loader of the application's own,
+        // so the check asks it for the class with no class file looked up.
         ClassLoader failing = new ClassLoader(null) {
-            @Override
-            public URL getResource(String name) {
-                return name.equals("pkg/Thing.class") ? found : null;
-            }
-
             @Override
             protected Class<?> loadClass(String name, boolean resolve) {
                 throw new StackOverflowError("simulated");

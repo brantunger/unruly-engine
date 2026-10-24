@@ -206,7 +206,10 @@ skipped, and the next public supertype that declares the method, or else the cla
 method called; see [Gotchas](#-gotchas).
 
 An image initializes no class by name. The engine knows the error by its class name,
-`org.graalvm.nativeimage.MissingReflectionRegistrationError`, and handles any other error as it did before.
+`org.graalvm.nativeimage.MissingReflectionRegistrationError`, and handles any other error as on the JVM. The MVEL
+language's own three checks of whether a name is a class, for a fact name, a dotted name in a rule's text such as
+`java.lang.Integer.MAX_VALUE`, and a nested class such as `Outer.Nested`, read this error, and any other the class
+loader throws but a `VirtualMachineError`, as "not a class".
 
 To list every lookup that would throw, without stopping the run, add `-H:MissingRegistrationReportingMode=Warn` to
 the build. Built unscoped that way, the sample printed each site, and its run still passed.
