@@ -5,8 +5,10 @@
 # second set AgainAfterSeconds later tells a hang from slowness: threads that haven't moved are stuck. Then it kills
 # the JVMs, so gradlew returns, the step fails on its own, and the upload steps that follow can save the files.
 #
-# Why: a job that only hits its 20-minute timeout leaves nothing behind. Three windows-latest jobs did (2026-10-14,
-# 2026-10-17 twice): each sat in Build & Test until GitHub cancelled it, and none ran its upload steps or kept a log.
+# Why: a job that only hits its 20-minute timeout leaves nothing behind. Four windows-latest jobs did before this
+# watchdog (2026-10-14, 2026-10-15, 2026-10-17 twice): each sat in Build & Test until GitHub cancelled it, and none ran
+# its upload steps or kept a log. Two more did with it (2026-10-18, 2026-10-24): there the runner itself had stopped,
+# which is why windows-heartbeat.ps1 posts what it sees while the VM still runs (docs/contributing/windows-ci-hangs.md).
 #
 # ProcessId limits it to the JVMs given, for a trial beside other JVMs; several pids bind only when called in-process.
 param(

@@ -1,11 +1,11 @@
 # 🐕 Windows CI hangs
 
-Why the `windows-latest` Build & Test step runs under a watchdog, what the watchdog writes to `build/reports/hang/`
-when the build runs long, and how to read those files.
+Why the `windows-latest` Build & Test step runs under a watchdog and a heartbeat, what the watchdog writes to
+`build/reports/hang/` and the heartbeat posts to a check run, and how to read both.
 
 **Who it's for:** a contributor whose Windows CI job failed at 15 to 17 minutes, or timed out at 20.
-**You'll be able to:** find the thread dumps in the job's artifact, tell a stuck thread from a slow one, and tell a
-JVM hang from a stalled runner.
+**You'll be able to:** find the thread dumps in the job's artifact, read the heartbeat of a job that left nothing
+else, tell a stuck thread from a slow one, and tell a JVM hang from a stalled runner.
 **Before you start:** [Build and gates](build-and-gates.md#-what-build-runs), for the test timeouts the watchdog
 backs up, and [its CI section](build-and-gates.md#-ci) for the jobs and artifacts.
 
@@ -14,6 +14,7 @@ backs up, and [its CI section](build-and-gates.md#-ci) for the jobs and artifact
 - [Why a watchdog](#-why-a-watchdog)
 - [What happens at 14 minutes](#-what-happens-at-14-minutes)
 - [Reading the two rounds](#-reading-the-two-rounds)
+- [The heartbeat](#-the-heartbeat)
 - [Questions you might not think to ask](#-questions-you-might-not-think-to-ask)
 - [Reference](#-reference)
 
@@ -21,16 +22,16 @@ backs up, and [its CI section](build-and-gates.md#-ci) for the jobs and artifact
 
 ## 🧭 Why a watchdog
 
-Three `windows-latest` JDK 21 jobs (2026-10-14, and twice on 2026-10-17) sat in Build & Test until the `build` job's
-20-minute `timeout-minutes`. GitHub then couldn't end the step within its five-minute grace, so each job was cancelled
-at 25 minutes with no log kept and no upload step run: nothing said what had hung.
+Four `windows-latest` JDK 21 jobs (2026-10-14, 2026-10-15, and twice on 2026-10-17) sat in Build & Test until the
+job's 20-minute `timeout-minutes`. GitHub then couldn't end the step within its five-minute grace, so each job
+was cancelled at 25 minutes with no log kept and no upload step run: nothing said what had hung.
 
-A healthy Windows step takes 6 to 12.4 minutes (96 jobs). The Gradle `test` timeout of 10 minutes and the classes'
-`@Timeout`s would have failed a plain test hang, with logs, by about 15 minutes, so something those timeouts can't
-reach was holding the step.
+A healthy Windows step takes 5.8 to 12.4 minutes (146 jobs from 2026-10-10 to 2026-10-24). The Gradle `test`
+timeout of 10 minutes and the classes' `@Timeout`s would have failed a plain test hang, with logs, by about 15
+minutes, so something those timeouts can't reach was holding the step.
 
-So on `windows-latest`, and only there, `.github/workflows/ci.yml` runs Build & Test with
-`.github/scripts/windows-hang-dump.ps1` started beside `./gradlew`, and stops it when `gradlew` returns. The step
+So on `windows-latest`, and only there, the `build-windows` job in `.github/workflows/ci.yml` runs Build & Test
+with `.github/scripts/windows-hang-dump.ps1` started beside `./gradlew`, and stops it when `gradlew` returns. The step
 also carries `timeout-minutes: 17` as a second net: if the watchdog can't end the step, the runner fails it at 17
 minutes and still runs the upload steps. `ubuntu-latest` and `macos-latest`, which never stalled, run the plain step.
 
@@ -51,6 +52,10 @@ artifact holds the files written so far.
 
 A watchdog that can't end the step is overtaken by the 17-minute step timeout, which still uploads. A job that
 reaches 20 minutes with nothing uploaded had no JVM to blame.
+
+Both stalls since the watchdog landed (2026-10-18 and 2026-10-24) were of that kind: the step outlived its own
+17-minute timeout, which a working runner enforces, so the runner had stopped and the dumps went with the VM. The
+heartbeat is for that case.
 
 ## ⏳ What happens at 14 minutes
 
@@ -122,6 +127,44 @@ dump ends with a `Found one Java-level deadlock` section when the JVM detects on
 > `pwsh -File`, `-ProcessId 1234,5678` binds as the single pid `12345678`, so it finds no JVM and writes `0 JVM(s)`.
 > Several pids bind only in-process: `& .github/scripts/windows-hang-dump.ps1 -ProcessId 1234,5678 ...`.
 
+## 💓 The heartbeat
+
+A stalled runner leaves no log, no upload and no file, so only what leaves the VM while it still runs survives. The
+same step starts `.github/scripts/windows-heartbeat.ps1` just before the watchdog. It creates a check run named
+**Windows heartbeat** on the commit (a pull request's head commit).
+
+About every 60 seconds it adds a line: the time and time elapsed, free memory, commit charge against its limit, CPU,
+each disk's queue and idle time, the `java` processes and their memory, the newest JUnit XML and when it was written,
+and the five processes with the most CPU time. The watchdog's `*-processes.txt` follow once written. The check run
+keeps the newest 120 lines, 65,000 characters at most.
+
+When `gradlew` returns, the step's `finally` creates the heartbeat's stop file and waits up to 30 seconds. The
+heartbeat usually sees it within half a second, adds a last line and marks the check run **neutral**: about ten lines
+on a healthy build. It's evidence, never one of the [required checks](build-and-gates.md#-ci).
+
+A check run left **in progress** was never stopped by the `finally`. After a stall, its last line is the last minute
+the VM answered, and the lines before it show the slope: free memory falling, a disk queue growing, the newest JUnit
+result standing still. Lines past 17 minutes mean the VM still ran while the runner had stopped.
+
+Open it from the commit's checks, or with the GitHub CLI. Each title names its run and attempt, and `filter=all`
+keeps a re-run's heartbeat from hiding the first attempt's:
+
+```bash
+gh api -X GET repos/brantunger/unruly-engine/commits/<sha>/check-runs \
+  -f check_name='Windows heartbeat' -f filter=all --jq '.check_runs[] | .output.title, .output.text'
+```
+
+Read its state with the job's:
+
+| Heartbeat | Job | What happened |
+| --- | --- | --- |
+| Neutral | Passed or failed | The step's `finally` stopped it; the job's log has the rest |
+| Neutral | Cancelled at 25 minutes, no log | The step reached its `finally`, but the runner didn't end the job: the VM was alive |
+| In progress | Cancelled at 25 minutes, no log, nothing uploaded | The runner or its VM stalled |
+| In progress | Failed at 17 minutes, or cancelled by a newer push | The runner ended the step, maybe before its `finally` ran |
+| In progress | Passed | The last post may have outlasted the step's 30-second wait; the printed log doesn't end with `stopped` |
+| None | Any | See [the question below](#theres-no-windows-heartbeat-on-the-commit-did-it-break) |
+
 ## ❓ Questions you might not think to ask
 
 ### The artifact has no `hang/` directory. Was the watchdog broken?
@@ -137,14 +180,21 @@ Read the process list and memory line in that file: the runner itself is the sus
 ### The job hit 20 minutes again and uploaded nothing. Didn't the watchdog run?
 
 Then neither the watchdog at 14 minutes nor the step timeout at 17 could act: the runner, or the VM under it, had
-stalled. The diagnosis that led to the watchdog named memory pressure as the plausible, unmeasured cause: nothing
-in the repository sets `maxHeapSize` on the test tasks, `maxParallelForks` or `org.gradle.jvmargs`. Capping those
-on Windows is the next step.
+stalled. Read its [heartbeat](#-the-heartbeat). Nothing sets `maxHeapSize` on the test tasks,
+`maxParallelForks`, `org.gradle.jvmargs`, or an `-Xmx` for the child JVMs the tests launch: cap them on Windows if
+the heartbeat shows memory pressure.
 
 ### Does the watchdog run on pull requests, or only on `main`?
 
-On every `windows-latest` JDK 21 Build & Test step, so on both. A docs-only pull request skips the build, and a
-release pull request runs only the `ubuntu-latest` leg, so neither runs it.
+On both: it's in every `build-windows` job's Build & Test step. Docs-only and release pull requests skip
+`build-windows`, so neither runs it.
+
+### There's no Windows heartbeat on the commit. Did it break?
+
+Not when the run had no `build-windows` job, as on a docs-only or release pull request. On a fork's pull request
+GitHub refuses its one `POST check-runs`, so it creates no check run and only writes its lines to `heartbeat.log`,
+which the step prints. One that couldn't start leaves `The heartbeat didn't start` in the step's log. It never fails
+the step.
 
 ### Can the watchdog fail a healthy build?
 
@@ -152,6 +202,20 @@ Only one still running when the kill comes: about 15 minutes in when every `jcmd
 at the latest. A step that finishes between 14 minutes and then passes, and its artifact holds the rounds written
 before `gradlew` returned: read them. The longest successful Windows step was 12.4 minutes, so a step that slows
 past 14 is a change worth a dump of its own.
+
+### Why does `build-windows` have `checks: write`?
+
+For the heartbeat alone: its check run needs it. The Windows JDK 21 leg is its own job, `build-windows` (check name
+`build (windows-latest, 21)`), so that no other job holds the permission. The heartbeat runs inside Build & Test
+because a process a step starts may be killed when the step ends.
+
+The cost: a check run made with the job's token comes from the GitHub Actions app, the source the
+[ruleset](build-and-gates.md#-ci) requires for `ci-result` and `pr-title`. So code running in `build-windows`,
+Gradle's plugins, the dependencies and the tests among them, could create a passing required check on any commit of
+the repository while the job runs. Which of two same-name check runs GitHub judges isn't known.
+
+That code still can't push, approve or merge. Pushes to `main` and pull requests from this repository or from
+Dependabot get that token; a fork's pull request gets a read-only one.
 
 ## 📋 Reference
 
@@ -174,5 +238,17 @@ The files of a round, `first-` or `second-`:
 | `<round>-jvm-<pid>-threads.txt` | `jcmd <pid> Thread.print -l`: every thread's stack and locks, or `jcmd didn't answer in 45 s` |
 | `*.err` | The `jcmd` call's standard error; empty when it answered |
 
-The timings: watchdog at 14 minutes, each round at most 45 seconds, 60 seconds between rounds, kill at 15 to 16:35,
-step timeout 17 minutes, job timeout 20 minutes.
+The heartbeat's parameters, in `.github/scripts/windows-heartbeat.ps1`. CI passes none; outside CI, pass `-Stop` and
+`-Log`:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `-IntervalSeconds` | `60` | Seconds of waiting after each line is posted |
+| `-MaxMinutes` | `30` | Stops on its own after this long, marking the check run neutral, saying so; a whole number |
+| `-Stop` | `$RUNNER_TEMP/heartbeat.stop` | Stops, marking the check run neutral, once this file exists |
+| `-Log` | `$RUNNER_TEMP/heartbeat.log` | Where every line and any failed API call go |
+| `-HangDir` | `build/reports/hang` | Where it looks for the watchdog's `*-processes.txt` |
+| `-Token`, `-Repository`, `-Sha`, `-ApiUrl` | `GH_TOKEN`, `GITHUB_REPOSITORY`, `HEARTBEAT_SHA`, `GITHUB_API_URL` | Where it posts; without a token it posts nothing |
+
+The timings: heartbeat from the step's start, about every 60 seconds; watchdog at 14 minutes, each round at most 45
+seconds, 60 seconds between rounds, kill at 15 to 16:35; step timeout 17 minutes, job timeout 20 minutes, cancel at 25.

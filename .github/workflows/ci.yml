@@ -19,9 +19,10 @@ concurrency:
 
 jobs:
   # Sorts a pull request into a scope: docs (documentation only), release (only what a release-please pull request
-  # changes) or code. The build and native-image jobs skip a docs pull request; a release pull request runs one build
-  # leg, ubuntu-latest on JDK 21 with the coverage gate, and skips native-image; docs-and-hygiene checks every pull
-  # request. A push's run always runs everything, so main keeps its caches and its JDK 21 legs run the coverage gate.
+  # changes) or code. The build, build-windows and native-image jobs skip a docs pull request; a release pull request
+  # runs one build leg, ubuntu-latest on JDK 21 with the coverage gate, and skips build-windows and native-image;
+  # docs-and-hygiene checks every pull request. A push's run always runs everything, so main keeps its caches and its
+  # JDK 21 legs run the coverage gate.
   changes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -78,7 +79,8 @@ jobs:
       # The full gate runs on JDK 21 on each OS: the module-path applications and the child JVMs the tests launch
       # depend on the OS, and Windows's and macOS's file systems are case-insensitive, so the tests that look a
       # compiled class up in another case for real run there, and skip on ubuntu-latest, where fakes cover them.
-      # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25 and 26, on Linux only.
+      # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25 and 26, on Linux only. The
+      # windows-latest leg is its own job, build-windows below, because only it may write checks.
       #
       # A release pull request runs only the ubuntu-latest JDK 21 leg: it changes a version and the changelog, and the
       # merge's push runs every leg. A job-level if: can't read matrix, so the matrix itself is picked here, from two
@@ -88,10 +90,12 @@ jobs:
       matrix: >-
         ${{ fromJSON(needs.changes.outputs.scope == 'release'
         && '{"os": ["ubuntu-latest"], "java-version": ["21"]}'
-        || '{"os": ["ubuntu-latest", "windows-latest", "macos-latest"], "java-version": ["21"],
+        || '{"os": ["ubuntu-latest", "macos-latest"], "java-version": ["21"],
         "include": [{"os": "ubuntu-latest", "java-version": "25"}, {"os": "ubuntu-latest", "java-version": "26"}]}') }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Anchored, as is the API compatibility report's path list below: build-windows uses both by alias.
+      - &checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -133,8 +137,7 @@ jobs:
 
       # `build` runs `check`: Checkstyle, PMD, the 100% JaCoCo gate, the API compatibility check of every artifact,
       # the Javadoc site and each project's Javadoc, so a broken doc comment fails here, and the tests, including the
-      # applications ModulePathTest runs on the module path. On Windows the default shell, pwsh, resolves ./gradlew
-      # to gradlew.bat.
+      # applications ModulePathTest runs on the module path.
       #
       # -PapiCheck.refresh looks the API baseline, the newest release, up again. Without it, the version lookup in the
       # Gradle cache that setup-gradle restores can be up to a day old, so a leg could compare with an older release.
@@ -142,31 +145,8 @@ jobs:
       # so it loses nothing. The steps on JDK 25 and 26 and the native-image job don't run the check, so they don't need
       # the refresh.
       - name: Build & Test
-        if: matrix.java-version == '21' && matrix.os != 'windows-latest'
+        if: matrix.java-version == '21'
         run: ./gradlew build jacocoTestReport "-PapiCheck.refresh"
-
-      # The same build on Windows, under a watchdog. Three windows-latest jobs (2026-10-14, 2026-10-17 twice) sat in
-      # this step until the job's 20-minute timeout, and GitHub couldn't end the step within its five-minute grace,
-      # so the job kept no log and ran no upload step: nothing says what hung. The successful step takes 6 to 12.4
-      # minutes (96 jobs). At 14 minutes the watchdog (.github/scripts/windows-hang-dump.ps1) writes a thread dump of
-      # every JVM to build/reports/hang/, a second one a minute later, and kills them, so gradlew returns, the step
-      # fails on its own and Upload Coverage Report saves the dumps. The step's timeout is the second net, for a
-      # watchdog that can't end the step: the runner then fails the step and still runs the uploads (actions/runner
-      # StepsRunner.cs, "has timed out after"). A job that reaches 20 minutes again, with nothing uploaded, had no
-      # JVM to blame: the runner or its VM stalled. pwsh is already the default shell on windows-latest; naming it
-      # keeps actionlint, which can't tell the OS from a matrix runs-on, from running shellcheck on the block as bash.
-      - name: Build & Test
-        if: matrix.java-version == '21' && matrix.os == 'windows-latest'
-        timeout-minutes: 17
-        shell: pwsh
-        run: |
-          $watchdog = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @(
-            '-NoProfile', '-File', '.github/scripts/windows-hang-dump.ps1', '-AfterMinutes', '14')
-          try {
-            ./gradlew build jacocoTestReport "-PapiCheck.refresh"
-          } finally {
-            Stop-Process -Id $watchdog.Id -Force -ErrorAction SilentlyContinue
-          }
 
       # Compilation always uses the Java 21 toolchain, so only the tests depend on this JDK; -PtestJdk runs them on it.
       # All three test tasks: core has its own tests, mvel the ones that need MVEL, the kit's MVEL tests among them,
@@ -175,13 +155,14 @@ jobs:
         if: matrix.java-version != '21'
         run: ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=${{ matrix.java-version }}
 
-      # Artifact names must be unique within a run, and three jobs run on JDK 21, so the OS is part of each name.
+      # Artifact names must be unique within a run, and three legs run on JDK 21, build-windows's among them, so the
+      # OS is part of each name.
       - name: Upload API Compatibility Report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: api-compatibility-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
-          path: |
+          path: &japicmp-reports |
             core/build/reports/japicmp/
             mvel/build/reports/japicmp/
             test-kit/build/reports/japicmp/
@@ -206,10 +187,8 @@ jobs:
         with:
           name: jacoco-report-jdk${{ matrix.java-version }}-${{ matrix.os }}
           # A test JVM that crashes writes hs_err_pid*.log to its module's directory, where Gradle runs it.
-          # build/reports/hang/ holds the thread dumps the Windows watchdog writes when the build runs long.
           path: |
             build/reports/jacoco/
-            build/reports/hang/
             core/build/test-results/test/
             mvel/build/test-results/test/
             test-kit/build/test-results/test/
@@ -227,6 +206,133 @@ jobs:
           name: test-results-jdk${{ matrix.java-version }}-${{ matrix.os }}
           # A test JVM that crashes writes hs_err_pid*.log to its module's directory, where Gradle runs it.
           path: |
+            core/build/test-results/test/
+            mvel/build/test-results/test/
+            test-kit/build/test-results/test/
+            core/hs_err_pid*.log
+            mvel/hs_err_pid*.log
+            test-kit/hs_err_pid*.log
+            **/replay_pid*.log
+
+  # The windows-latest JDK 21 leg of the build, as its own job only so that it alone may write checks, for the Windows
+  # heartbeat (see its Build & Test step). It runs when the build's windows-latest leg did: not on a docs pull request,
+  # whose build is skipped, nor on a release pull request, whose build runs only ubuntu-latest. Its name is the one
+  # that leg's check had. Its steps are the build job's for windows-latest and JDK 21, written out: a job can't take
+  # another's steps.
+  #
+  # checks: write lets any code that runs in this job, Gradle's plugins, the dependencies and the tests among them,
+  # create or change a check run on any commit of the repository, a required one's name included: it comes from the
+  # GitHub Actions app, the source the ruleset requires for ci-result and pr-title.
+  build-windows:
+    name: build (windows-latest, 21)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'release' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      # The build job's checkout, by YAML alias, as are the API compatibility report's paths below.
+      - *checkout
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # See the same step in the build job; the dependency graph is generated on ubuntu-latest only.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          dependency-graph: disabled
+          dependency-graph-continue-on-failure: false
+
+      # `build` runs `check`, as in the build job, with -PapiCheck.refresh for the same reason. The default shell on
+      # windows-latest, pwsh, resolves ./gradlew to gradlew.bat; naming it keeps actionlint from running shellcheck on
+      # the block as bash.
+      #
+      # Under a watchdog. Four windows-latest jobs (2026-10-14, 2026-10-15, 2026-10-17 twice) sat in this step until
+      # the job's 20-minute timeout, and GitHub couldn't end the step within its five-minute grace, so the job kept no
+      # log and ran no upload step: nothing says what hung. The successful step takes 5.8 to 12.4 minutes (146 jobs).
+      # At 14 minutes the watchdog (.github/scripts/windows-hang-dump.ps1) writes a thread dump of every JVM to
+      # build/reports/hang/, a second one a minute later, and kills them, so gradlew returns, the step fails on its own
+      # and Upload Coverage Report saves the dumps. The step's timeout is the second net, for a watchdog that can't end
+      # the step: the runner then fails the step and still runs the uploads (actions/runner StepsRunner.cs, "has timed
+      # out after").
+      #
+      # The watchdog's files stay on the VM, though, and in the two stalls since it landed (2026-10-18, 2026-10-24)
+      # the step outlived its own 17-minute timeout too: the runner itself had stopped, so no log and no upload
+      # survived. The heartbeat (.github/scripts/windows-heartbeat.ps1) is the record that leaves the VM while it
+      # still runs: every minute it posts the free memory, commit charge, CPU, disk queues, JVMs, newest JUnit result
+      # and busiest processes to a "Windows heartbeat" check run, and the watchdog's process lists once written. The
+      # finally marks it neutral. Left in progress, the step never reached its finally; neutral on a job cancelled at
+      # 25 minutes, the step did but the runner didn't. Its last line is the last minute the VM answered: lines past
+      # 17 minutes mean the VM still ran while the runner had stopped.
+      #
+      # It runs in this step, not its own, because a process a step starts may be killed when the step ends
+      # (actions/runner ProcessInvoker.cs). So GH_TOKEN is in Gradle's environment as well. It never fails the step:
+      # a launch failure only warns; without a token that can write checks (a fork's pull request), GitHub refuses its
+      # one POST and it creates no check run. The runner's $ErrorActionPreference = 'stop' doesn't reach it.
+      - name: Build & Test
+        timeout-minutes: 17
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEARTBEAT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          # The heartbeat's defaults: it stops when $stop exists, and writes its lines to $log.
+          $stop = Join-Path $env:RUNNER_TEMP 'heartbeat.stop'
+          $log = Join-Path $env:RUNNER_TEMP 'heartbeat.log'
+          $heartbeat = $null
+          try {
+            $heartbeat = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @(
+              '-NoProfile', '-File', '.github/scripts/windows-heartbeat.ps1')
+          } catch {
+            Write-Warning "The heartbeat didn't start: $_"
+          }
+          $watchdog = Start-Process pwsh -PassThru -WindowStyle Hidden -ArgumentList @(
+            '-NoProfile', '-File', '.github/scripts/windows-hang-dump.ps1', '-AfterMinutes', '14')
+          try {
+            ./gradlew build jacocoTestReport "-PapiCheck.refresh"
+          } finally {
+            Stop-Process -Id $watchdog.Id -Force -ErrorAction SilentlyContinue
+            # It usually sees the file within half a second and posts once more; 30 seconds is enough unless the API is
+            # slow, and then the check run stays in progress.
+            New-Item -ItemType File -Force $stop -ErrorAction SilentlyContinue | Out-Null
+            if ($heartbeat) { $heartbeat.WaitForExit(30000) | Out-Null }
+            Get-Content $log -ErrorAction SilentlyContinue
+          }
+
+      # See the same steps in the build job.
+      - name: Upload API Compatibility Report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: api-compatibility-report-jdk21-windows-latest
+          path: *japicmp-reports
+          if-no-files-found: ignore
+
+      - name: Upload Dependency Verification Report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: dependency-verification-report-jdk21-windows-latest
+          path: build/reports/dependency-verification/
+          if-no-files-found: ignore
+
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: jacoco-report-jdk21-windows-latest
+          # A test JVM that crashes writes hs_err_pid*.log to its module's directory, where Gradle runs it.
+          # build/reports/hang/ holds the thread dumps the watchdog writes when the build runs long.
+          path: |
+            build/reports/jacoco/
+            build/reports/hang/
             core/build/test-results/test/
             mvel/build/test-results/test/
             test-kit/build/test-results/test/
@@ -373,13 +479,13 @@ jobs:
 
   # One result for the jobs above, for branch protection to require: a docs or release pull request skips build legs,
   # and a leg that doesn't run reports no per-OS check. The build passes when it succeeded (on a release pull request,
-  # its one leg), or was skipped on a docs pull request; native-image when it succeeded, or was skipped on a docs or
-  # release pull request; docs-and-hygiene only when it succeeded. Any other result fails, such as that of a job
-  # cancelled before a runner took it. The changes job isn't judged: when it fails, its scope is empty, so the build
-  # and native-image run in full, and they decide.
+  # its one leg), or was skipped on a docs pull request; build-windows and native-image when they succeeded, or were
+  # skipped on a docs or release pull request; docs-and-hygiene only when it succeeded. Any other result fails, such as
+  # that of a job cancelled before a runner took it. The changes job isn't judged: when it fails, its scope is empty, so
+  # the build and native-image run in full, and they decide.
   ci-result:
     if: ${{ !cancelled() }}
-    needs: [ changes, build, native-image, docs-and-hygiene ]
+    needs: [ changes, build, build-windows, native-image, docs-and-hygiene ]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -388,11 +494,12 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           SCOPE: ${{ needs.changes.outputs.scope }}
           BUILD: ${{ needs.build.result }}
+          BUILD_WINDOWS: ${{ needs.build-windows.result }}
           NATIVE_IMAGE: ${{ needs.native-image.result }}
           DOCS_AND_HYGIENE: ${{ needs.docs-and-hygiene.result }}
         run: |
-          echo "changes: '$CHANGES' (scope: '$SCOPE'), build: '$BUILD', native-image: '$NATIVE_IMAGE'," \
-            "docs-and-hygiene: '$DOCS_AND_HYGIENE'"
+          echo "changes: '$CHANGES' (scope: '$SCOPE'), build: '$BUILD', build-windows: '$BUILD_WINDOWS'," \
+            "native-image: '$NATIVE_IMAGE', docs-and-hygiene: '$DOCS_AND_HYGIENE'"
           # passed RESULT SCOPE...: the job succeeded, or was skipped on a pull request of one of the scopes named.
           passed() {
             local result=$1 scope
@@ -404,12 +511,13 @@ jobs:
           }
           failed=""
           passed "$BUILD" docs || failed="$failed build"
+          passed "$BUILD_WINDOWS" docs release || failed="$failed build-windows"
           passed "$NATIVE_IMAGE" docs release || failed="$failed native-image"
           [ "$DOCS_AND_HYGIENE" = success ] || failed="$failed docs-and-hygiene"
           if [ -n "$failed" ]; then
             echo "::error::Didn't pass:$failed. The build passes when it succeeded, or was skipped on a docs pull" \
-              "request; native-image when it succeeded, or was skipped on a docs or release pull request;" \
-              "docs-and-hygiene only when it succeeded."
+              "request; build-windows and native-image when they succeeded, or were skipped on a docs or release" \
+              "pull request; docs-and-hygiene only when it succeeded."
             exit 1
           fi
 

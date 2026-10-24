@@ -79,13 +79,13 @@ close. Its multithreading rules found none, but `AvoidSynchronizedAtMethodLevel`
 `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`, and `check` runs `pmdMain` only.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
-so a test that never returns fails the build within the `build` job's 20-minute cap. Gradle
+so a test that never returns fails the build within its job's 20-minute cap. Gradle
 logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout`, stops the test worker, and
 fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
 report, where the test that never returned shows as skipped.
 
-Three `windows-latest` jobs stalled past that cap with no log, so there a watchdog thread-dumps every JVM into
-`build/reports/hang/` at 14 minutes, then kills them: [Windows CI hangs](windows-ci-hangs.md).
+On `windows-latest`, where jobs stalled, a watchdog thread-dumps the JVMs at 14 minutes, and a heartbeat posts a
+check run with `build-windows`'s `checks: write`: [Windows CI hangs](windows-ci-hangs.md).
 
 A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. The test fixtures'
 `junit-platform.properties`, which the tests of `core`, `mvel` and `test-kit` share, sets
@@ -148,12 +148,12 @@ so a second build reuses task outputs, including those of another branch, and th
 
 | Job | Runs | Why |
 | --- | --- | --- |
-| JDK 21 on `ubuntu-latest`, `windows-latest` and `macos-latest` | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
+| JDK 21 on `ubuntu-latest`, `macos-latest` and `windows-latest` (`build-windows`) | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
-| `ci-result` | Nothing | Passes only when `build` and `native-image` succeeded, or skipped as allowed below, and `docs-and-hygiene` succeeded. Any other result fails, such as a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
+| `ci-result` | Nothing | Passes only when `build`, `build-windows` and `native-image` succeeded, or skipped as allowed below, and `docs-and-hygiene` succeeded. Any other result fails, such as a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
 A docs-only pull request (files under `docs/` or ending in `.md`, none under a `src/` directory) skips the build
 and `native-image`. A release PR, a new `version=` in `gradle.properties` plus documentation or
@@ -190,7 +190,7 @@ with a capitalised subject, it skips the format check, but it still rejects a `!
 
 What the jobs leave behind:
 
-- **Artifacts:** each build job's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
+- **Artifacts:** each build leg's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
   the JaCoCo report (`build/reports/jacoco/`), or `test-results-jdk<version>-ubuntu-latest`;
   `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*` only when a job fails. The coverage
   gate itself is `jacocoTestCoverageVerification`, which `build` runs; no outside service checks coverage.
