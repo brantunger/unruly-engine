@@ -109,8 +109,9 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     @Override
     public ExpressionCompiler newCompiler(CompileContext context) {
         Objects.requireNonNull(context, "context must not be null");
-        // ErrorUtil first, so a missing mvel2 is named on every call: rejecting language imports uses FactNames, whose
-        // static initializer needs mvel2, so after the first call it would only say FactNames couldn't be initialized.
+        // ErrorUtil first, so a missing mvel2 is named on every call: the class loader and the compiler made below use
+        // ExactNameClassLoader and MvelFactNames, whose static initializers need mvel2, so after the first call it
+        // would only say one of them couldn't be initialized.
         initializeErrorReporting();
         rejectLanguageImports(context.languageImports());
         // The class loader is wrapped once here, for every expression of the rule list, with the class name roots it
@@ -184,22 +185,24 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // With the JDK's BigInteger and BigDecimal, which MVEL's analysis is the first to use for a rule's first
         // BigDecimal literal, such as 1.5B, after ParseTools, which makes it. On JDK 25 and later, BigDecimal's static
         // initializer initializes the JDK's ForkJoinPool and ForkJoinTask as well (#1115).
-        initialize(MethodHandles.lookup(), List.of(ExactNameClassLoader.class, ExceptionReads.class, FactNames.class,
-                SplittableRandom.class, AbstractParser.class, ConditionAssignments.class, MvelAnalysis.class,
-                MvelExpression.class, MVEL.class, ParseTools.class, BigInteger.class, BigDecimal.class,
-                OperatorNode.class, Operator.class, AtomicReference.class, CallSites.class, MathProcessor.class,
-                DataConversion.class, PropertyHandlerFactory.class, GetterAccessor.class, CalledCodeFailures.class,
-                MvelCompileErrors.class));
+        initialize(MethodHandles.lookup(), List.of(ExactNameClassLoader.class, ExceptionReads.class,
+                MvelFactNames.class, SplittableRandom.class, AbstractParser.class, ConditionAssignments.class,
+                MvelAnalysis.class, MvelExpression.class, MVEL.class, ParseTools.class, BigInteger.class,
+                BigDecimal.class, OperatorNode.class, Operator.class, AtomicReference.class, CallSites.class,
+                MathProcessor.class, DataConversion.class, PropertyHandlerFactory.class, GetterAccessor.class,
+                CalledCodeFailures.class, MvelCompileErrors.class));
         // This module's classes without a static initializer that a load that fails would otherwise be the first to
         // load: a condition that assigns, a class called like a method, an import with too many parts or of a class
-        // with a null static field, and the place of either in the text. A class's first load deep in a stack can
-        // overflow as initializing one can (#1066, #1097). And those that MVEL's first loop, in its analysis or in a
-        // run, and its first lookup of a name with a '$' and too many parts would be the first to initialize (#1099).
+        // with a null static field, the place of either in the text, and the quoting of a name a load rejects. A
+        // class's first load deep in a stack can overflow as initializing one can (#1066, #1097). And those that MVEL's
+        // first loop, in its analysis or in a run, and its first lookup of a name with a '$' and too many parts would
+        // be the first to initialize (#1099).
         // And the engine's readers this module reads a failure and bounds an inline import with, which it calls in a
         // catch after an overflow too: an engine preloads them when it's built, a language used without one doesn't.
         initialize(MethodHandles.lookup(), List.of(ConditionAssignments.Write.class, MvelCompileErrors.Position.class,
                 Imports.ClassCalledLikeMethod.class, Imports.ImportRejected.class, Imports.AnalysisLoop.class,
-                Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class, Throwables.class, ImportLimits.class));
+                Imports.RunLoop.class, ExactNameClassLoader.NameTooLarge.class, MessageQuotes.class, Throwables.class,
+                ImportLimits.class));
         // Those two only delegate, to engine classes this module can't name, which their first call would otherwise
         // load: so one call of each kind, which reads nothing that can throw and answers no, loads them now.
         Throwables.isOverflow(null);
@@ -213,21 +216,23 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // on one failing for the life of the JVM (#1210).
         initialize(MethodHandles.lookup(), List.of(MvelExpressionCompiler.class, Imports.class,
                 Imports.SharedLookupConfiguration.class, Imports.LoopGuard.class, DeclaredTypes.class,
-                ClassNameRoots.class, MvelExpression.Copy.class, ASTBinaryTree.class, MvelSession.class,
-                ActionVariables.class, StackResetResolverFactory.class, MVELRuntime.class, StackElement.class));
+                ClassNameRoots.class, ExactNameClassLoader.ClassLookup.class, MvelExpression.Copy.class,
+                ASTBinaryTree.class, MvelSession.class, ActionVariables.class, StackResetResolverFactory.class,
+                MVELRuntime.class, StackElement.class));
         MvelCompileErrors.warmUp();
         // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
         // first initializes the JDK's classes that walk one, so this walks it once each way (#1099).
         CallSites.warmUp();
         // A rule's first use of one of the JDK's classes by its name, such as new java.util.ArrayList(), looks its
-        // class file up first (see FactNames.mayBeClass), which on JDK 25 initializes the JDK's class that finds the
-        // files of its own modules, so this looks one up. Through this module's own class loader, which needs no
-        // permission under a security manager, as the system class loader may; or, were this module loaded by the
-        // boot class loader, which has no object, the system class loader, which needs none from there either.
+        // class file up first (see ExactNameClassLoader.ClassLookup.mayBeClass), which on JDK 25 initializes the JDK's
+        // class that finds the files of its own modules, so this looks one up. Through this module's own class loader,
+        // which needs no permission under a security manager, as the system class loader may; or, were this module
+        // loaded by the boot class loader, which has no object, the system class loader, which needs none from there
+        // either.
         @SuppressWarnings("PMD.UseProperClassLoader")
         ClassLoader own = MvelExpressionLanguage.class.getClassLoader();
-        FactNames.mayBeClass(Objects.requireNonNullElseGet(own, ClassLoader::getSystemClassLoader),
-                Object.class.getName());
+        ExactNameClassLoader.ClassLookup.mayBeClass(
+                Objects.requireNonNullElseGet(own, ClassLoader::getSystemClassLoader), Object.class.getName());
         // A run whose rule calls code that throws reads the stack trace of what it threw, which initializes the JDK's
         // classes that describe a frame of one of its modules, so this reads one created in a method of the JDK's.
         ExceptionReads.stackTraceOf(Optional.<Throwable>empty().orElseGet(Throwable::new));
@@ -337,12 +342,12 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
      *
      * @param languageImports The imports given to MVEL alone
      * @throws IllegalArgumentException if there are any, naming as many as fit in 1,000 characters (see
-     *                                  {@link FactNames#quotedAllWithin})
+     *                                  {@link MessageQuotes#quotedAllWithin})
      */
     private static void rejectLanguageImports(List<String> languageImports) {
         if (!languageImports.isEmpty()) {
-            throw new IllegalArgumentException(FactNames.quotedAllWithin("MVEL takes no language imports; give Java "
-                    + "imports with imports(...): ", languageImports));
+            throw new IllegalArgumentException(MessageQuotes.quotedAllWithin("MVEL takes no language imports; give "
+                    + "Java imports with imports(...): ", languageImports));
         }
     }
 

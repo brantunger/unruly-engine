@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import io.github.brantunger.unruly.mvel.ExactNameClassLoader.ClassLookup;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,11 +18,11 @@ class JdkLoaderTest {
     void jdkLoadersRecognised() throws Exception {
         try (URLClassLoader urls = new URLClassLoader(new URL[0])) {
             assertAll(
-                    () -> assertTrue(Imports.isJdkLoader(ClassLoader.getSystemClassLoader())),
-                    () -> assertTrue(Imports.isJdkLoader(ClassLoader.getPlatformClassLoader())),
-                    () -> assertFalse(Imports.isJdkLoader(urls)),
-                    () -> assertFalse(Imports.isJdkLoader(new RecordingClassLoader())),
-                    () -> assertFalse(Imports.isJdkLoader(null)));
+                    () -> assertTrue(ClassLookup.isJdkLoader(ClassLoader.getSystemClassLoader())),
+                    () -> assertTrue(ClassLookup.isJdkLoader(ClassLoader.getPlatformClassLoader())),
+                    () -> assertFalse(ClassLookup.isJdkLoader(urls)),
+                    () -> assertFalse(ClassLookup.isJdkLoader(new RecordingClassLoader())),
+                    () -> assertFalse(ClassLookup.isJdkLoader(null)));
         }
     }
 
@@ -41,18 +42,18 @@ class JdkLoaderTest {
              URLClassLoader overSubclass = new URLClassLoader(new URL[0], subclass);
              URLClassLoader overOther = new URLClassLoader(new URL[0], new RecordingClassLoader())) {
             assertAll(
-                    () -> assertTrue(Imports.servesEveryClassFile(app)),
-                    () -> assertTrue(Imports.servesEveryClassFile(ClassLoader.getPlatformClassLoader())),
-                    () -> assertTrue(Imports.servesEveryClassFile(plain)),
-                    () -> assertTrue(Imports.servesEveryClassFile(chain)),
-                    () -> assertTrue(Imports.servesEveryClassFile(boot)),
-                    () -> assertTrue(Imports.servesEveryClassFile(platform)),
-                    () -> assertTrue(Imports.servesEveryClassFile(made), made.getClass().getName()),
-                    () -> assertFalse(Imports.servesEveryClassFile(subclass)),
-                    () -> assertFalse(Imports.servesEveryClassFile(overSubclass)),
-                    () -> assertFalse(Imports.servesEveryClassFile(overOther)),
-                    () -> assertFalse(Imports.servesEveryClassFile(new RecordingClassLoader())),
-                    () -> assertFalse(Imports.servesEveryClassFile(null)));
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(app)),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(ClassLoader.getPlatformClassLoader())),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(plain)),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(chain)),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(boot)),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(platform)),
+                    () -> assertTrue(ClassLookup.servesEveryClassFile(made), made.getClass().getName()),
+                    () -> assertFalse(ClassLookup.servesEveryClassFile(subclass)),
+                    () -> assertFalse(ClassLookup.servesEveryClassFile(overSubclass)),
+                    () -> assertFalse(ClassLookup.servesEveryClassFile(overOther)),
+                    () -> assertFalse(ClassLookup.servesEveryClassFile(new RecordingClassLoader())),
+                    () -> assertFalse(ClassLookup.servesEveryClassFile(null)));
         }
     }
 }

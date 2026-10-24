@@ -10,7 +10,6 @@ import org.mvel2.util.MethodStub;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.net.URLClassLoader;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -34,12 +33,6 @@ final class Imports {
     private final Set<String> notClasses;
     private final Map<String, Class<?>> inputs;
     private final ClassNameRoots classNameRoots;
-
-    // The class every class loader of the JDK's own extends (see isJdkLoader).
-    private static final String JDK_LOADER = "jdk.internal.loader.BuiltinClassLoader";
-
-    // The plain URLClassLoader that URLClassLoader.newInstance returns on JDK 21 to 23 (see servesEveryClassFile).
-    private static final String FACTORY_URL_LOADER = "java.net.FactoryURLClassLoader";
 
     /**
      * Creates the imports for one rule list, with nothing known yet about which names aren't classes, and no strong
@@ -163,57 +156,6 @@ final class Imports {
     }
 
     /**
-     * Tells whether a class loader is one of the JDK's own, the application or the platform class loader, which both
-     * extend the JDK's internal {@code jdk.internal.loader.BuiltinClassLoader}, and delegate to the boot loader. Each
-     * serves the class file of every class it loads from the class path, the module path or the JDK's own modules,
-     * but not of a class defined in it at run time, such as with {@code MethodHandles.Lookup.defineClass} by a code
-     * generator. None can be extended outside the JDK, whose package isn't exported, so a class loader of an
-     * application or a framework never is one, even one set as the system class loader with
-     * {@code -Djava.system.class.loader}. The class is matched by name, which needs no access to the JDK's internals. A
-     * {@code null} loader, the boot loader, isn't one here: the rule list's class loader, which asks its parent for
-     * every class, can't load through it.
-     *
-     * @param loader The class loader, or {@code null}
-     * @return {@code true} if the loader is the JDK's own
-     */
-    static boolean isJdkLoader(ClassLoader loader) {
-        for (Class<?> type = loader == null ? null : loader.getClass(); type != null; type = type.getSuperclass()) {
-            if (JDK_LOADER.equals(type.getName())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Tells whether a class loader serves the class file of every class it finds itself: one of the JDK's own (see
-     * {@link #isJdkLoader}), or a plain {@link URLClassLoader}, of that class exactly, whose parents are plain ones
-     * too, up to one of the JDK's own or the boot loader. A plain {@code URLClassLoader} asks its parent first, for a
-     * class and for a class file alike, and defines a class only from a class file at one of its URLs. The one
-     * {@code URLClassLoader.newInstance} returns on JDK 21 to 23, the JDK's own {@code java.net.FactoryURLClassLoader},
-     * which only adds a security manager's check of the package, is plain too, matched by name, as it isn't public.
-     * Like the JDK's own, a plain one serves no class file for a class defined in it at run time, such as with
-     * {@code MethodHandles.Lookup.defineClass}, which it still loads by name. A subclass may load classes any way it
-     * likes, so it isn't one, nor is a chain with any other class loader in it. A {@code null} loader isn't one
-     * either, as for {@link #isJdkLoader}.
-     *
-     * @param loader The class loader, or {@code null}
-     * @return {@code true} if a name the loader serves no class file for is taken as no class
-     */
-    static boolean servesEveryClassFile(ClassLoader loader) {
-        for (ClassLoader each = loader; each != null; each = each.getParent()) {
-            if (isJdkLoader(each)) {
-                return true;
-            }
-            if (each.getClass() != URLClassLoader.class && !FACTORY_URL_LOADER.equals(each.getClass().getName())) {
-                return false;
-            }
-        }
-        // The boot loader, past a chain of plain URL class loaders, or no loader at all.
-        return loader != null;
-    }
-
-    /**
      * Rejects an import too long, or with too many parts, to look up, as the engine rejects one it is built with: the
      * same limits, and the same message, the quoted import and the reason {@link ImportLimits#importSizeProblem}
      * gives. {@link ExactNameClassLoader} bounds the names it looks up from the same limits.
@@ -236,7 +178,8 @@ final class Imports {
      * itself. MVEL imports each public static field declared in a class that isn't an enum, none it inherits, by
      * putting its value in a map that can't hold {@code null}, and reports the exception that throws as an expression
      * that is "not a statement, or badly formed structure". The class is looked up as MVEL looks it up, through the
-     * class loader of MVEL's own classes, and its fields are read as MVEL reads them, in the order it reads them.
+     * class loader of MVEL's own classes (see {@link ExceptionReads#MVEL_LOADER}), and its fields are read as MVEL
+     * reads them, in the order it reads them.
      *
      * <p>
      * The field's name, which can hold any character a class file allows, is escaped and takes at most
@@ -248,13 +191,10 @@ final class Imports {
      * @param e           What MVEL threw
      * @return The exception to throw
      */
-    // MVEL's class loader, as MVEL's own lookup uses. PMD asks for the context class loader instead, which may not be
-    // the one MVEL found the class through.
-    @SuppressWarnings("PMD.UseProperClassLoader")
     static RuntimeException nullStaticField(String packageName, NullPointerException e) {
         Class<?> imported;
         try {
-            imported = Class.forName(packageName, false, ParserConfiguration.class.getClassLoader());
+            imported = Class.forName(packageName, false, ExceptionReads.MVEL_LOADER);
         } catch (ClassNotFoundException notClass) {
             return e;
         }
@@ -314,7 +254,7 @@ final class Imports {
         // by those classes' fields.
         private final transient Set<String> staticMemberNames = new HashSet<>();
         // Whether a name is looked up as a class file before MVEL loads it: only for a class loader that serves every
-        // class file (see servesEveryClassFile).
+        // class file (see ExactNameClassLoader.ClassLookup.servesEveryClassFile).
         private final boolean classFileFirst;
         // How many packages are imported once the rule list's imports are registered, or -1 until then. An inline
         // `import pkg.*;` in the expression adds another, where a name that isn't a class elsewhere may be one.
@@ -515,17 +455,18 @@ final class Imports {
          * turned into {@code $}, as a nested class. A parallel-capable class loader, as the JDK's own loaders are,
          * keeps a lock object for every name it is asked to load, found or not, for as long as it lives, so every
          * name in a rule that isn't a class left some, for each package imported. So when the application's class
-         * loader serves the class file of every class it finds itself (see {@link #servesEveryClassFile}), as the
-         * JDK's own do, and a plain {@code URLClassLoader} whose parents are plain ones up to one of the JDK's or the
-         * boot loader, MVEL is only asked once it has the class file for one of those names (see
-         * {@link FactNames#mayBeClass}), and a name that has none isn't a class. A name the rule list's class loader
-         * refuses to look up (see {@link ExactNameClassLoader#refuses}) isn't looked for at all then, as it can't be a
-         * class either, nor is one MVEL rejects outright, which doesn't start as a Java identifier does. Any other
-         * class loader, such as a subclass of {@code URLClassLoader}, a framework's or an application server's, may
-         * define a class it serves no class file for, so it is asked as MVEL asks it, except for a name in a
-         * {@code java.} package the JDK serves no class file for, which the rule list's class loader refuses (see
-         * {@link ExactNameClassLoader}). Each name it is asked for may leave a lock object in it, and in the JDK's
-         * application class loader, for the life of the JVM, if it asks that one first.
+         * loader serves the class file of every class it finds itself (see
+         * {@link ExactNameClassLoader.ClassLookup#servesEveryClassFile}), as the JDK's own do, and a plain
+         * {@code URLClassLoader} whose parents are plain ones up to one of the JDK's or the boot loader, MVEL is only
+         * asked once it has the class file for one of those names (see
+         * {@link ExactNameClassLoader.ClassLookup#anyClassFile}), and a name that has none isn't a class. A name the
+         * rule list's class loader refuses to look up (see {@link ExactNameClassLoader.ClassLookup#refuses}) isn't
+         * looked for at all then, as it can't be a class either, nor is one MVEL rejects outright, which doesn't start
+         * as a Java identifier does. Any other class loader, such as a subclass of {@code URLClassLoader}, a
+         * framework's or an application server's, may define a class it serves no class file for, so it is asked as
+         * MVEL asks it, except for a name in a {@code java.} package the JDK serves no class file for, which the rule
+         * list's class loader refuses (see {@link ExactNameClassLoader}). Each name it is asked for may leave a lock
+         * object in it, and in the JDK's application class loader, for the life of the JVM, if it asks that one first.
          * </p>
          *
          * <p>
@@ -571,7 +512,8 @@ final class Imports {
             if (misses.contains(name)) {
                 return false;
             }
-            boolean found = (!classFileFirst || AbstractParser.CLASS_LITERALS.containsKey(name) || hasClassFile(name))
+            boolean found = (!classFileFirst || AbstractParser.CLASS_LITERALS.containsKey(name)
+                    || ExactNameClassLoader.ClassLookup.anyClassFile(getClassLoader(), getPackageImports(), name))
                     && super.hasImport(name);
             if (!found) {
                 misses.add(name);
@@ -623,11 +565,11 @@ final class Imports {
             String binaryName = outer.getName() + '$' + name;
             ClassLoader outerLoader = outer.getClassLoader();
             ClassLoader loader = outerLoader != null ? outerLoader : getClassLoader();
-            if (!FactNames.mayBeClass(loader, binaryName)) {
+            if (!ExactNameClassLoader.ClassLookup.mayBeClass(loader, binaryName)) {
                 return null;
             }
             try {
-                Class<?> nested = Class.forName(binaryName, false, loader);
+                Class<?> nested = ExactNameClassLoader.ClassLookup.forName(binaryName, false, loader);
                 return nested.getDeclaringClass() == outer ? nested : null;
             } catch (ClassNotFoundException | LinkageError e) {
                 // Such as a class file found for a name that differs in case, or a NoClassDefFoundError for a class
@@ -641,41 +583,6 @@ final class Imports {
                 }
                 throw e;
             }
-        }
-
-        /**
-         * Tells whether the class loader has the class file for one of the names MVEL looks a name up by in the
-         * imported packages: each package's name, a dot and the name, then that with each dot from the right turned
-         * into {@code $}, one at a time, as MVEL's {@code ParseTools.findInnerClass} does. The package's dots are
-         * turned too, as MVEL turns them. A name MVEL rejects outright, as it doesn't start as a Java identifier does,
-         * such as the {@code [Lpkg.Foo;} of an array type, isn't looked for, and neither is one the rule list's class
-         * loader refuses (see {@link ExactNameClassLoader#refuses}). Once it refuses a name with a {@code $}, MVEL
-         * gives up on the rest: each has as many characters, and as many parts as it counts them, or fewer by one.
-         *
-         * @param name The name, as the expression writes it
-         * @return {@code true} if MVEL may find a class by the name in an imported package
-         */
-        private boolean hasClassFile(String name) {
-            Set<String> packageImports = getPackageImports();
-            if (packageImports == null || !Character.isJavaIdentifierStart(name.charAt(0))) {
-                return false;
-            }
-            for (String pkg : packageImports) {
-                String className = pkg + '.' + name;
-                if (!ExactNameClassLoader.refuses(className) && FactNames.mayBeClass(getClassLoader(), className)) {
-                    return true;
-                }
-                for (int dot = className.lastIndexOf('.'); dot > 0; dot = className.lastIndexOf('.')) {
-                    className = className.substring(0, dot) + '$' + className.substring(dot + 1);
-                    if (ExactNameClassLoader.refuses(className)) {
-                        break;
-                    }
-                    if (FactNames.mayBeClass(getClassLoader(), className)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
         }
 
         /**
@@ -745,9 +652,9 @@ final class Imports {
          * brought in (see {@link #inlineImportedNames}) when it isn't one of the rule list's: an {@code import a.B;}
          * in the expression's text, a class MVEL found in a package it imports, or one nested in a class MVEL found in
          * such a package. A class MVEL finds in one of the rule list's packages, while the expression imports none of
-         * its own, is the rule list's, which {@link FactNames} already rejects. With a package of its own imported
+         * its own, is the rule list's, which {@link MvelFactNames} already rejects. With a package of its own imported
          * too, a class found in one of the rule list's is remembered as well, which changes nothing:
-         * {@link FactNames} rejects it either way.
+         * {@link MvelFactNames} rejects it either way.
          *
          * @param name The name the class is imported as
          * @param cls  The class
@@ -969,14 +876,14 @@ final class Imports {
 
         /**
          * Returns the exception's message with the name escaped within what the rest leaves of a room (see
-         * {@link FactNames#quotedWithin(String, String, String, int)}), for a message about the expression: the
+         * {@link MessageQuotes#quotedWithin(String, String, String, int)}), for a message about the expression: the
          * message itself if it fits.
          *
          * @param room The most characters the message may take
          * @return The message, within the room
          */
         String describedWithin(int room) {
-            return FactNames.quotedWithin(START, name, after, room);
+            return MessageQuotes.quotedWithin(START, name, after, room);
         }
 
         /**

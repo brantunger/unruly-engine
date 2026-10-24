@@ -18,30 +18,30 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("FactNames looks class names up as MVEL does, within bounds")
-class FactNamesTest {
+@DisplayName("MvelFactNames looks class names up as MVEL does, within bounds")
+class MvelFactNamesTest {
 
     /** What GraalVM sets to tell code it is running in an image, which the check reads instead of the GraalVM SDK. */
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
 
     /**
-     * {@code FactNames.MAX_CACHED_MISS_CHARS}, written out so these tests also run on a check that has no such limit;
-     * {@code FactNamesMissCacheTest} asserts the two agree.
+     * {@code MvelFactNames.MAX_CACHED_MISS_CHARS}, written out so these tests also run on a check that has no such
+     * limit; {@code MvelFactNamesMissCacheTest} asserts the two agree.
      */
     static final int CACHED_MISS_CHARS = 4096 * 255;
 
-    /** {@code FactNames.MAX_CACHED_MISS_LENGTH}, written out as {@link #CACHED_MISS_CHARS} is. */
+    /** {@code MvelFactNames.MAX_CACHED_MISS_LENGTH}, written out as {@link #CACHED_MISS_CHARS} is. */
     static final int LONGEST_CACHED_MISS = CACHED_MISS_CHARS / 16;
 
     /** Seeds the names a full cache evicts, so a test counting lookups after evictions sees the same ones each run. */
     private static final long EVICTION_SEED = 763;
 
-    private static FactNames javaUtil(ClassLoader loader) {
-        return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader));
+    private static MvelFactNames javaUtil(ClassLoader loader) {
+        return new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), loader));
     }
 
-    private static FactNames javaUtilSeeded(ClassLoader loader) {
-        return new FactNames(new Imports(Set.of("java.util"), Set.of(), loader),
+    private static MvelFactNames javaUtilSeeded(ClassLoader loader) {
+        return new MvelFactNames(new Imports(Set.of("java.util"), Set.of(), loader),
                 new SplittableRandom(EVICTION_SEED));
     }
 
@@ -63,7 +63,7 @@ class FactNamesTest {
      * native image does with a class its resource configuration doesn't name. It records every name it is asked for.
      */
     private static ClassLoader servesNoClassFile(List<String> lookups) {
-        return new ClassLoader(FactNamesTest.class.getClassLoader()) {
+        return new ClassLoader(MvelFactNamesTest.class.getClassLoader()) {
             @Override
             public URL getResource(String name) {
                 lookups.add(name);
@@ -98,7 +98,7 @@ class FactNamesTest {
     @DisplayName("a class name is looked up once and then answered from the cache")
     void classNameCached() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
+        MvelFactNames names = javaUtil(loader);
 
         for (int i = 0; i < 3; i++) {
             assertThrows(IllegalArgumentException.class, () -> names.check("Date"));
@@ -112,17 +112,17 @@ class FactNamesTest {
     @DisplayName("names that aren't classes are cached, and a full cache evicts one to make room for another")
     void missesBounded() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
+        MvelFactNames names = javaUtil(loader);
 
         names.check("name0");
         names.check("name0");
         assertEquals(1, Collections.frequency(loader.resources, "java/util/name0.class"), "a miss is cached");
 
-        for (int i = 1; i <= FactNames.MAX_CACHED_MISSES; i++) {
+        for (int i = 1; i <= MvelFactNames.MAX_CACHED_MISSES; i++) {
             names.check("name" + i);
         }
 
-        assertEquals(FactNames.MAX_CACHED_MISSES, names.cachedMisses(),
+        assertEquals(MvelFactNames.MAX_CACHED_MISSES, names.cachedMisses(),
                 "the full cache evicted one name for the last, rather than being cleared");
     }
 
@@ -131,20 +131,20 @@ class FactNamesTest {
     @DisplayName("a full cache that takes one new name still answers for nearly all of the names it held")
     void fullCacheKeepsItsWorkingSet() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtilSeeded(loader);
-        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+        MvelFactNames names = javaUtilSeeded(loader);
+        for (int i = 0; i < MvelFactNames.MAX_CACHED_MISSES; i++) {
             names.check("name" + i);
         }
         names.check("newName");
         int before = loader.resources.size();
 
-        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+        for (int i = 0; i < MvelFactNames.MAX_CACHED_MISSES; i++) {
             names.check("name" + i);
         }
 
         // One name was evicted for newName; looking it up again evicts another, which may come round too, and so on.
         int lookups = loader.resources.size() - before;
-        assertTrue(lookups <= 16, lookups + " of " + FactNames.MAX_CACHED_MISSES + " names were looked up again");
+        assertTrue(lookups <= 16, lookups + " of " + MvelFactNames.MAX_CACHED_MISSES + " names were looked up again");
     }
 
     // #763: a cycle of names just larger than the cache cleared it on every pass, so a working set just larger than
@@ -153,8 +153,8 @@ class FactNamesTest {
     @DisplayName("a cycle of names larger than the cache still finds most of them in it")
     void cycleLargerThanTheCacheMostlyCached() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtilSeeded(loader);
-        int cycle = FactNames.MAX_CACHED_MISSES + 50;
+        MvelFactNames names = javaUtilSeeded(loader);
+        int cycle = MvelFactNames.MAX_CACHED_MISSES + 50;
         for (int i = 0; i < cycle; i++) {
             names.check("name" + i);
         }
@@ -172,9 +172,9 @@ class FactNamesTest {
     @Test
     @DisplayName("a long name evicts as many names as it takes to fit within the characters the cache may hold")
     void longNameEvictsUntilItFits() {
-        FactNames names = javaUtilSeeded(new RecordingClassLoader());
+        MvelFactNames names = javaUtilSeeded(new RecordingClassLoader());
         // 4,096 names of 255 characters take every character the cache may hold, and every slot.
-        for (int i = 0; i < FactNames.MAX_CACHED_MISSES; i++) {
+        for (int i = 0; i < MvelFactNames.MAX_CACHED_MISSES; i++) {
             names.check(String.format("n%04d", i).repeat(51));
         }
         assertEquals(CACHED_MISS_CHARS, names.cachedMissChars());
@@ -182,15 +182,15 @@ class FactNamesTest {
         names.check("x".repeat(LONGEST_CACHED_MISS));
 
         assertEquals(CACHED_MISS_CHARS, names.cachedMissChars(), "256 names of 255 characters were evicted for it");
-        assertEquals(FactNames.MAX_CACHED_MISSES - 256 + 1, names.cachedMisses());
+        assertEquals(MvelFactNames.MAX_CACHED_MISSES - 256 + 1, names.cachedMisses());
     }
 
     @Test
     @DisplayName("a name another check cached while this one looked it up is cached, and counted, once")
     void missCachedMeanwhileCountedOnce() {
-        AtomicReference<FactNames> holder = new AtomicReference<>();
+        AtomicReference<MvelFactNames> holder = new AtomicReference<>();
         // Checks the name again while the first check is looking it up, as another thread could.
-        ClassLoader loader = new ClassLoader(FactNamesTest.class.getClassLoader()) {
+        ClassLoader loader = new ClassLoader(MvelFactNamesTest.class.getClassLoader()) {
             private boolean nested;
 
             @Override
@@ -202,7 +202,7 @@ class FactNamesTest {
                 return null;
             }
         };
-        FactNames names = javaUtil(loader);
+        MvelFactNames names = javaUtil(loader);
         holder.set(names);
 
         names.check("meanwhile");
@@ -216,7 +216,7 @@ class FactNamesTest {
     @DisplayName("a name of more than 255 characters is cached, so it is looked up once")
     void longMissCached() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
+        MvelFactNames names = javaUtil(loader);
         String name = "x".repeat(256);
 
         names.check(name);
@@ -228,7 +228,7 @@ class FactNamesTest {
     @Test
     @DisplayName("a name longer than the longest cached one isn't kept")
     void missLongerThanTheLongestNotCached() {
-        FactNames names = javaUtil(new RecordingClassLoader());
+        MvelFactNames names = javaUtil(new RecordingClassLoader());
 
         names.check("x".repeat(LONGEST_CACHED_MISS + 1));
 
@@ -239,7 +239,7 @@ class FactNamesTest {
     @Test
     @DisplayName("a name as long as the longest cached one is still cached")
     void missAsLongAsTheLongestCached() {
-        FactNames names = javaUtil(new RecordingClassLoader());
+        MvelFactNames names = javaUtil(new RecordingClassLoader());
 
         names.check("x".repeat(LONGEST_CACHED_MISS));
 
@@ -253,8 +253,8 @@ class FactNamesTest {
     @DisplayName("a name the class loader refuses as too long isn't looked up on the class path, and is still cached")
     void refusedNameNotLookedUp() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = new FactNames(new Imports(Set.of("java.util", "java.time"), Set.of(), loader));
-        String refused = "x".repeat(ExactNameClassLoader.MAX_NAME_LENGTH - "java.util.".length() + 1);
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("java.util", "java.time"), Set.of(), loader));
+        String refused = "x".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_LENGTH - "java.util.".length() + 1);
         String tooLongToCache = "x".repeat(LONGEST_CACHED_MISS + 1);
 
         names.check(refused);
@@ -270,8 +270,8 @@ class FactNamesTest {
     @DisplayName("a name the class loader doesn't refuse, however near the limit, is still looked up")
     void longestNameNotRefusedLookedUp() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
-        String name = "x".repeat(ExactNameClassLoader.MAX_NAME_LENGTH - "java.util.".length());
+        MvelFactNames names = javaUtil(loader);
+        String name = "x".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_LENGTH - "java.util.".length());
 
         names.check(name);
 
@@ -281,7 +281,7 @@ class FactNamesTest {
     @Test
     @DisplayName("a name that would take the cache's characters past what it may hold evicts one to make room")
     void missesBoundedByCharacters() {
-        FactNames names = javaUtil(new RecordingClassLoader());
+        MvelFactNames names = javaUtil(new RecordingClassLoader());
         // Sixteen names of the longest cached length fill the cache, so a seventeenth doesn't fit with them.
         List<String> longest = new ArrayList<>();
         for (char c = 'a'; c <= 'q'; c++) {
@@ -303,7 +303,7 @@ class FactNamesTest {
     @DisplayName("very long names checked in turn don't clear the cache of the short ones")
     void veryLongMissesKeepShortOnes() {
         RecordingClassLoader loader = new RecordingClassLoader();
-        FactNames names = javaUtil(loader);
+        MvelFactNames names = javaUtil(loader);
         String half = "y".repeat(CACHED_MISS_CHARS / 2 + 1);
 
         names.check("shortName");
@@ -324,7 +324,7 @@ class FactNamesTest {
         Files.write(dir.resolve("broken").resolve("Thing.class"), new byte[] {1, 2, 3});
 
         try (URLClassLoader loader = new URLClassLoader(new URL[] {dir.toUri().toURL()}, null)) {
-            FactNames names = new FactNames(new Imports(Set.of("broken"), Set.of(), loader));
+            MvelFactNames names = new MvelFactNames(new Imports(Set.of("broken"), Set.of(), loader));
 
             assertNotNull(loader.getResource("broken/Thing.class"));
             assertDoesNotThrow(() -> names.check("Thing"));
@@ -341,7 +341,7 @@ class FactNamesTest {
                 return name.equals("pkg/Ghost.class") ? found : null;
             }
         };
-        FactNames names = new FactNames(new Imports(Set.of("pkg"), Set.of(), resourcesOnly));
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("pkg"), Set.of(), resourcesOnly));
 
         assertDoesNotThrow(() -> names.check("Ghost"));
     }
@@ -350,7 +350,7 @@ class FactNamesTest {
     @DisplayName("a class file found for a name that differs in case isn't a class")
     void classFileWithWrongName(@TempDir Path dir) throws IOException {
         List<String> lookups = new ArrayList<>();
-        FactNames names = new FactNames(
+        MvelFactNames names = new MvelFactNames(
                 new Imports(Set.of("pkg"), Set.of(), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
 
         assertDoesNotThrow(() -> names.check("date"));
@@ -362,7 +362,7 @@ class FactNamesTest {
     @DisplayName("in a native image a name is loaded without the class file being looked up, as MVEL loads it")
     void imageLoadsWithoutLookingTheClassFileUp() {
         List<String> lookups = new ArrayList<>();
-        FactNames names = javaUtil(servesNoClassFile(lookups));
+        MvelFactNames names = javaUtil(servesNoClassFile(lookups));
 
         withImageCode("runtime", () -> assertThrows(IllegalArgumentException.class, () -> names.check("Date"),
                 "an image loads java.util.Date as MVEL does, so a fact named Date is rejected there too"));
@@ -374,7 +374,7 @@ class FactNamesTest {
     @DisplayName("while an image is being built the class file is looked up first, as on any other JVM")
     void imageBuildTimeLooksTheClassFileUpFirst() {
         List<String> lookups = new ArrayList<>();
-        FactNames names = javaUtil(servesNoClassFile(lookups));
+        MvelFactNames names = javaUtil(servesNoClassFile(lookups));
 
         // "buildtime" is an ordinary JVM loading the classes an image is built from, where the lock object the
         // lookup exists to avoid is as real as it is anywhere else.
@@ -389,7 +389,7 @@ class FactNamesTest {
         // The false match is ruled out by the load, not by the lookup, which is what lets an image skip the lookup
         // and stay protected from it. The same loader as the test above, so the two answers are comparable.
         List<String> lookups = new ArrayList<>();
-        FactNames names = new FactNames(
+        MvelFactNames names = new MvelFactNames(
                 new Imports(Set.of("pkg"), Set.of(), caseInsensitiveClassDirectory(dir.toUri().toURL(), lookups)));
 
         withImageCode("runtime", () -> assertDoesNotThrow(() -> names.check("date")));
@@ -412,7 +412,7 @@ class FactNamesTest {
                 throw new NotRegisteredError(name + " isn't registered for reflection");
             }
         };
-        FactNames names = new FactNames(new Imports(Set.of("pkg"), Set.of(), unregistered));
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("pkg"), Set.of(), unregistered));
 
         assertDoesNotThrow(() -> names.check("Thing"),
                 "the name reads as the fact, as MVEL's own lookup reads it, instead of failing the run");
@@ -436,7 +436,7 @@ class FactNamesTest {
                 throw new StackOverflowError("simulated");
             }
         };
-        FactNames names = new FactNames(new Imports(Set.of("pkg"), Set.of(), failing));
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of("pkg"), Set.of(), failing));
 
         assertThrows(StackOverflowError.class, () -> names.check("Thing"));
     }
@@ -468,7 +468,7 @@ class FactNamesTest {
         String pkg = "p.".repeat(80) + "p";
         List<String> loads = new ArrayList<>();
         ClassLoader loader = recordingLoads(dir.toUri().toURL(), pkg.replace('.', '/') + "/Thing.class", loads);
-        FactNames names = new FactNames(new Imports(Set.of(pkg), Set.of(), loader));
+        MvelFactNames names = new MvelFactNames(new Imports(Set.of(pkg), Set.of(), loader));
 
         assertDoesNotThrow(() -> names.check("Thing"), "the name reads as the fact, as MVEL's own lookup reads it");
 
@@ -480,7 +480,7 @@ class FactNamesTest {
     void nameTooLongIsntAClassInImage() {
         // A fact's name may have a '$': a name too long to look up is refused as a missing class, '$' or not.
         List<String> loads = new ArrayList<>();
-        FactNames names = javaUtil(recordingLoads(null, "", loads));
+        MvelFactNames names = javaUtil(recordingLoads(null, "", loads));
         String name = "x$".repeat(1_000);
 
         withImageCode("runtime", () -> assertDoesNotThrow(() -> names.check(name),

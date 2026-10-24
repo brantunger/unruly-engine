@@ -34,7 +34,7 @@ class ClassNameRootsTest {
     @DisplayName("a class named with its package in the expression adds its first part, once the compile is done")
     void compileRecords() {
         Imports imports = imports();
-        FactNames names = new FactNames(imports);
+        MvelFactNames names = new MvelFactNames(imports);
         names.check("java");
 
         MvelExpression.compile("amount < java.lang.Integer.MAX_VALUE", imports);
@@ -60,7 +60,7 @@ class ClassNameRootsTest {
         MvelExpression.compile("amount > 2", imports);
 
         assertFalse(imports.classNameRoots().contains("java"));
-        new FactNames(imports).check("java");
+        new MvelFactNames(imports).check("java");
     }
 
     @Test
@@ -74,7 +74,7 @@ class ClassNameRootsTest {
         };
         Imports imports = new Imports(Set.of(), Set.of(), noPackage);
         ClassNameRoots roots = imports.classNameRoots();
-        FactNames names = new FactNames(imports);
+        MvelFactNames names = new MvelFactNames(imports);
 
         roots.recordWhile(() -> load(imports.classLoader(), "Order"));
         roots.recordWhile(() -> load(imports.classLoader(), "Invoice$Line"));
@@ -93,7 +93,7 @@ class ClassNameRootsTest {
     @DisplayName("a class with no package the expression uses is rejected as a fact's name, once the compile is done")
     void noPackageCompileRecords() {
         Imports imports = imports();
-        FactNames names = new FactNames(imports);
+        MvelFactNames names = new MvelFactNames(imports);
         names.check("Unpackaged");
 
         MvelExpression.compile("amount < Unpackaged.LIMIT", imports);
@@ -113,7 +113,7 @@ class ClassNameRootsTest {
         // Publishes what was recorded again.
         MvelExpression.compile("amount > 2", imports);
 
-        new FactNames(imports).check("Unpackaged");
+        new MvelFactNames(imports).check("Unpackaged");
     }
 
     @Test
@@ -271,14 +271,14 @@ class ClassNameRootsTest {
     @DisplayName("of a long name, only the parts the class loader would look up are")
     void scanIsBounded() {
         RecordingLoader recording = new RecordingLoader(null);
-        String manyParts = "a" + ".a".repeat(ExactNameClassLoader.MAX_NAME_PARTS + 10);
+        String manyParts = "a" + ".a".repeat(ExactNameClassLoader.ClassLookup.MAX_NAME_PARTS + 10);
         String longParts = "b".repeat(600) + "." + "b".repeat(600) + "." + "b".repeat(600) + "." + "b".repeat(600);
 
         scanned(manyParts + " + " + longParts, recording);
 
         List<String> many = recording.names.stream().filter(name -> name.startsWith("a")).toList();
-        assertEquals(ExactNameClassLoader.MAX_NAME_PARTS - 1, many.size());
-        assertEquals(ExactNameClassLoader.MAX_NAME_PARTS, RuleText.dottedParts(many.get(0)));
+        assertEquals(ExactNameClassLoader.ClassLookup.MAX_NAME_PARTS - 1, many.size());
+        assertEquals(ExactNameClassLoader.ClassLookup.MAX_NAME_PARTS, RuleText.dottedParts(many.get(0)));
         assertEquals(List.of(1802, 1201), recording.names.stream().filter(name -> name.startsWith("b"))
                 .map(String::length).toList());
     }

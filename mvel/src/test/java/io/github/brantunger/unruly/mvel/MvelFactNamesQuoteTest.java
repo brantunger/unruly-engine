@@ -5,14 +5,14 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("FactNames quotes a fact name in its messages as MessageText quotes it")
-class FactNamesQuoteTest {
+@DisplayName("MvelFactNames quotes a fact name in its messages as MessageText quotes it")
+class MvelFactNamesQuoteTest {
 
     @Test
     @DisplayName("a reserved name is quoted in its message too")
     void reservedNameQuoted() {
-        FactNames names = new FactNames(new Imports(java.util.Set.of(), java.util.Set.of(),
-                FactNamesQuoteTest.class.getClassLoader()));
+        MvelFactNames names = new MvelFactNames(new Imports(java.util.Set.of(), java.util.Set.of(),
+                MvelFactNamesQuoteTest.class.getClassLoader()));
         String reserved = "empty";
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> names.check(reserved));
@@ -23,8 +23,8 @@ class FactNamesQuoteTest {
     @Test
     @DisplayName("a Hangul filler at the end of a fact name is escaped, so the name can't read as one without it")
     void hangulFillerInFactNameEscaped() {
-        FactNames names = new FactNames(new Imports(java.util.Set.of(), java.util.Set.of(),
-                FactNamesQuoteTest.class.getClassLoader()));
+        MvelFactNames names = new MvelFactNames(new Imports(java.util.Set.of(), java.util.Set.of(),
+                MvelFactNamesQuoteTest.class.getClassLoader()));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> names.check("a-" + (char) 0x3164));

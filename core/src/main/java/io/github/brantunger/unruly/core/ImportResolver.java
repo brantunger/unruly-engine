@@ -151,8 +151,8 @@ final class ImportResolver {
         return true;
     }
 
-    // Read by code point, as Java reads a name, so a letter outside the Basic Multilingual Plane, a surrogate pair,
-    // is a letter and a lone surrogate isn't. mvel.FactNames reads a fact's name by char on purpose: MVEL can't read
+    // Read by code point, as Java reads a name, so a letter outside the Basic Multilingual Plane, a surrogate pair, is
+    // a letter and a lone surrogate isn't. mvel.MvelFactNames reads a fact's name by char on purpose: MVEL can't read
     // such a letter in a rule's text, so no rule could refer to a fact named with one.
     private static boolean isIdentifier(String name) {
         if (name.isEmpty()) {

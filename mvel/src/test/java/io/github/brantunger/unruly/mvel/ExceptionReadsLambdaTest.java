@@ -18,7 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * which takes more stack than the engine's checks make room for. {@link ExceptionReads} reads what a rule's code threw
  * when an MVEL condition or action fails, so a lambda of its own would be linked by the JVM's first such failure, maybe
  * deep in a stack, where linking it could overflow. So it uses none. #1097: nor does {@link MvelCompileErrors}, which
- * describes an MVEL rule that fails to compile, and so runs only when a load or {@code validate()} fails. This reads
+ * describes an MVEL rule that fails to compile, and so runs only when a load or {@code validate()} fails, nor does
+ * {@link MessageQuotes}, which writes the message that rejects a fact's name, an option or an import. This reads
  * their class files, and those of their nested classes, from the directory or jar each was loaded from, as core's
  * {@code FailureCodeLambdaTest} reads {@code Failures}', and fails if one names {@code LambdaMetafactory}, as the
  * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
@@ -27,11 +28,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link FirstUseClassInitializationTest} checks that MVEL's first failing condition and action, and its first failing
  * load and {@code validate()}, link none.
  */
-@DisplayName("ExceptionReads and MvelCompileErrors link no lambda (#1093, #1097)")
+@DisplayName("ExceptionReads, MvelCompileErrors and MessageQuotes link no lambda (#1093, #1097)")
 class ExceptionReadsLambdaTest {
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {ExceptionReads.class, MvelCompileErrors.class})
+    @ValueSource(classes = {ExceptionReads.class, MvelCompileErrors.class, MessageQuotes.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {
