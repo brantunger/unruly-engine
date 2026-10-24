@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 final class Imports {
     private final Set<String> packages;
     private final Set<Class<?>> classes;
-    private final ClassLoader classLoader;
+    private final ExactNameClassLoader classLoader;
     private final Set<String> notClasses;
     private final Map<String, Class<?>> inputs;
     private final ClassNameRoots classNameRoots;
@@ -42,60 +42,41 @@ final class Imports {
     private static final String FACTORY_URL_LOADER = "java.net.FactoryURLClassLoader";
 
     /**
-     * Creates the imports for one rule list, with nothing known yet about which names aren't classes. The class loader
-     * is wrapped once here, for every expression of the rule list, in an {@link ExactNameClassLoader}.
+     * Creates the imports for one rule list, with nothing known yet about which names aren't classes, and no strong
+     * typing. The class loader is wrapped once here, for every expression of the rule list, in an
+     * {@link ExactNameClassLoader}.
      *
      * @param packages    Package names, imported with all their classes
      * @param classes     Classes imported one by one
      * @param classLoader The application's class loader that finds the classes in {@code packages}
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader) {
-        this(packages, classes, classLoader, Map.of());
+        this(packages, classes, new ExactNameClassLoader(classLoader, new ClassNameRoots()),
+                ConcurrentHashMap.newKeySet(), Map.of());
     }
 
     /**
-     * Creates the imports for one rule list, with the types its expressions are compiled against.
+     * Creates the imports from each part as it is: the rule list's class loader, already wrapped, and the names found
+     * not to be classes. The first parts of the names of the classes it finds, and whether a name is looked up as a
+     * class file first, are the class loader's own.
      *
      * @param packages    Package names, imported with all their classes
      * @param classes     Classes imported one by one
-     * @param classLoader The application's class loader that finds the classes in {@code packages}
-     * @param inputs      The type of each name an expression may refer to, or an empty map for no strong typing
+     * @param classLoader The class loader that finds the classes in {@code packages}, which asks the application's
+     *                    class loader for them
+     * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations
+     *                    created with {@link #newConfiguration()}
+     * @param inputs      The type of each name an expression may refer to, for compiling with strong typing, or an
+     *                    empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
      */
-    Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Map<String, Class<?>> inputs) {
-        this(packages, classes, classLoader, inputs, new ClassNameRoots());
-    }
-
-    // The class loader is wrapped with the class name roots it records into, which the imports keep too.
-    private Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Map<String, Class<?>> inputs,
-                    ClassNameRoots classNameRoots) {
-        this(packages, classes, new ExactNameClassLoader(classLoader, classNameRoots), ConcurrentHashMap.newKeySet(),
-                Map.copyOf(inputs), classNameRoots);
-    }
-
-    /**
-     * Creates the imports from each part as it is: the other constructors wrap the class loader first, and a test
-     * that gives the wrapped loader and the names found not to be classes itself calls this one.
-     *
-     * @param packages       Package names, imported with all their classes
-     * @param classes        Classes imported one by one
-     * @param classLoader    The class loader that finds the classes in {@code packages}, as an
-     *                       {@link ExactNameClassLoader}
-     * @param notClasses     Names found not to be a class in any of {@code packages}, shared by the configurations
-     *                       created with {@link #newConfiguration()}
-     * @param inputs         The type of each name an expression may refer to, for compiling with strong typing, or an
-     *                       empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
-     * @param classNameRoots The first part of the name of each class {@code classLoader} found while the rule list's
-     *                       expressions compiled, such as {@code java} for {@code java.lang.Integer}, and the name of
-     *                       each such class with no package, which {@link FactNames} rejects as a fact's name
-     */
-    Imports(Set<String> packages, Set<Class<?>> classes, ClassLoader classLoader, Set<String> notClasses,
-            Map<String, Class<?>> inputs, ClassNameRoots classNameRoots) {
+    Imports(Set<String> packages, Set<Class<?>> classes, ExactNameClassLoader classLoader, Set<String> notClasses,
+            Map<String, Class<?>> inputs) {
         this.packages = packages;
         this.classes = classes;
         this.classLoader = classLoader;
         this.notClasses = notClasses;
         this.inputs = inputs;
-        this.classNameRoots = classNameRoots;
+        this.classNameRoots = classLoader.classNameRoots();
     }
 
     /** Package names, imported with all their classes. */
@@ -108,8 +89,8 @@ final class Imports {
         return classes;
     }
 
-    /** The class loader that finds the classes in {@link #packages()}, as an {@link ExactNameClassLoader}. */
-    ClassLoader classLoader() {
+    /** The class loader that finds the classes in {@link #packages()}. */
+    ExactNameClassLoader classLoader() {
         return classLoader;
     }
 
@@ -143,34 +124,33 @@ final class Imports {
      *
      * @return A new configuration, used by one compilation only
      */
-    ParserConfiguration newConfiguration() {
+    SharedLookupConfiguration newConfiguration() {
         return newConfiguration(-1, 0);
     }
 
     /**
      * Creates a configuration for compiling one expression that then runs, with these imports and class loader
      * registered, which MVEL may ask for its class loader only so many times in each run, and only so many times from
-     * one place (see {@link #startRun}). MVEL's compiled expression keeps the configuration, and asks it on every
-     * round of a loop that never ends, from the same place, and never checks for an interrupt or the run's deadline,
-     * as it builds what reads a value the first time the expression runs (#857). Once a run has asked more times, the
-     * configuration throws a {@link RunLoop}. Each run has the whole limit: an expression whose run fails while MVEL
-     * builds what reads a value asks again in every run, and would run out after enough of them. While the expression
-     * compiles, MVEL may ask any number of times.
+     * one place (see {@link SharedLookupConfiguration#startRun}). MVEL's compiled expression keeps the configuration,
+     * and asks it on every round of a loop that never ends, from the same place, and never checks for an interrupt or
+     * the run's deadline, as it builds what reads a value the first time the expression runs (#857). Once a run has
+     * asked more times, the configuration throws a {@link RunLoop}. Each run has the whole limit: an expression whose
+     * run fails while MVEL builds what reads a value asks again in every run, and would run out after enough of them.
+     * While the expression compiles, MVEL may ask any number of times.
      *
      * @param callsPerRun  How many times MVEL may ask in each run
      * @param callsPerSite How many times MVEL may ask from one place in each run (see {@link CallSites}), once it has
      *                     asked {@value CallSites#UNCOUNTED_CALLS} times, or 0 for no limit
      * @return A new configuration, used by one compilation and the runs of what it compiled only
      */
-    ParserConfiguration newRunConfiguration(long callsPerRun, long callsPerSite) {
+    SharedLookupConfiguration newRunConfiguration(long callsPerRun, long callsPerSite) {
         return newConfiguration(callsPerRun, callsPerSite);
     }
 
-    private ParserConfiguration newConfiguration(long callsPerRun, long callsPerSite) {
-        // The class loader is an ExactNameClassLoader, which asks its parent, the application's, for every class a
-        // name may be.
+    private SharedLookupConfiguration newConfiguration(long callsPerRun, long callsPerSite) {
+        // A name is looked up as a class file first exactly when the class loader refuses one it has none for.
         SharedLookupConfiguration configuration = new SharedLookupConfiguration(notClasses,
-                servesEveryClassFile(classLoader.getParent()), callsPerRun, callsPerSite);
+                classLoader.classFileFirst(), callsPerRun, callsPerSite);
         configuration.setClassLoader(classLoader);
         if (!packages.isEmpty()) {
             // addPackageImport would first try to load each package name as a class, for every expression compiled.
@@ -348,16 +328,12 @@ final class Imports {
         // newRunConfiguration). Set once, so which of the two is thrown doesn't depend on the order of the calls.
         private final long classLoaderCallsPerRun;
         // How many times MVEL may ask for the class loader from one place, in its analysis or in each run, or 0 for no
-        // limit, which sites() counts as Long.MAX_VALUE: a configuration read back from a form written before there
+        // limit, which the guard counts as Long.MAX_VALUE: a configuration read back from a form written before there
         // was one has 0.
         private long classLoaderCallsPerSite;
-        // Where MVEL asked from, in its analysis or the run under way, while the calls are limited, or null until it is
-        // first needed. Transient: what a pass or run has counted means nothing to a copy read back.
-        private transient @Nullable CallSites callSites;
-        // What MVEL's analysis threw once a call passed a limit, or null.
-        private transient AnalysisLoop analysisLoop;
-        // What the run under way threw once a call passed a limit, or null (see startRun).
-        private transient RunLoop runLoop;
+        // Where MVEL asked from, and what was thrown, in its analysis or the run under way, or null until it is first
+        // needed. Transient: what a pass or run has counted means nothing to a copy read back.
+        private transient @Nullable LoopGuard loopGuard;
         // Whether the configuration is looking a name up among the imports, whose calls don't count (see hasImport).
         private transient boolean lookingUp;
 
@@ -370,18 +346,117 @@ final class Imports {
         }
 
         /**
-         * Returns the count of where MVEL asked from, created the first time it is needed, such as in a copy read
-         * back: by the whole stack for a configuration that only compiles, and by the stack's top and depth for one
-         * whose runs are limited.
+         * Returns what tells MVEL went round in a loop, created the first time it is needed, such as in a copy read
+         * back, with this configuration's limits.
          *
-         * @return The count for the analysis or the run under way
+         * @return The guard for the analysis or the run under way
          */
-        private CallSites sites() {
-            if (callSites == null) {
-                callSites = new CallSites(classLoaderCallsPerRun < 0,
-                        classLoaderCallsPerSite > 0 ? classLoaderCallsPerSite : Long.MAX_VALUE);
+        private LoopGuard guard() {
+            if (loopGuard == null) {
+                loopGuard = new LoopGuard(classLoaderCallsPerRun, classLoaderCallsPerSite);
             }
-            return callSites;
+            return loopGuard;
+        }
+
+        /**
+         * Limits how many times MVEL may ask this configuration, one {@link #newConfiguration()} created, for its
+         * class loader, in all and from one place, for MVEL's analysis pass over one expression, which is the only one
+         * to use the configuration: MVEL asks on every round of a loop in its analysis that never ends, from the same
+         * place, and never checks for an interrupt (#840). Once a call passes either limit, the configuration throws
+         * an {@link AnalysisLoop}.
+         *
+         * @param calls        How many times MVEL may ask
+         * @param callsPerSite How many times MVEL may ask from one place, told by the whole stack (see
+         *                     {@link CallSites}), once it has asked {@value CallSites#UNCOUNTED_CALLS} times, or 0 for
+         *                     no limit
+         */
+        void limitClassLoaderCalls(long calls, long callsPerSite) {
+            classLoaderCallsLeft = calls;
+            classLoaderCallsPerSite = callsPerSite;
+            guard().limit(callsPerSite);
+        }
+
+        /**
+         * Starts a run of the expression compiled with this configuration, one {@link #newRunConfiguration} created:
+         * MVEL may ask it for its class loader as many times as the configuration allows each run, in all and from one
+         * place, and nothing has been thrown. A run after one that went round in a loop may not reach the text that
+         * loops, such as in a branch it doesn't take, and one that does goes round again, until it has asked as many
+         * times. It needs no synchronization: the configuration belongs to one session's compiled copy of the
+         * expression, and the engine lets one run at a time use a session, one after another when they are on
+         * different threads.
+         */
+        void startRun() {
+            classLoaderCallsLeft = classLoaderCallsPerRun;
+            guard().startRun();
+        }
+
+        /**
+         * Returns what this configuration, one {@link #newRunConfiguration} created, threw once the run under way had
+         * asked it for its class loader more times than it allows, whether MVEL let it out of the run, or caught it,
+         * or threw it wrapped in an exception of its own, as it does for what is thrown while it compiles part of the
+         * expression as the expression runs.
+         *
+         * @return What it threw, or {@code null} if the run stayed within the limit
+         */
+        @Nullable RunLoop runLoop() {
+            return guard().runLoop();
+        }
+
+        /**
+         * Returns what this configuration threw once MVEL's analysis had asked it for its class loader as many times
+         * as its limit allows (see {@link #limitClassLoaderCalls}).
+         *
+         * @return What it threw, or {@code null} if MVEL stayed within the limit
+         */
+        @Nullable AnalysisLoop analysisLoop() {
+            return guard().analysisLoop();
+        }
+
+        /**
+         * Returns how many times MVEL has asked this configuration for its class loader in its analysis, or in the
+         * run under way, since the calls were limited (see {@link #limitClassLoaderCalls} and {@link #startRun}), up
+         * to the one that passed the limit for one place, or the last the limit in all allows. Only for tests.
+         *
+         * @return The calls counted
+         */
+        long classLoaderCalls() {
+            return guard().calls();
+        }
+
+        /**
+         * Returns the names the expression compiled with this configuration imported in its own text, as MVEL brought
+         * them in: the simple name of a class it imports, the name of a static method it imports with
+         * {@code import_static}, the name of each class MVEL found, while it compiled, in a package it imports, or
+         * nested in such a class, and the name of each public static field declared in a class, or each constant of
+         * an enum, it imports with {@code import a.B.*;} that MVEL looked up while it compiled. Such a field or
+         * constant counts too where MVEL took its name as one of the parser context's inputs or variables: a name the
+         * expression uses before the import isn't among the imports yet as MVEL compiles that use, so MVEL takes it
+         * as an input or a variable, and the expression reads the field by it as it runs, as it does by a name used
+         * after the import. That holds at the expression's top level, in an if, foreach, while or with block and for
+         * a read in a for body, but not in a def or closure body, nor for an assignment in a for body, which MVEL
+         * compiles in a context of its own. A class in one of its packages that MVEL never looked up isn't among them.
+         *
+         * @param inputs    The parser context's inputs, which MVEL creates before it reads the expression, as it
+         *                  verifies it
+         * @param variables The parser context's variables, which it creates so too
+         * @return The names, in a set of their own, empty if the expression imports nothing of its own
+         */
+        Set<String> inlineImportedNames(Map<String, ?> inputs, Map<String, ?> variables) {
+            Set<String> names = new HashSet<>(inlineNames);
+            if (!staticMemberNames.isEmpty()) {
+                addMembers(inputs, names);
+                addMembers(variables, names);
+            }
+            return names;
+        }
+
+        // Adds to names each name declared that is a static field's or an enum constant's the expression imports.
+        private void addMembers(Map<String, ?> declared, Set<String> names) {
+            for (String name : declared.keySet()) {
+                if (staticMemberNames.contains(name)) {
+                    names.add(name);
+                }
+            }
         }
 
         void startSharing() {
@@ -413,30 +488,16 @@ final class Imports {
                 return super.getClassLoader();
             }
             if (classLoaderCallsLeft == 0) {
-                throw looped();
+                throw guard().looped();
             }
             if (classLoaderCallsLeft > 0) {
                 classLoaderCallsLeft--;
-                if (sites().counted()) {
+                if (guard().counted()) {
                     classLoaderCallsLeft = 0;
-                    throw looped();
+                    throw guard().looped();
                 }
             }
             return super.getClassLoader();
-        }
-
-        // What MVEL went round in a loop in: its analysis, for a configuration that only compiles, or a run.
-        private Error looped() {
-            if (classLoaderCallsPerRun < 0) {
-                if (analysisLoop == null) {
-                    analysisLoop = new AnalysisLoop();
-                }
-                return analysisLoop;
-            }
-            if (runLoop == null) {
-                runLoop = new RunLoop();
-            }
-            return runLoop;
         }
 
         /**
@@ -627,10 +688,9 @@ final class Imports {
          * <p>
          * When the name is a class, MVEL also imports each public static field declared in it, none it inherits, or
          * each constant of an enum, by its simple name, straight into its imports, without calling
-         * {@link #addImport(String, Class)}. The names it adds are remembered (see
-         * {@link Imports#staticMemberNames}), and each counts as one the expression's own imports brought in (see
-         * {@link #inlineImportedNames}) once MVEL looks it up while it compiles the expression, as a class MVEL finds
-         * in a package does.
+         * {@link #addImport(String, Class)}. The names it adds are remembered, and each counts as one the expression's
+         * own imports brought in (see {@link #inlineImportedNames}) once MVEL looks it up while it compiles the
+         * expression, as a class MVEL finds in a package does, or once MVEL takes it as an input or a variable.
          * </p>
          *
          * <p>
@@ -722,118 +782,122 @@ final class Imports {
     }
 
     /**
-     * Limits how many times MVEL may ask a configuration {@link #newConfiguration()} created for its class loader, in
-     * all and from one place, for MVEL's analysis pass over one expression, which is the only one to use the
-     * configuration: MVEL asks on every round of a loop in its analysis that never ends, from the same place, and
-     * never checks for an interrupt (#840). Once a call passes either limit, the configuration throws an
-     * {@link AnalysisLoop}.
-     *
-     * @param configuration A configuration {@link #newConfiguration()} created
-     * @param calls         How many times MVEL may ask
-     * @param callsPerSite  How many times MVEL may ask from one place, told by the whole stack (see
-     *                      {@link CallSites}), once it has asked {@value CallSites#UNCOUNTED_CALLS} times, or 0 for no
-     *                      limit
+     * What tells that MVEL went round in a loop as it asks a configuration for its class loader: where it asked from in
+     * MVEL's analysis or in the run under way (see {@link CallSites}), by the whole stack for a configuration that only
+     * compiles and by the stack's top and depth for one whose runs are limited, and what the configuration threw once a
+     * call passed a limit. The limits in all are the configuration's own, written out with it: this is transient, as
+     * what a pass or run has counted means nothing to a copy read back, which creates its own. It links no lambda or
+     * method reference, which the JVM would link the first time it runs, maybe deep in a stack (#1099).
      */
-    @SuppressWarnings("PMD.NullAssignment")
-    static void limitClassLoaderCalls(ParserConfiguration configuration, long calls, long callsPerSite) {
-        SharedLookupConfiguration shared = (SharedLookupConfiguration) configuration;
-        shared.classLoaderCallsLeft = calls;
-        shared.classLoaderCallsPerSite = callsPerSite;
-        // A count afresh, which sites() creates.
-        shared.callSites = null;
-    }
+    // Each accessor is named after the field it returns, as a record's are.
+    @SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
+    static final class LoopGuard {
 
-    /**
-     * Starts a run of the expression compiled with a configuration {@link #newRunConfiguration} created: MVEL may ask
-     * it for its class loader as many times as the configuration allows each run, in all and from one place, and
-     * nothing has been thrown. A run after one that went round in a loop may not reach the text that loops, such as in
-     * a branch it doesn't take, and one that does goes round again, until it has asked as many times. It needs no
-     * synchronization: the configuration belongs to one session's compiled copy of the expression, and the engine
-     * lets one run at a time use a session, one after another when they are on different threads.
-     *
-     * @param configuration A configuration {@link #newRunConfiguration} created
-     */
-    @SuppressWarnings("PMD.NullAssignment")
-    static void startRun(ParserConfiguration configuration) {
-        SharedLookupConfiguration shared = (SharedLookupConfiguration) configuration;
-        shared.classLoaderCallsLeft = shared.classLoaderCallsPerRun;
-        shared.sites().restart();
-        // What a run before this one threw, if one went round in a loop, isn't this run's.
-        shared.runLoop = null;
-    }
+        // How many times MVEL may ask in each run, or -1 for a configuration that only compiles.
+        private final long callsPerRun;
+        // How many times MVEL may ask from one place, or 0 for no limit.
+        private long callsPerSite;
+        // Where MVEL asked from while the calls are limited, or null until it is first needed.
+        private @Nullable CallSites callSites;
+        // What MVEL's analysis threw once a call passed a limit, or null.
+        private @Nullable AnalysisLoop analysisLoop;
+        // What the run under way threw once a call passed a limit, or null (see startRun).
+        private @Nullable RunLoop runLoop;
 
-    /**
-     * Returns what a configuration {@link #newRunConfiguration} created threw once the run under way had asked it for
-     * its class loader more times than it allows, whether MVEL let it out of the run, or caught it, or threw it wrapped
-     * in an exception of its own, as it does for what is thrown while it compiles part of the expression as the
-     * expression runs.
-     *
-     * @param configuration A configuration {@link #newRunConfiguration} created
-     * @return What it threw, or {@code null} if the run stayed within the limit
-     */
-    static @Nullable RunLoop runLoop(ParserConfiguration configuration) {
-        return ((SharedLookupConfiguration) configuration).runLoop;
-    }
+        /**
+         * Creates the guard for a configuration's analysis pass, or for each of its runs.
+         *
+         * @param callsPerRun  How many times MVEL may ask in each run, or -1 for a configuration that only compiles
+         * @param callsPerSite How many times MVEL may ask from one place, or 0 for no limit
+         */
+        LoopGuard(long callsPerRun, long callsPerSite) {
+            this.callsPerRun = callsPerRun;
+            this.callsPerSite = callsPerSite;
+        }
 
-    /**
-     * Returns how many times MVEL has asked a configuration for its class loader in its analysis, or in the run under
-     * way, since the calls were limited (see {@link #limitClassLoaderCalls} and {@link #startRun}), up to the one that
-     * passed the limit for one place, or the last the limit in all allows. Only for tests.
-     *
-     * @param configuration A configuration whose calls are limited
-     * @return The calls counted
-     */
-    static long classLoaderCalls(ParserConfiguration configuration) {
-        return ((SharedLookupConfiguration) configuration).sites().calls();
-    }
+        // The count of where MVEL asked from, created the first time it is needed: by the whole stack for a
+        // configuration that only compiles, and by the stack's top and depth for one whose runs are limited.
+        private CallSites sites() {
+            if (callSites == null) {
+                callSites = new CallSites(callsPerRun < 0, callsPerSite > 0 ? callsPerSite : Long.MAX_VALUE);
+            }
+            return callSites;
+        }
 
-    /**
-     * Returns what a configuration threw once MVEL's analysis had asked it for its class loader as many times as its
-     * limit allows (see {@link #limitClassLoaderCalls}).
-     *
-     * @param configuration A configuration {@link #newConfiguration()} created
-     * @return What it threw, or {@code null} if MVEL stayed within the limit
-     */
-    static @Nullable AnalysisLoop analysisLoop(ParserConfiguration configuration) {
-        return ((SharedLookupConfiguration) configuration).analysisLoop;
-    }
+        /**
+         * Limits how many times MVEL's analysis may ask from one place, and counts afresh. What the analysis threw, if
+         * anything, is kept.
+         *
+         * @param callsPerSite How many times MVEL may ask from one place, or 0 for no limit
+         */
+        @SuppressWarnings("PMD.NullAssignment")
+        void limit(long callsPerSite) {
+            this.callsPerSite = callsPerSite;
+            // A count afresh, which sites() creates.
+            callSites = null;
+        }
 
-    /**
-     * Returns the names the expression compiled with a configuration imported in its own text, as MVEL brought them
-     * in: the simple name of a class it imports, the name of a static method it imports with {@code import_static},
-     * the name of each class MVEL found, while it compiled, in a package it imports, or nested in such a class, and
-     * the name of each public static field declared in a class, or each constant of an enum, it imports with
-     * {@code import a.B.*;} that MVEL looked up while it compiled. A class in one of its packages, or a field or
-     * constant, that MVEL never looked up isn't among them, until {@link MvelAnalysis#inlineImportedNames} adds one
-     * the expression uses before it imports it (see {@link #staticMemberNames}).
-     *
-     * @param configuration A configuration {@link #newConfiguration()} created
-     * @return The names, which the configuration goes on adding to if MVEL compiles with it again
-     */
-    static Set<String> inlineImportedNames(ParserConfiguration configuration) {
-        return ((SharedLookupConfiguration) configuration).inlineNames;
-    }
+        /**
+         * Starts a run: the count of where MVEL asked from starts again, and nothing has been thrown.
+         */
+        @SuppressWarnings("PMD.NullAssignment")
+        void startRun() {
+            sites().restart();
+            // What a run before this one threw, if one went round in a loop, isn't this run's.
+            runLoop = null;
+        }
 
-    /**
-     * Returns the name of each public static field declared in a class, or each constant of an enum, that the
-     * expression compiled with a configuration imports with {@code import a.B.*;}, whether MVEL looked it up or not.
-     * A name the expression uses before such an import isn't among the imports yet as MVEL compiles that use, so MVEL
-     * takes it as an input or a variable, and the expression reads the field by it as it runs, as it does by a name
-     * used after the import (see {@link MvelAnalysis#inlineImportedNames}). That holds at the expression's top level,
-     * in an if, foreach, while or with block and for a read in a for body, but not in a def or closure body, nor for
-     * an assignment in a for body, which MVEL compiles in a context of its own.
-     *
-     * @param configuration A configuration {@link #newConfiguration()} created
-     * @return The names, empty if the expression imports no class's fields or constants
-     */
-    static Set<String> staticMemberNames(ParserConfiguration configuration) {
-        return ((SharedLookupConfiguration) configuration).staticMemberNames;
+        /**
+         * Counts a call for the class loader, at the site the stack tells, as {@link CallSites#counted()} does, in its
+         * place: a run's site is told by the frames at the stack's top, which are as many as they would be with it.
+         *
+         * @return {@code true} if the call's site has now made more calls than it may, counted at every call, or more
+         *         sites were walked than the count may keep
+         */
+        boolean counted() {
+            return sites().countedAt(callsPerRun < 0 ? CallSites.WHOLE_STACK : CallSites.TOP_AND_DEPTH);
+        }
+
+        /**
+         * Returns what MVEL went round in a loop in, the same each time in a pass or a run: its analysis, for a
+         * configuration that only compiles, or the run under way.
+         *
+         * @return The {@link AnalysisLoop} or {@link RunLoop} to throw
+         */
+        Error looped() {
+            if (callsPerRun < 0) {
+                if (analysisLoop == null) {
+                    analysisLoop = new AnalysisLoop();
+                }
+                return analysisLoop;
+            }
+            if (runLoop == null) {
+                runLoop = new RunLoop();
+            }
+            return runLoop;
+        }
+
+        /** What MVEL's analysis threw once a call passed a limit, or {@code null}. */
+        @Nullable AnalysisLoop analysisLoop() {
+            return analysisLoop;
+        }
+
+        /** What the run under way threw once a call passed a limit, or {@code null}. */
+        @Nullable RunLoop runLoop() {
+            return runLoop;
+        }
+
+        /** The calls counted in the analysis or the run under way (see {@link CallSites#calls()}). Only for tests. */
+        long calls() {
+            return sites().calls();
+        }
     }
 
     /**
      * What a configuration throws once MVEL's analysis pass has asked it for its class loader more times than its
-     * limit allows (see {@link #limitClassLoaderCalls}), as it does on every round of a loop that never ends (#840).
-     * It is an {@link Error}, as MVEL catches every {@link Exception} where it asks in that loop, and goes round again.
+     * limit allows (see {@link SharedLookupConfiguration#limitClassLoaderCalls}), as it does on every round of a loop
+     * that never ends (#840). It is an {@link Error}, as MVEL catches every {@link Exception} where it asks in that
+     * loop, and goes round again.
      */
     static final class AnalysisLoop extends Error {
 

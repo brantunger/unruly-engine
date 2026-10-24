@@ -25,10 +25,12 @@ import java.lang.invoke.MethodHandles;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SplittableRandom;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -111,8 +113,12 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // static initializer needs mvel2, so after the first call it would only say FactNames couldn't be initialized.
         initializeErrorReporting();
         rejectLanguageImports(context.languageImports());
+        // The class loader is wrapped once here, for every expression of the rule list, with the class name roots it
+        // records into.
+        ExactNameClassLoader classLoader = new ExactNameClassLoader(context.classLoader(), new ClassNameRoots());
         return new MvelExpressionCompiler(new Imports(Set.copyOf(context.packageImports()),
-                Set.copyOf(context.classImports()), context.classLoader(), DeclaredTypes.inputsFor(context)));
+                Set.copyOf(context.classImports()), classLoader, ConcurrentHashMap.newKeySet(),
+                Map.copyOf(DeclaredTypes.inputsFor(context))));
     }
 
     /**
@@ -206,9 +212,9 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // load can overflow, and on JDK 21 a first file read on a virtual thread there can leave every later file read
         // on one failing for the life of the JVM (#1210).
         initialize(MethodHandles.lookup(), List.of(MvelExpressionCompiler.class, Imports.class,
-                Imports.SharedLookupConfiguration.class, DeclaredTypes.class, ClassNameRoots.class,
-                MvelExpression.Copy.class, ASTBinaryTree.class, MvelSession.class, ActionVariables.class,
-                StackResetResolverFactory.class, MVELRuntime.class, StackElement.class));
+                Imports.SharedLookupConfiguration.class, Imports.LoopGuard.class, DeclaredTypes.class,
+                ClassNameRoots.class, MvelExpression.Copy.class, ASTBinaryTree.class, MvelSession.class,
+                ActionVariables.class, StackResetResolverFactory.class, MVELRuntime.class, StackElement.class));
         MvelCompileErrors.warmUp();
         // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
         // first initializes the JDK's classes that walk one, so this walks it once each way (#1099).

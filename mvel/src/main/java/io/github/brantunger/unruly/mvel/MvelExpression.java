@@ -106,7 +106,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * @param configuration The configuration it was compiled with, whose calls for the class loader are limited for
      *                      each run
      */
-    record Copy(Serializable expression, ParserConfiguration configuration) {
+    record Copy(Serializable expression, Imports.SharedLookupConfiguration configuration) {
 
         // The record's own equals, hashCode and toString, written out so that none links through ObjectMethods,
         // which can fail for good when first called deep in the stack (#996). equals compares the components last
@@ -285,7 +285,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * @return The compiled copy
      */
     static Copy newCopy(String source, Imports imports, long callsPerRun) {
-        ParserConfiguration configuration = imports.newRunConfiguration(callsPerRun,
+        Imports.SharedLookupConfiguration configuration = imports.newRunConfiguration(callsPerRun,
                 MvelAnalysis.classLoaderCallsPerSite(source.length()));
         return new Copy(MVEL.compileExpression(source, newParserContext(imports, configuration)), configuration);
     }
@@ -379,7 +379,8 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     }
 
     /**
-     * Runs the session's compiled copy of this expression, with a run of it started (see {@link Imports#startRun}).
+     * Runs the session's compiled copy of this expression, with a run of it started (see
+     * {@link Imports.SharedLookupConfiguration#startRun}).
      * When MVEL went round in a loop in the run, the rule fails with the {@link Imports.RunLoop}, whatever MVEL threw:
      * it may wrap it in an exception of its own, as it does for what is thrown while it compiles part of the
      * expression as the expression runs, and end the run with that, or another failure. What MVEL threw in its place
@@ -397,14 +398,14 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
     private Object run(Session session, Map<String, ?> variables) {
         Copy copy = mvelSession(session).compiled(this);
-        Imports.startRun(copy.configuration());
+        copy.configuration().startRun();
         try {
             return MVEL.executeExpression(copy.expression(), (Object) null, variables);
         } catch (VirtualMachineError e) {
             // Fatal: as it is, with nothing allocated for it.
             throw e;
         } catch (Throwable e) {
-            Imports.RunLoop loop = Imports.runLoop(copy.configuration());
+            Imports.RunLoop loop = copy.configuration().runLoop();
             if (loop == null || loop == e) {
                 throw e;
             }
@@ -438,12 +439,12 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * and let {@code load()} modify it while a concurrent {@code run()} was still reading it. Only the
      * names found not to be classes are shared with the other compilations of the rule list; see
      * {@link Imports#newConfiguration()}.
+     *
+     * @param imports       The imports the expression is compiled with
+     * @param configuration A configuration of its own, created from {@code imports}
+     * @return The context
      */
-    static ParserContext newParserContext(Imports imports) {
-        return newParserContext(imports, imports.newConfiguration());
-    }
-
-    private static ParserContext newParserContext(Imports imports, ParserConfiguration configuration) {
+    static ParserContext newParserContext(Imports imports, ParserConfiguration configuration) {
         ParserContext context = new ParserContext(configuration);
         if (imports.stronglyTyped()) {
             // Applied here, not only where the rule list loads, because a session compiles the expression again for

@@ -22,23 +22,25 @@ import static org.junit.jupiter.api.Assertions.*;
  * which preparing MVEL does, and {@link ExactNameClassLoader} when a rule first compiles, so this reads their class
  * files, as {@link FailureMethodLambdaTest} reads {@link MvelAnalysis}', and checks the methods a walk goes through,
  * and the classes nested in them, whole. It checks whole the configuration that counts the calls and throws when MVEL
- * went round in a loop, {@code Imports.SharedLookupConfiguration}, read by its name, and the two errors it throws. The
- * test fails too if a method or a class named here isn't there. {@link FirstUseClassInitializationTest} checks that
- * MVEL's first such steps link none. Every name MVEL looks up goes through {@link ExactNameClassLoader}, the JVM's
- * first maybe deep in a stack, so this checks its class file whole too (#1103).
+ * went round in a loop, {@code Imports.SharedLookupConfiguration} and its {@code Imports.LoopGuard}, read by their
+ * names, and the two errors they throw. The test fails too if a method or a class named here isn't there.
+ * {@link FirstUseClassInitializationTest} checks that MVEL's first such steps link none. Every name MVEL looks up goes
+ * through {@link ExactNameClassLoader}, the JVM's first maybe deep in a stack, so this checks its class file whole too
+ * (#1103).
  */
 @DisplayName("MVEL's loop detection links no lambda when it walks the stack, nor when it stops a loop (#1099)")
 class LoopDetectionLambdaTest {
 
-    // The methods each call MVEL makes for the class loader goes through once it is counted, those that draw the gap
-    // to the next walk, and those that tell its site.
+    // The methods a call for the class loader goes through once it is counted, counted() in tests and countedAt for
+    // MVEL's calls, which Imports.LoopGuard makes, those that draw the gap to the next walk, and those that tell its
+    // site.
     private static final List<String> CALL_SITES_METHODS = List.of("counted", "countedAt", "nextGap",
             "hashOfStack", "hashOfTopAndDepth", "frame");
     // The method that refuses a name with a '$' and too many parts, and the one that walks the stack for it.
     private static final List<String> CLASS_LOADER_METHODS = List.of("checkSize", "inNestedLookup");
     // The classes nested in Imports that count the calls and throw once MVEL went round in a loop.
-    private static final List<String> IMPORTS_CLASSES = List.of("SharedLookupConfiguration", "AnalysisLoop",
-            "RunLoop");
+    private static final List<String> IMPORTS_CLASSES = List.of("SharedLookupConfiguration", "LoopGuard",
+            "AnalysisLoop", "RunLoop");
 
     @Test
     @DisplayName("CallSites' and ExactNameClassLoader's methods that walk the stack have no invokedynamic")

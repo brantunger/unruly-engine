@@ -16,9 +16,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * With the JDK's own class loaders, a name in a rule is looked up in the imported packages as a class file before MVEL
- * loads it (#701). These tests ask a rule list's configuration directly, with a class loader in place of the rule
- * list's own whose parent is the JDK's application class loader, so it is looked up as for the JDK's loaders, and
- * which records the class files it is asked for.
+ * loads it (#701). These tests ask a rule list's configuration directly, with the rule list's own class loader around
+ * one whose parent is the JDK's application class loader, so it is looked up as for the JDK's loaders, and which
+ * records the class files it is asked for.
  */
 @DisplayName("a name is looked up as a class file only as often, and in only as many forms, as it may be a class")
 class ClassFileLookupTest {
@@ -40,8 +40,8 @@ class ClassFileLookupTest {
     }
 
     private static ParserConfiguration configuration(ResourceRecordingLoader loader, Set<String> packages) {
-        return new Imports(packages, Set.of(), loader, ConcurrentHashMap.newKeySet(), Map.of(), new ClassNameRoots())
-                .newConfiguration();
+        return new Imports(packages, Set.of(), new ExactNameClassLoader(loader, ExactNameClassLoader.MAX_CACHED_CLASSES,
+                true), ConcurrentHashMap.newKeySet(), Map.of()).newConfiguration();
     }
 
     // Review of #701: MVEL asks for a name more than once, and only a rule list's own imports remembered a miss.
