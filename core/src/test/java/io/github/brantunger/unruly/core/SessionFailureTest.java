@@ -32,7 +32,7 @@ class SessionFailureTest {
     private final AtomicBoolean overlapping = new AtomicBoolean();
     private final AtomicBoolean started = new AtomicBoolean();
     private final AtomicReference<Throwable> overlappingFailure = new AtomicReference<>();
-    private StatefulRulesEngine<Map<String, Object>> engine;
+    private CoreRulesEngine<Map<String, Object>> engine;
 
     /** A language whose rules always match and do nothing, and whose sessions come from {@code newSession}. */
     private static ExpressionLanguage language(String name, Supplier<Session> newSession) {

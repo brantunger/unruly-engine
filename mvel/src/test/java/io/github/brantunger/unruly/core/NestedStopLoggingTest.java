@@ -432,7 +432,7 @@ class NestedStopLoggingTest {
      * An engine's clock, which a run reads once, after it has read the engine's rules and before it borrows a copy of
      * them. Once armed, the next read reloads the engine, which closes the rules that run read, then waits until
      * {@code past} has gone by, so the run's deadline has passed when it finds them closed. That relies on the order in
-     * which {@code AbstractRulesEngine.runInScope} works: it reads the rules, takes the run's deadline, then reads
+     * which {@code CoreRulesEngine.runInScope} works: it reads the rules, takes the run's deadline, then reads
      * the clock once, before it borrows a copy. Should the clock be read anywhere else, the tests that use this one
      * would stop reaching the rules being read again.
      */

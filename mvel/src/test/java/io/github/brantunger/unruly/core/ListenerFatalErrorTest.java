@@ -57,8 +57,8 @@ class ListenerFatalErrorTest {
         };
     }
 
-    private static StatefulRulesEngine<Map<String, Object>> engine(String condition, RuleListener... listeners) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+    private static CoreRulesEngine<Map<String, Object>> engine(String condition, RuleListener... listeners) {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.listeners(List.of(listeners)));
         engine.load(List.of(Rule.builder().ruleName("r").condition(condition).action("output.put('k', 1)").build()));
         return engine;
@@ -74,7 +74,7 @@ class ListenerFatalErrorTest {
     @DisplayName("from afterEvaluate: the later listeners still get afterEvaluate, then the error is rethrown")
     void fromAfterCallback() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+        CoreRulesEngine<Map<String, Object>> engine = engine("true",
                 listener("L1", null, null), listener("L2", "afterEvaluate", oom), listener("L3", null, null));
 
         assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
@@ -86,7 +86,7 @@ class ListenerFatalErrorTest {
     @DisplayName("from beforeEvaluate: the condition doesn't run and every listener gets onError")
     void fromBeforeEvaluate() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+        CoreRulesEngine<Map<String, Object>> engine = engine("true",
                 listener("L1", null, null), listener("L2", "beforeEvaluate", oom), listener("L3", null, null));
 
         assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
@@ -98,7 +98,7 @@ class ListenerFatalErrorTest {
     @DisplayName("from beforeExecute: the action doesn't run and every listener gets onError")
     void fromBeforeExecute() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+        CoreRulesEngine<Map<String, Object>> engine = engine("true",
                 listener("L1", null, null), listener("L2", "beforeExecute", oom));
 
         assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
@@ -110,7 +110,7 @@ class ListenerFatalErrorTest {
     @DisplayName("from onError: the later listeners still get onError, then the error is rethrown")
     void fromOnError() {
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("x.missing > 1",
+        CoreRulesEngine<Map<String, Object>> engine = engine("x.missing > 1",
                 listener("L1", "onError", oom), listener("L2", null, null));
 
         assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
@@ -123,7 +123,7 @@ class ListenerFatalErrorTest {
     void fromBeforeEvaluateThenOnError() {
         OutOfMemoryError fromBefore = new OutOfMemoryError("beforeEvaluate");
         OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+        CoreRulesEngine<Map<String, Object>> engine = engine("true",
                 listener("L1", "beforeEvaluate", fromBefore), listener("L2", "onError", fromOnError));
 
         assertSame(fromBefore, assertThrows(OutOfMemoryError.class, () -> engine.run(x())));
@@ -137,7 +137,7 @@ class ListenerFatalErrorTest {
     void fromRuleThenOnError() {
         OutOfMemoryError fromRule = new OutOfMemoryError("rule");
         OutOfMemoryError fromOnError = new OutOfMemoryError("onError");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("bomb.explode()",
+        CoreRulesEngine<Map<String, Object>> engine = engine("bomb.explode()",
                 listener("L1", "onError", fromOnError), listener("L2", null, null));
         FactStore<Object> facts = new FactMap<>();
         facts.setValue("bomb", new WrappedFatalErrorTest.Bomb(fromRule));
@@ -153,7 +153,7 @@ class ListenerFatalErrorTest {
     void twoFatalErrors() {
         OutOfMemoryError first = new OutOfMemoryError("first");
         OutOfMemoryError second = new OutOfMemoryError("second");
-        StatefulRulesEngine<Map<String, Object>> engine = engine("true",
+        CoreRulesEngine<Map<String, Object>> engine = engine("true",
                 listener("L1", "afterExecute", first), listener("L2", "afterExecute", second),
                 listener("L3", null, null));
 

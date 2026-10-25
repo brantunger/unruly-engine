@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
@@ -13,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -40,8 +38,8 @@ class ClosedRulesRetryTest {
      * @param runTimeout  How long a run may take, or {@code null} for no deadline
      * @return The engine, with an empty rule list loaded
      */
-    private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
-                                                                       Duration runTimeout) {
+    private static CoreRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
+                                                                    Duration runTimeout) {
         return engineFindingClosedRules(closedReads, reads, runTimeout, List.of());
     }
 
@@ -49,9 +47,9 @@ class ClosedRulesRetryTest {
      * An engine like {@link #engineFindingClosedRules(int, AtomicInteger, Duration)}, whose runs go to
      * {@code listeners}.
      */
-    private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
-                                                                       Duration runTimeout,
-                                                                       List<RuleListener> listeners) {
+    private static CoreRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
+                                                                    Duration runTimeout,
+                                                                    List<RuleListener> listeners) {
         CopyPool closedRules = closedRules();
         return engineReading(closedReads, reads, runTimeout, listeners, () -> closedRules);
     }
@@ -70,28 +68,23 @@ class ClosedRulesRetryTest {
      * An engine like {@link #engineFindingClosedRules(int, AtomicInteger, Duration, List)}, whose readings that
      * find a closed rule set find the one {@code closed} gives each time.
      */
-    private static AbstractRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
-                                                            List<RuleListener> listeners, Supplier<CopyPool> closed) {
+    private static CoreRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
+                                                         List<RuleListener> listeners, Supplier<CopyPool> closed) {
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
                         Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()))
                 .withListeners(listeners).withRunTimeout(runTimeout).build();
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
-            @Override
-            CopyPool currentRules() {
-                return reads.getAndIncrement() < closedReads ? closed.get() : super.currentRules();
-            }
+        CoreRulesEngine<String> engine = TestEngines.withSeam(String::new, configuration,
+                new CoreRulesEngine.TestSeam<>() {
+                    @Override
+                    CopyPool currentRules(CoreRulesEngine<String> engine) {
+                        return reads.getAndIncrement() < closedReads ? closed.get() : super.currentRules(engine);
+                    }
 
-            @Override
-            RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-                return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("ran", List.of(), rules.loaded().checksum()));
-            }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
+                    @Override
+                    RuleExecutor.RunBody<String> body() {
+                        return (rules, copy, runFacts) -> RunResult.of("ran", List.of(), rules.loaded().checksum());
+                    }
+                });
         engine.load(List.of());
         return engine;
     }
@@ -112,7 +105,7 @@ class ClosedRulesRetryTest {
         AtomicInteger reads = new AtomicInteger();
         // More closed readings than the bound, but not endlessly many: a run that kept reading would end here too,
         // and fail this test by not throwing, rather than hold it for ever.
-        AbstractRulesEngine<String> engine = engineFindingClosedRules(100, reads, null);
+        CoreRulesEngine<String> engine = engineFindingClosedRules(100, reads, null);
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>()));
 
@@ -129,7 +122,7 @@ class ClosedRulesRetryTest {
         // A different closed rule set at every reading, far more of them than the bound: what a loader reloading fast
         // leaves a run, when each reload retires the set the run has just read. None of them is the engine's current
         // set, so no invariant has broken, and the run borrows once a reading finds that.
-        AbstractRulesEngine<String> engine = engineReading(100, reads, null, List.of(),
+        CoreRulesEngine<String> engine = engineReading(100, reads, null, List.of(),
                 ClosedRulesRetryTest::closedRules);
 
         assertEquals("ran", engine.run(new FactMap<>()));
@@ -145,7 +138,7 @@ class ClosedRulesRetryTest {
         CopyPool second = closedRules();
         // Forty readings of each, eighty in all: more than the bound together, but fewer than it in a row, which is
         // what the failure's message says happened.
-        AbstractRulesEngine<String> engine = engineReading(80, reads, null, List.of(),
+        CoreRulesEngine<String> engine = engineReading(80, reads, null, List.of(),
                 () -> reads.get() <= 40 ? first : second);
 
         assertEquals("ran", engine.run(new FactMap<>()));
@@ -159,7 +152,7 @@ class ClosedRulesRetryTest {
         AtomicInteger reads = new AtomicInteger();
         // The shape an ordinary shutdown makes: the run read the rules, close() retired them before it could borrow
         // a copy, and reading again finds no rule set at all rather than the one a reload would have left.
-        AbstractRulesEngine<String> engine = engineFindingClosedRules(1, reads, null);
+        CoreRulesEngine<String> engine = engineFindingClosedRules(1, reads, null);
         engine.close();
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>()));
@@ -175,7 +168,7 @@ class ClosedRulesRetryTest {
     @DisplayName("a run interrupted while its rules are closed stops there rather than reading them again")
     void anInterruptedRunStopsRatherThanReadingAgain() {
         AtomicInteger reads = new AtomicInteger();
-        AbstractRulesEngine<String> engine = engineFindingClosedRules(5, reads, null);
+        CoreRulesEngine<String> engine = engineFindingClosedRules(5, reads, null);
         Thread.currentThread().interrupt();
         try {
             RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
@@ -195,7 +188,7 @@ class ClosedRulesRetryTest {
             + " with the status set")
     void anInterruptedRunKeepsTheStatusAListenerClears() {
         AtomicInteger reads = new AtomicInteger();
-        AbstractRulesEngine<String> engine = engineFindingClosedRules(5, reads, null, List.of(new RuleListener() {
+        CoreRulesEngine<String> engine = engineFindingClosedRules(5, reads, null, List.of(new RuleListener() {
             @Override
             public void onRunError(RunContext run, RuntimeException error) {
                 // As a listener that swallows an InterruptedException does.
@@ -219,7 +212,7 @@ class ClosedRulesRetryTest {
     void aRunPastItsDeadlineStopsRatherThanReadingAgain() {
         AtomicInteger reads = new AtomicInteger();
         // A timeout of zero, so the run's deadline has passed by the time it finds the rule set it read closed.
-        AbstractRulesEngine<String> engine = engineFindingClosedRules(5, reads, Duration.ZERO);
+        CoreRulesEngine<String> engine = engineFindingClosedRules(5, reads, Duration.ZERO);
 
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class,
                 () -> engine.run(new FactMap<>()));

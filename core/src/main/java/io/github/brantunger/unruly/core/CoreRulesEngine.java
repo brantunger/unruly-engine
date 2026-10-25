@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,14 +31,12 @@ import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.Text;
 
 /**
- * What every engine shares, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles and
+ * The engine, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles and
  * {@link RuleSetLifecycle} swaps in and retires, borrowing a compiled copy for each run, evaluating conditions and
  * running actions, which {@link RuleExecutor} does, cancellation and failure reporting, and listener callbacks and the
- * reporting of rule and run failures to listeners, which {@link ListenerNotifier} does. A subclass supplies the
- * match policy through {@link #untilFirst()} and
- * {@link #fire(RuleExecutor.Matches, CopyPool, CopyPool.Copy, RunFacts)}, which
- * {@link #runRules(FactStore, Duration, Set)} calls, and names it in {@link #matchPolicy()}. The two hooks are one
- * policy, as {@code fire} describes.
+ * reporting of rule and run failures to listeners, which {@link ListenerNotifier} does. The {@link MatchPolicy} it is
+ * built with decides whether {@link #runRules(FactStore, Duration, Set)} stops evaluating at the first match, and
+ * which of the rules that matched {@link #fire(RuleExecutor.Matches, CopyPool, CopyPool.Copy, RunFacts)} fires.
  *
  * <p>
  * The engine changes no global setting of any language: a session is used by one run at a time, so a language keeps
@@ -46,12 +45,17 @@ import io.github.brantunger.unruly.internal.Text;
  *
  * @param <O> The output object to instantiate
  */
-abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
+final class CoreRulesEngine<O> implements RulesEngine<O> {
 
     // A fixed name, documented for logging configuration, so it doesn't change when this internal class does.
     static final String LOGGER_NAME = "io.github.brantunger.unruly.engine";
 
     private static final Logger log = LoggerFactory.getLogger(LOGGER_NAME);
+
+    // How many rules may match in one run of a unique-match engine: the policy's whole point.
+    private static final int ALLOWED_MATCHES = 1;
+    // What a run throws when no rules are loaded, or the engine is closed.
+    private static final String NOT_LOADED = "load() must be called before run()";
 
     // How many times in a row one run may find the same rule set closed: its first reading of it, and one more for
     // each time it reads the engine's rules again and gets back the very set it found closed. Reading again settles
@@ -61,6 +65,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // engine's current set is closed, so the bound is far above one. Past it, the invariant a run relies on has
     // broken, and a run that spun instead would leave no evidence.
     private static final int RULE_READS_PER_RUN = 64;
+    // Which rules a run fires once it has evaluated their conditions.
+    private final MatchPolicy policy;
+    // What a test puts in place of the engine's reading of its rules or of its runs' body, or null, as from Engines.
+    private final TestSeam<O> seam;
     // Compiles the rule lists load() and validate() are given, with the engine's languages, imports and options.
     private final RuleListCompiler compiler;
     // Calls the listeners, and reports the failures of rules and runs to them.
@@ -90,8 +98,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * building thread's context class loader. A limit on copies means a run that finds all of them in use waits for
      * one; see {@link CopyPool}.
      *
-     * @param outputFactory The {@link Supplier} to use to instantiate the output object with
+     * @param policy        Which rules a run fires once it has evaluated their conditions
+     * @param outputFactory The {@link Supplier} to use to instantiate the output object with. It is called once per
+     *                      run that fires a rule and must return a new, non-null object each time.
      * @param configuration The builder's settings
+     * @param seam          What a test puts in place of the engine's reading of its rules or of its runs' body, or
+     *                      {@code null}, as {@link Engines} passes, for the engine's own
      * @throws IllegalStateException    if the languages or the default language can't be resolved, a language's
      *                                  {@link ExpressionLanguage#reservedFactNames()} returns {@code null} or a set
      *                                  holding {@code null}, or options or imports are given for a language the
@@ -116,7 +128,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  yet and the thread has too little stack left to prepare it, checked last,
      *                                  before any language is prepared
      */
-    AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
+    CoreRulesEngine(MatchPolicy policy, Supplier<O> outputFactory, EngineConfiguration<O> configuration,
+                    TestSeam<O> seam) {
+        this.policy = policy;
+        this.seam = seam;
         EngineSettings settings = EngineSettings.resolve(configuration);
         this.notifier = new ListenerNotifier(log, configuration.listeners());
         this.runTimeout = configuration.runTimeout();
@@ -167,9 +182,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Fires the rules the way this engine fires them: evaluates the conditions in priority order, stopping at the
-     * first match if {@link #untilFirst()} says to, and returns no output if no rule matched; otherwise
-     * {@link #fire(RuleExecutor.Matches, CopyPool, CopyPool.Copy, RunFacts)} fires the matched rules.
+     * Fires the rules the way this engine's {@link MatchPolicy} fires them: evaluates the conditions in priority
+     * order, stopping at the first match if {@link MatchPolicy#untilFirst} says to, and returns no output if no rule
+     * matched; otherwise {@link #fire(RuleExecutor.Matches, CopyPool, CopyPool.Copy, RunFacts)} fires the matched
+     * rules. A test's {@link TestSeam} may give the run a body of its own in place of this.
      *
      * @param facts   The facts the run was given
      * @param timeout How long the run may take, or {@code null} if it has no deadline
@@ -177,9 +193,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return What the run did: its output is {@code null} if the rule list is empty or no rule matched
      */
     RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-        return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
+        RuleExecutor.RunBody<O> body = seam == null ? null : seam.body();
+        return runInScope(facts, timeout, tags, body != null ? body : (ruleSet, copy, runFacts) -> {
             // Match the facts and data against the set of rules with the highest priority first.
-            RuleExecutor.Matches matches = executor.match(ruleSet.loaded().rules(), copy, runFacts, untilFirst());
+            RuleExecutor.Matches matches = executor.match(ruleSet.loaded().rules(), copy, runFacts,
+                    policy.untilFirst);
             if (matches.matched().isEmpty()) {
                 return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.loaded().checksum());
             }
@@ -188,43 +206,54 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Returns whether a run stops evaluating conditions at the first match. By default it doesn't: every condition
-     * is evaluated, except those of rules the run skips. It is one policy with
-     * {@link #fire(RuleExecutor.Matches, CopyPool, CopyPool.Copy, RunFacts)}, as that describes.
-     *
-     * @return {@code true} to stop at the first match
-     */
-    boolean untilFirst() {
-        return false;
-    }
-
-    /**
-     * Fires the action of the first rule that matched, on a new output object. The run has evaluated the conditions
-     * already, and calls this only when at least one rule matched.
-     *
-     * <p>
-     * It is one policy with {@link #untilFirst()}: firing only the first match is right when the run stops there, or
-     * when an override fails a run with more than one match first, as the unique-match engine does, so a subclass
-     * that overrides either must consider the other. A check that fails the run must come before
-     * {@link RuleExecutor#createOutput(RunFacts)}, so a failed run never calls the output factory.
-     * </p>
+     * Fires the rules that matched, as the engine's {@link MatchPolicy} says, on a new output object. The run has
+     * evaluated the conditions already, and calls this only when at least one rule matched. A first-match engine
+     * fires the first, as its run stopped there. An all-matches engine fires every one, in priority order, highest
+     * priority first; the actions share the output object, so a lower-priority action can overwrite a field set by a
+     * higher-priority one. A unique-match engine fires the one rule that matched, and fails a run in which more than
+     * one did before it creates the output object, so a failed run never calls the output factory.
      *
      * @param matches The rules that matched, at least one, and every rule's outcome
      * @param ruleSet The rule set the run uses
      * @param copy    The run's copy of the rules
      * @param facts   The run's facts and the views built over them
-     * @return The output object the action shaped, with the rule that fired
-     * @throws RuleExecutionException if the output factory throws or returns {@code null}, the action fails, or the
-     *                                run was cancelled before the rule. A fatal {@link Error} (see
-     *                                {@link Failures#fatalError}) from the output factory is rethrown unchanged, as
-     *                                {@link RuleExecutor#createOutput(RunFacts)} describes.
+     * @return The output object the actions shaped, with the rules that fired
+     * @throws RuleExecutionException if more than one rule matched on a unique-match engine: it names each of them,
+     *                                in priority order, with the list cut at 1,000 characters like text copied from
+     *                                an exception, and belongs to no rule; or if the output factory throws or returns
+     *                                {@code null}, an action fails, or the run was cancelled before a rule. A fatal
+     *                                {@link Error} (see {@link Failures#fatalError}) from the output factory is
+     *                                rethrown unchanged, as {@link RuleExecutor#createOutput(RunFacts)} describes.
      */
     RunResult<O> fire(RuleExecutor.Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
-        // Run the action of the selected rule on given data and return the output.
-        CompiledRule resolvedRule = matches.matched().get(0);
-        O output = executor.executeRule(resolvedRule, copy, executor.createOutput(facts), facts);
-        return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(),
-                ruleSet.loaded().checksum());
+        List<CompiledRule> matched = matches.matched();
+        if (policy == MatchPolicy.UNIQUE_MATCH && matched.size() > ALLOWED_MATCHES) {
+            // The list of names is cut like text copied from an exception: a table whose rows all match would
+            // otherwise put every name in one log line. It's escaped after the cut, so the cut can't split an
+            // escape. Read in a loop rather than with a stream and a lambda, so the JVM's first run that matches
+            // more than one rule links no call site, which could overflow deep in a stack (#1093).
+            List<String> names = new ArrayList<>(matched.size());
+            for (CompiledRule rule : matched) {
+                names.add(rule.rule().getRuleName());
+            }
+            throw failedRun(matched.size() + " rules matched, but a unique-match engine allows one: "
+                    + Text.quoteJoined(names));
+        }
+        O output = executor.createOutput(facts);
+        if (policy == MatchPolicy.ALL_MATCHES) {
+            // Run the action of every rule on given data, saving state each time
+            List<Rule> fired = new ArrayList<>();
+            for (CompiledRule rule : matched) {
+                output = executor.executeRule(rule, copy, output, facts);
+                fired.add(rule.rule());
+            }
+            return RunResult.of(output, fired, matches.evaluations(), ruleSet.loaded().checksum());
+        }
+        // Run the action of the selected rule on given data and return the output: the first match, and on a
+        // unique-match engine the only one.
+        CompiledRule resolvedRule = matched.get(0);
+        return RunResult.of(executor.executeRule(resolvedRule, copy, output, facts), List.of(resolvedRule.rule()),
+                matches.evaluations(), ruleSet.loaded().checksum());
     }
 
     /**
@@ -423,7 +452,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                             keepInterruptOfStop(tally);
                         } finally {
                             if (event != null) {
-                                event.commit(engineId, runId, parentRunId, matchPolicy(), tally,
+                                event.commit(engineId, runId, parentRunId, policy.label, tally,
                                         rules.loaded().checksum(), outcome);
                             }
                         }
@@ -673,16 +702,19 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /** Creates the context one run is reported to listeners with. */
     private EngineRunContext newRun(CopyPool rules, RunFacts facts) {
-        return new EngineRunContext(facts.runId(), facts.parent(), matchPolicy(), rules.loaded().checksum(),
+        return new EngineRunContext(facts.runId(), facts.parent(), policy.label, rules.loaded().checksum(),
                 facts.forListeners(), facts.selection().tags(), facts.selection().startedAt());
     }
 
     /**
-     * Returns which rules this engine fires, for {@link RunContext#matchPolicy()}.
+     * Returns which rules this engine fires, whose label {@link RunContext#matchPolicy()} reports. For tests, which
+     * check that each of the builder's methods builds an engine of its policy.
      *
-     * @return {@code "firstMatch"}, {@code "allMatches"} or {@code "uniqueMatch"}
+     * @return The policy the engine was built with
      */
-    abstract String matchPolicy();
+    MatchPolicy matchPolicy() {
+        return policy;
+    }
 
     /**
      * Reports a run that failed for a reason that belongs to no rule and no listener callback is open for, such as
@@ -717,13 +749,26 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Returns the rule set runs start with.
+     * Returns the rule set runs start with: the one {@link #loadedRules()} returns, unless a test's {@link TestSeam}
+     * returns another.
      *
      * @return The rule set
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      */
     CopyPool currentRules() {
-        return ruleSets.currentOrThrow("load() must be called before run()");
+        // Read here rather than through loadedRules(), so a run's reading is no frame deeper than it was.
+        return seam == null ? ruleSets.currentOrThrow(NOT_LOADED) : seam.currentRules(this);
+    }
+
+    /**
+     * Returns the rule set the engine has loaded, which {@link #currentRules()} returns unless a test's
+     * {@link TestSeam} returns another.
+     *
+     * @return The rule set
+     * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
+     */
+    private CopyPool loadedRules() {
+        return ruleSets.currentOrThrow(NOT_LOADED);
     }
 
     /**
@@ -835,6 +880,44 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         @Override
         public void accept(RuleListener listener) {
             listener.beforeRun(run);
+        }
+    }
+
+    /**
+     * What a test puts in place of the engine's own reading of its rules, or of the body of its runs, to reach a state
+     * an engine otherwise reaches only in a race, such as a run that reads a rule set a reload has just closed. A test
+     * subclasses it and overrides what it replaces; what it doesn't override is the engine's own. An engine
+     * {@link Engines} creates has none, and the engine only ever calls through one, so its code makes no lambda for
+     * it.
+     *
+     * @param <O> The output object type of the engine
+     */
+    // Abstract with no abstract method: a test overrides only what it replaces, and a seam that replaces nothing is
+    // no seam, so none is created but a subclass.
+    @SuppressWarnings("PMD.AbstractClassWithoutAbstractMethod")
+    abstract static class TestSeam<O> {
+
+        /**
+         * Returns the rule set a run starts with, and reads again when it finds the one it read closed. By default
+         * the one the engine has loaded.
+         *
+         * @param engine The engine that reads its rules
+         * @return The rule set
+         * @throws IllegalStateException if {@link CoreRulesEngine#load(List)} has not been called, or the engine is
+         *                               closed
+         */
+        CopyPool currentRules(CoreRulesEngine<O> engine) {
+            return engine.loadedRules();
+        }
+
+        /**
+         * Returns what a run does once it holds a copy of the rules, in place of evaluating and firing them. By
+         * default nothing, so the run does what the engine's {@link MatchPolicy} does.
+         *
+         * @return The run's body, or {@code null} for the engine's own
+         */
+        RuleExecutor.RunBody<O> body() {
+            return null;
         }
     }
 

@@ -92,7 +92,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  */
 final class CopyPool {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
     // The number of users once the rule set is closed.
     private static final int CLOSED = -1;
     // Set in the number of users once the rule set is retired, so that a run leaving reads whether it's retired in the

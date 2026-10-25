@@ -51,7 +51,7 @@ class FirstRunRoomTest {
             + "run of it has run an action, no run of a rule list of it does")
     void firstRunOnce() {
         List<Long> runsStarted = new CopyOnWriteArrayList<>();
-        AbstractRulesEngine<Map<String, Object>> engine = (AbstractRulesEngine<Map<String, Object>>)
+        CoreRulesEngine<Map<String, Object>> engine = (CoreRulesEngine<Map<String, Object>>)
                 RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).language(new FirstLanguage())
                         .listener(new RuleListener() {
                             @Override
@@ -77,7 +77,7 @@ class FirstRunRoomTest {
         // Not reached any more: the run doesn't throw.
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertEquals(Map.of(), engine.run(new FactMap<>()));
-        AbstractRulesEngine<Map<String, Object>> other = engine(new FirstLanguage());
+        CoreRulesEngine<Map<String, Object>> other = engine(new FirstLanguage());
         other.load(List.of(rule("s", "yes", "done")));
         assertFalse(other.currentRules().loaded().languagesRan().needsRoom(),
                 "another engine's rule list of the language");
@@ -87,12 +87,12 @@ class FirstRunRoomTest {
     @DisplayName("a language's first run is its own: one of another language doesn't end it, and a run of a rule list "
             + "of both ends it only for the languages whose actions it ran")
     void perLanguage() {
-        AbstractRulesEngine<Map<String, Object>> ran = engine(new RanLanguage());
+        CoreRulesEngine<Map<String, Object>> ran = engine(new RanLanguage());
         ran.load(List.of(rule("r", "yes", "done")));
         ran.run(new FactMap<>());
         assertFalse(ran.currentRules().loaded().languagesRan().needsRoom(), "after the first language's run");
 
-        AbstractRulesEngine<Map<String, Object>> engine = twoLanguages(new RanLanguage(), new NotRunLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = twoLanguages(new RanLanguage(), new NotRunLanguage());
         engine.load(List.of(rule("other", "yes", "done").toBuilder().language(NotRunLanguage.NAME).build()));
         assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
                 "a rule list of a language that hasn't run");
@@ -126,7 +126,7 @@ class FirstRunRoomTest {
     @DisplayName("a run of a rule list of two languages that haven't run, that runs the actions of one, ends the first "
             + "run of that one alone")
     void onlyFiredLanguageEnds() {
-        AbstractRulesEngine<Map<String, Object>> engine = twoLanguages(new FiredLanguage(), new UnfiredLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = twoLanguages(new FiredLanguage(), new UnfiredLanguage());
         engine.load(List.of(rule("fired", "yes", "done"),
                 rule("unfired", "no", "done").toBuilder().language(UnfiredLanguage.NAME).build()));
 
@@ -144,7 +144,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("a run that fails, or runs no action, isn't a language's first run: the next run needs the room too")
     void failedOrNoActionRunsDontCount() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new FailingLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new FailingLanguage());
         engine.load(List.of(rule("fails", "yes", "throw")));
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -162,7 +162,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("a run that ran an action and then failed in a later rule isn't a language's first run")
     void actionThenFailingRuleDoesntCount() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new FiredThenFailedLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new FiredThenFailedLanguage());
         engine.load(List.of(rule("fires", "yes", "done").toBuilder().priority(2).build(),
                 rule("fails", "yes", "throw").toBuilder().priority(1).build()));
 
@@ -176,7 +176,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("a run that ran an action and then failed as it ended isn't a language's first run")
     void actionThenFailingEndDoesntCount() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new FailedEndLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new FailedEndLanguage());
         engine.load(List.of(rule("fires", "close", "done")));
 
         // A value kept for the run whose close() throws a fatal error, which the run throws as it ends.
@@ -193,7 +193,7 @@ class FirstRunRoomTest {
     void reloadedListRecorded() {
         CopyPool closed = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closed.retire();
-        AbstractRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReloadedLanguage(),
+        CoreRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReloadedLanguage(),
                 new AtomicReference<>(closed));
         engine.load(List.of(rule("r", "yes", "done")));
         assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "the list the run borrows from");
@@ -209,7 +209,7 @@ class FirstRunRoomTest {
             + "for the list that replaced them")
     void reloadedFirstRunListRecorded() {
         AtomicReference<CopyPool> closed = new AtomicReference<>();
-        AbstractRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReplacedLanguage(), closed);
+        CoreRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReplacedLanguage(), closed);
         engine.load(List.of(rule("replaced", "yes", "done")));
         closed.set(engine.currentRules());
         // The reload retires and closes the rules read above, as no run uses them.
@@ -225,7 +225,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("validate() doesn't end a language's first run, nor need its room")
     void validateDoesntCount() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new ValidatedLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new ValidatedLanguage());
         // Not reached: validate() checks no more room for a language's first run.
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertEquals(List.of(), engine.validate(List.of(rule("r", "yes", "done"))));
@@ -237,7 +237,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("a rule list without rules, checked against the default language, never needs the room")
     void emptyRuleList() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new EmptyListLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new EmptyListLanguage());
         engine.load(List.of());
         assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list without rules");
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
@@ -252,7 +252,7 @@ class FirstRunRoomTest {
     @Test
     @DisplayName("recording a language the rule list doesn't use records nothing")
     void unusedLanguageIgnored() {
-        AbstractRulesEngine<Map<String, Object>> engine = engine(new IgnoredLanguage());
+        CoreRulesEngine<Map<String, Object>> engine = engine(new IgnoredLanguage());
         engine.load(List.of(rule("r", "yes", "done")));
 
         engine.currentRules().loaded().languagesRan().completed(List.of("unused"));
@@ -261,34 +261,29 @@ class FirstRunRoomTest {
                 "after recording a language the rules don't use");
     }
 
-    private static AbstractRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
-        return (AbstractRulesEngine<Map<String, Object>>) RulesEngineBuilder.<Map<String, Object>>allMatches(
+    private static CoreRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
+        return (CoreRulesEngine<Map<String, Object>>) RulesEngineBuilder.<Map<String, Object>>allMatches(
                 HashMap::new).language(language).build();
     }
 
     // An engine whose second reading of its rules, the first run's after the test's own, finds the closed rule list
     // held in closed, as a run finds the rules a reload replaced, and whose other readings find the rules it loaded.
-    private static AbstractRulesEngine<Map<String, Object>> reloadedEngine(ExpressionLanguage language,
-                                                                          AtomicReference<CopyPool> closed) {
+    private static CoreRulesEngine<Map<String, Object>> reloadedEngine(ExpressionLanguage language,
+                                                                       AtomicReference<CopyPool> closed) {
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<Map<String, Object>> configuration = TestConfigurations.engineConfiguration(
                 Map.of(language.name(), language)).build();
-        return new AbstractRulesEngine<>(HashMap::new, configuration) {
+        return TestEngines.withSeam(HashMap::new, configuration, new CoreRulesEngine.TestSeam<>() {
             @Override
-            CopyPool currentRules() {
-                return reads.getAndIncrement() == 1 ? closed.get() : super.currentRules();
+            CopyPool currentRules(CoreRulesEngine<Map<String, Object>> engine) {
+                return reads.getAndIncrement() == 1 ? closed.get() : super.currentRules(engine);
             }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
+        });
     }
 
     // An engine of two languages, the first the default.
-    private static AbstractRulesEngine<Map<String, Object>> twoLanguages(TestLanguage first, TestLanguage second) {
-        return (AbstractRulesEngine<Map<String, Object>>) RulesEngineBuilder.<Map<String, Object>>allMatches(
+    private static CoreRulesEngine<Map<String, Object>> twoLanguages(TestLanguage first, TestLanguage second) {
+        return (CoreRulesEngine<Map<String, Object>>) RulesEngineBuilder.<Map<String, Object>>allMatches(
                 HashMap::new).language(first).language(second).defaultLanguage(first.name()).build();
     }
 

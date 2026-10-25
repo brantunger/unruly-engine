@@ -136,14 +136,14 @@ class CleanupStepFailureTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static AbstractRulesEngine<Object> engine(Counting language, int copiesAtLoad, RuleListener listener) {
+    private static CoreRulesEngine<Object> engine(Counting language, int copiesAtLoad, RuleListener listener) {
         RulesEngine<Object> engine = RulesEngineBuilder.firstMatch(Object::new).language(language).maxCopies(1)
                 .copiesAtLoad(copiesAtLoad).listener(listener).build();
-        return (AbstractRulesEngine<Object>) engine;
+        return (CoreRulesEngine<Object>) engine;
     }
 
-    private static AbstractRulesEngine<Object> engine(Counting language) {
-        AbstractRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
+    private static CoreRulesEngine<Object> engine(Counting language) {
+        CoreRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
         });
         engine.load(RULES);
         return engine;
@@ -152,7 +152,7 @@ class CleanupStepFailureTest {
     // How many permits a thread of its own takes, up to two. It counts no run in progress, so a borrow that finds no
     // permit free stops at once; a second borrow on it is nested, and takes a permit only if one is free, so an engine
     // of one permit that lends two gave one back twice.
-    private static int freePermits(AbstractRulesEngine<Object> engine) throws InterruptedException {
+    private static int freePermits(CoreRulesEngine<Object> engine) throws InterruptedException {
         AtomicInteger free = new AtomicInteger(-1);
         Thread checker = new Thread(() -> {
             CopyPool rules = engine.currentRules();
@@ -180,8 +180,8 @@ class CleanupStepFailureTest {
     @DisplayName("#841 deadline: an OutOfMemoryError counting a run as it starts leaves no deadline on the thread")
     void outOfMemoryCountingTheRunLeavesNoDeadline() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> timed = engine(language);
-        AbstractRulesEngine<Object> untimed = engine(language);
+        CoreRulesEngine<Object> timed = engine(language);
+        CoreRulesEngine<Object> untimed = engine(language);
         OutOfMemoryError failure = new OutOfMemoryError("counting the run");
         Faults.inject(Faults.Step.RUN_COUNTED, 1, failure);
 
@@ -199,8 +199,8 @@ class CleanupStepFailureTest {
     @DisplayName("#841 deadline: setting a run's deadline that fails once it has stored it leaves no deadline behind")
     void settingTheDeadlineThatFailsLeavesNoDeadline() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> timed = engine(language);
-        AbstractRulesEngine<Object> untimed = engine(language);
+        CoreRulesEngine<Object> timed = engine(language);
+        CoreRulesEngine<Object> untimed = engine(language);
         Faults.inject(Faults.Step.DEADLINE_SET, 1, new OutOfMemoryError("setting the deadline"));
 
         assertThrows(OutOfMemoryError.class,
@@ -214,8 +214,8 @@ class CleanupStepFailureTest {
     @DisplayName("#839 deadline: uncounting a run that fails on the way out still puts back the thread's deadline")
     void uncountingTheRunThatFailsStillPutsBackTheDeadline() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> timed = engine(language);
-        AbstractRulesEngine<Object> untimed = engine(language);
+        CoreRulesEngine<Object> timed = engine(language);
+        CoreRulesEngine<Object> untimed = engine(language);
         Faults.inject(Faults.Step.RUN_UNCOUNTED, 1, new StackOverflowError("uncounting the run"));
 
         assertThrows(StackOverflowError.class,
@@ -230,7 +230,7 @@ class CleanupStepFailureTest {
     void openingTheScopeThatFailsStillClosesIt() {
         AtomicReference<RunContext> parent = new AtomicReference<>();
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
             @Override
             public void beforeRun(RunContext run) {
                 parent.set(run.parent());
@@ -251,7 +251,7 @@ class CleanupStepFailureTest {
     void closingTheScopeThatFailsStillPutsBackTheParent() {
         AtomicReference<RunContext> parent = new AtomicReference<>();
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 0, new RuleListener() {
             @Override
             public void beforeRun(RunContext run) {
                 parent.set(run.parent());
@@ -272,7 +272,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 permit: a failed borrow gives back the permit a failing give-back left it holding")
     void aFailedBorrowGivesBackThePermitAGiveBackFailedToGiveBack() throws InterruptedException {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         language.failSessions = true;
         // The run takes the only permit, fails to make its copy, and the first give-back of the permit fails.
         Faults.inject(Faults.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
@@ -292,7 +292,7 @@ class CleanupStepFailureTest {
         for (InternalError giving : List.of(new InternalError(new StackOverflowError()),
                 new InternalError("giving back the permit"))) {
             Counting language = new Counting();
-            AbstractRulesEngine<Object> engine = engine(language);
+            CoreRulesEngine<Object> engine = engine(language);
             Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
 
             assertSame(giving, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
@@ -312,7 +312,7 @@ class CleanupStepFailureTest {
         InternalError fatal = new InternalError("giving back the permit");
         for (InternalError giving : List.of(new InternalError(new StackOverflowError()), fatal)) {
             Counting language = new Counting();
-            AbstractRulesEngine<Object> engine = engine(language);
+            CoreRulesEngine<Object> engine = engine(language);
             Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
             Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
 
@@ -329,7 +329,7 @@ class CleanupStepFailureTest {
             + " still leaves the rules, so close() closes them, and gives the permit back itself")
     void aRunWhosePermitFailsToGoBackStillLeavesTheRulesAndGivesItBack() throws InterruptedException {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         Faults.inject(Faults.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
@@ -344,7 +344,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 permit: a give-back that fails once the permit is back never gives it back twice")
     void aGiveBackThatFailsOnceThePermitIsBackNeverGivesItBackTwice() throws InterruptedException {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         Faults.inject(Faults.Step.PERMIT_RELEASED, 1, new StackOverflowError("waking a waiting run"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
@@ -418,7 +418,7 @@ class CleanupStepFailureTest {
             + " back the permit")
     void lendingThatFailsClosesTheSessionsAndGivesBackThePermit() throws InterruptedException {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
@@ -457,7 +457,7 @@ class CleanupStepFailureTest {
             + " rules")
     void aCloseWhoseRetiringFailsCanBeCalledAgain() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the rules retired"));
 
@@ -474,7 +474,7 @@ class CleanupStepFailureTest {
             + " retires them")
     void aReloadWhoseRetiringFailsSucceeds() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the replaced rules retired"));
 
@@ -496,7 +496,7 @@ class CleanupStepFailureTest {
             + " new rules are in, and close() retires them")
     void aReloadWhoseRetiringThrowsAFatalErrorThrowsIt() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         OutOfMemoryError failure = new OutOfMemoryError("marking the replaced rules retired");
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, failure);
@@ -512,7 +512,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 load: a load whose call to make its copies fails still closes the rules' compilers")
     void aLoadWhoseCallToMakeCopiesFailsClosesTheCompilers() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         Faults.inject(Faults.Step.COPIES_PREPARED, 1, new StackOverflowError("making the copies"));
 
@@ -525,7 +525,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 load: a rule list that fails to load and whose retiring fails is retired by close()")
     void aRuleListThatFailedToLoadAndToRetireIsRetiredByClose() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         language.failSessions = true;
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the failed rules retired"));
@@ -544,7 +544,7 @@ class CleanupStepFailureTest {
             + " the retire failure, without the line")
     void anOverflowLoggingThatRulesAreLeftToRetireLosesOnlyTheLine() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
@@ -567,7 +567,7 @@ class CleanupStepFailureTest {
             + " its own fatal error, carrying the retire failure")
     void aLoadsOwnFatalErrorComesBeforeARetireFailure() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
@@ -590,7 +590,7 @@ class CleanupStepFailureTest {
             + " throws its own, carrying the retire failure, which is logged once")
     void aLoadsOwnFatalErrorCarriesAFatalRetireFailure() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
@@ -612,7 +612,7 @@ class CleanupStepFailureTest {
             + " once, as it was closed, and the rules aren't said to be left to retire")
     void aFatalErrorClosingTheFailedRulesIsLoggedOnce() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
@@ -634,7 +634,7 @@ class CleanupStepFailureTest {
     @DisplayName("#893 load: a retire failure the load's own error can't carry is logged once, as not carried")
     void aRetireFailureTheLoadsErrorCantCarryIsLoggedOnce() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         // Suppression disabled, as on an OutOfMemoryError the JVM keeps ready, with a fatal error in its chain.
         Error failure = new Error("making the copies", new OutOfMemoryError("a session"), false, false) {
@@ -665,7 +665,7 @@ class CleanupStepFailureTest {
             + " begins, throws its own fatal error, carrying the retire failure")
     void aLoadsOwnFatalErrorSurvivesRetiringThatFailsBeforeItBegins() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
@@ -687,7 +687,7 @@ class CleanupStepFailureTest {
             + " the retire failure, carrying the load's failure")
     void aLoadsFailureIsKeptWhenRetiringFailsBeforeItBegins() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         language.failSessions = true;
         StackOverflowError retiring = new StackOverflowError("retiring the claimed rules");
@@ -708,7 +708,7 @@ class CleanupStepFailureTest {
             + " error, carrying the load's failure")
     void aRetireFatalErrorComesBeforeALoadsOwnFailure() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
+        CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         language.failSessions = true;
         OutOfMemoryError retiring = new OutOfMemoryError("marking the failed rules retired");
@@ -795,7 +795,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 close: a close() whose retiring fails once the rules are marked retired is finished by the next")
     void aCloseWhoseRetiringFailsAfterMarkingIsFinishedByTheNext() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
         Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("counting the copies closed"));
 
@@ -811,7 +811,7 @@ class CleanupStepFailureTest {
             + " earlier load() left then fails")
     void aFatalErrorIsThrownWhenALaterRetireFails() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         List<Rule> third = List.of(Rule.builder().ruleName("r3").priority(1).condition("c").action("a").build());
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
@@ -837,7 +837,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 faults: a fault set for one thread fails the step on that thread alone")
     void aFaultFailsTheStepOnItsOwnThreadAlone() throws InterruptedException {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread other = new Thread(() -> {
             try {
@@ -862,7 +862,7 @@ class CleanupStepFailureTest {
             + " again still leaves the rules, so close() closes them")
     void aStoppedRunThatFailsToKeepItsInterruptStillLeavesTheRules() throws Exception {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         ExecutorService holder = Executors.newSingleThreadExecutor();
         try {
             // The engine's only permit, held on a thread of its own, so the run waits for it until its deadline.
@@ -924,7 +924,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 close: a close() that fails before it retires the rules it detached leaves them for the next")
     void aCloseThatFailsBeforeRetiringLeavesTheRulesForTheNext() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
         Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, new StackOverflowError("retiring the rules claimed"));
 
@@ -940,7 +940,7 @@ class CleanupStepFailureTest {
             + " the next load() or close()")
     void aReloadThatFailsBeforeRetiringSucceeds() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, new StackOverflowError("retiring the rules claimed"));
 
@@ -959,7 +959,7 @@ class CleanupStepFailureTest {
             + " retires its own")
     void aNestedLoadLeavesTheRulesAnotherCallClaimedToIt() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         List<Rule> third = List.of(Rule.builder().ruleName("r3").priority(1).condition("c").action("a").build());
@@ -986,7 +986,7 @@ class CleanupStepFailureTest {
             + " rules that reload replaced fails")
     void earlierRulesAreRetiredWhenTheReplacedRulesFailAgain() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         List<Rule> third = List.of(Rule.builder().ruleName("r3").priority(1).condition("c").action("a").build());
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
@@ -1006,7 +1006,7 @@ class CleanupStepFailureTest {
             + " list leaves the rest of the list for the next")
     void aCloseThatFailsSettlingLeavesTheRestForTheNext() {
         Counting language = new Counting();
-        AbstractRulesEngine<Object> engine = engine(language);
+        CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
         TestLogs.logsOf(() -> engine.load(second));

@@ -51,7 +51,7 @@ class EngineLoggingTest {
     @MethodSource("rejectedRuleLists")
     @DisplayName("a rule list load rejects is logged")
     void rejectedRuleListLogged(String description, List<Rule> rules) {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
 
         assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules));
     }
@@ -60,7 +60,7 @@ class EngineLoggingTest {
     @ValueSource(strings = {"output", "my-fact", "String"})
     @DisplayName("a fact run rejects is logged")
     void rejectedFactLogged(String name) {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", name + " != null", "output.put('k', 1)")));
 
         assertLoggedAtError(IllegalArgumentException.class, () -> engine.run(new FactMap<>(new Fact<>(name, 1))));
@@ -69,7 +69,7 @@ class EngineLoggingTest {
     @Test
     @DisplayName("a condition that fails is logged")
     void conditionFailureLogged() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "x.missing > 1", "output.put('k', 1)")));
 
         assertLoggedAtError(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))));
@@ -78,7 +78,7 @@ class EngineLoggingTest {
     @Test
     @DisplayName("an action that fails is logged")
     void actionFailureLogged() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "true", "output.put('k', x.missing)")));
 
         assertLoggedAtError(RuleExecutionException.class, () -> engine.run(new FactMap<>(new Fact<>("x", 1))));
@@ -87,11 +87,11 @@ class EngineLoggingTest {
     @Test
     @DisplayName("an output supplier that throws or returns null is logged")
     void outputSupplierFailureLogged() {
-        StatelessRulesEngine<Map<String, Object>> throwing = TestEngines.firstMatch(() -> {
+        CoreRulesEngine<Map<String, Object>> throwing = TestEngines.firstMatch(() -> {
             throw new IllegalStateException("boom");
         });
         throwing.load(List.of(rule("a", "true", "output.put('k', 1)")));
-        StatelessRulesEngine<Map<String, Object>> returningNull = TestEngines.firstMatch(() -> null);
+        CoreRulesEngine<Map<String, Object>> returningNull = TestEngines.firstMatch(() -> null);
         returningNull.load(List.of(rule("a", "true", "output.put('k', 1)")));
 
         assertLoggedAtError(RuleExecutionException.class, () -> throwing.run(new FactMap<>()));
@@ -102,7 +102,7 @@ class EngineLoggingTest {
     @ValueSource(strings = {"beforeEvaluate", "afterEvaluate", "beforeExecute", "afterExecute", "onError"})
     @DisplayName("a listener that throws is logged at WARN, naming the callback, and the run continues")
     void listenerFailureLogged(String callback) {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.listener(new RuleListener() {
             private void called(String name) {
                 if (name.equals(callback)) {

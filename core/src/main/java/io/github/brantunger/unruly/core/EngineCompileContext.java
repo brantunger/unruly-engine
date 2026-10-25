@@ -294,7 +294,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      */
     static final class Warnings {
 
-        static final Logger LOG = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+        static final Logger LOG = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
 
         private Warnings() {
         }

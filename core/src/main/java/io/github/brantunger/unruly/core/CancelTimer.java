@@ -69,7 +69,7 @@ final class CancelTimer {
     /** What a run that registers nothing gets: closing it does nothing, and touches nothing shared. */
     static final CancelRegistration NOTHING = Nothing.INSTANCE;
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
     private static final Object LOCK = new Object();
     private static final Runnable LOOP = new Loop();
     private static final String FAILED = "An action a language registered for the run's deadline failed: {}";

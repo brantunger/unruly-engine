@@ -3,8 +3,6 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Modifier;
 import java.util.Map;
@@ -14,25 +12,18 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("the engines are internal: they can only be created through RulesEngineBuilder")
 class EngineVisibilityTest {
 
-    @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {AbstractRulesEngine.class, StatelessRulesEngine.class, StatefulRulesEngine.class})
-    @DisplayName("the engine classes aren't public and have no public constructor")
-    void enginesArePackagePrivate(Class<?> engine) {
-        assertFalse(Modifier.isPublic(engine.getModifiers()), engine.getSimpleName() + " is public");
-        assertEquals(0, engine.getConstructors().length, engine.getSimpleName() + " has a public constructor");
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {StatelessRulesEngine.class, StatefulRulesEngine.class})
-    @DisplayName("the concrete engines are final")
-    void concreteEnginesAreFinal(Class<?> engine) {
-        assertTrue(Modifier.isFinal(engine.getModifiers()), engine.getSimpleName() + " isn't final");
+    @Test
+    @DisplayName("the engine class isn't public, is final and has no public constructor")
+    void engineIsPackagePrivate() {
+        assertFalse(Modifier.isPublic(CoreRulesEngine.class.getModifiers()), "CoreRulesEngine is public");
+        assertTrue(Modifier.isFinal(CoreRulesEngine.class.getModifiers()), "CoreRulesEngine isn't final");
+        assertEquals(0, CoreRulesEngine.class.getConstructors().length, "CoreRulesEngine has a public constructor");
     }
 
     @Test
-    @DisplayName("AbstractRulesEngine has no JIT_PROPERTY constant")
+    @DisplayName("CoreRulesEngine has no JIT_PROPERTY constant")
     void noJitProperty() {
-        assertThrows(NoSuchFieldException.class, () -> AbstractRulesEngine.class.getDeclaredField("JIT_PROPERTY"));
+        assertThrows(NoSuchFieldException.class, () -> CoreRulesEngine.class.getDeclaredField("JIT_PROPERTY"));
     }
 
     @Test
@@ -46,9 +37,15 @@ class EngineVisibilityTest {
                         Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()))
                 .withCopyLimit(CopyLimit.of(2)).build();
 
-        assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, unlimited));
-        assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, unlimited));
-        assertInstanceOf(StatelessRulesEngine.class, Engines.firstMatch(Object::new, limited));
-        assertInstanceOf(StatefulRulesEngine.class, Engines.allMatches(Object::new, limited));
+        assertSame(MatchPolicy.FIRST_MATCH, policyOf(Engines.firstMatch(Object::new, unlimited)));
+        assertSame(MatchPolicy.ALL_MATCHES, policyOf(Engines.allMatches(Object::new, unlimited)));
+        assertSame(MatchPolicy.UNIQUE_MATCH, policyOf(Engines.uniqueMatch(Object::new, unlimited)));
+        assertSame(MatchPolicy.FIRST_MATCH, policyOf(Engines.firstMatch(Object::new, limited)));
+        assertSame(MatchPolicy.ALL_MATCHES, policyOf(Engines.allMatches(Object::new, limited)));
+        assertSame(MatchPolicy.UNIQUE_MATCH, policyOf(Engines.uniqueMatch(Object::new, limited)));
+    }
+
+    private static MatchPolicy policyOf(Object engine) {
+        return assertInstanceOf(CoreRulesEngine.class, engine).matchPolicy();
     }
 }

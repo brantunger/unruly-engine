@@ -53,7 +53,7 @@ class StallWindowTest {
     void loadedRulesWaitTheWindowSet() throws InterruptedException {
         try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .language(GatedRuns.STATEFUL_TOY).maxCopies(1).build()) {
-            ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(1);
+            ((CoreRulesEngine<Map<String, Object>>) engine).stallWindow(1);
             engine.load(List.of(Rule.builder().ruleName("gated").condition("gate.hold").action("put ok true")
                     .build()));
             GatedRuns.Gate held = new GatedRuns.Gate();

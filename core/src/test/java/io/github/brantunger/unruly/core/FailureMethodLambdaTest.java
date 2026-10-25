@@ -27,8 +27,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * instruction, a lambda's, a method reference's or any other. They are a failed borrow and the closing of a retired
  * rule set it may do, a run's wait for a copy or a build slot, the counting of the runs that use a rule set, whose
  * uncounting is the last step of giving back a copy (#1213), a write that no setter accepts, with the methods of
- * {@link Widening} it calls, a load with two or more failures, and a rule that fails or stops. The test fails too if a
- * method named here isn't there, so it can't pass because one was renamed.
+ * {@link Widening} it calls, a load with two or more failures, a rule that fails or stops, and a unique-match run in
+ * which more than one rule matched. The test fails too if a method named here isn't there, so it can't pass because
+ * one was renamed.
  */
 @DisplayName("the engine's failure and wait paths link no lambda in classes whose other code does (#1097)")
 class FailureMethodLambdaTest {
@@ -51,7 +52,10 @@ class FailureMethodLambdaTest {
                 Arguments.of(RuleListCompiler.Compilation.class, List.of("failed", "throwIfAnyFailed")),
                 // A rule that fails, or a run that stops before or during one, and the outcome its event records.
                 Arguments.of(RuleExecutor.class, List.of("failedOutcome", "cancelled", "stopped", "stopIfCancelled",
-                        "expressionFailure")));
+                        "expressionFailure")),
+                // A unique-match run in which more than one rule matched, which fire fails, naming them, before it
+                // creates the output object; every run that matches a rule fires through fire too.
+                Arguments.of(CoreRulesEngine.class, List.of("fire", "failedRun")));
     }
 
     @ParameterizedTest(name = "{0}")

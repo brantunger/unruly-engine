@@ -28,9 +28,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * or {@code onRunError}. So {@link Failures}, which reads and describes what was thrown, {@link NestedFailures}, which
  * reads it for the engine's own failures and builds the one a run reports, {@link LoggedFailures}, which records what
  * was logged, and {@link ListenerNotifier},
- * which tells listeners of it, use neither, nor does {@link UniqueMatchRulesEngine}, whose own code fails a run that
- * matches more than one rule, nor {@link Closing}, which closes what a failed borrow made. #1097: nor
- * {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
+ * which tells listeners of it, use neither, nor does {@link Closing}, which closes what a failed borrow made. #1097:
+ * nor {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
  * {@link RuleCompilationException}, which every failed load creates. #1241: nor the readers and text helpers the
  * {@code internal} package holds for them, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
  * what {@code api.language} publishes of them, {@link Throwables}, {@link ImportLimits} and the {@link FatalErrors}
@@ -48,7 +47,7 @@ class FailureCodeLambdaTest {
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
-            UniqueMatchRulesEngine.class, Closing.class, CopyPermits.class, RuleCompilationException.class,
+            Closing.class, CopyPermits.class, RuleCompilationException.class,
             Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
             ImportLimits.class, RetireQueue.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "

@@ -83,7 +83,7 @@ class CompileFailureTest {
     }
 
     /** An engine with only {@code language}. */
-    private static StatefulRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
+    private static CoreRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {
         return TestEngines.allMatches(HashMap::new, builder -> builder.language(language));
     }
 
@@ -118,7 +118,7 @@ class CompileFailureTest {
     @DisplayName("a language that fails to create a compiler fails the rule list, and the previous list stays loaded")
     void newCompilerThrows() {
         ExpressionLanguage language = language("x", throwing(new IllegalStateException("script engine not available")));
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(new MvelExpressionLanguage()).language(language)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME));
         engine.load(List.of(Rule.builder().ruleName("old").condition("true").action("output.put('k', 1)")
@@ -156,7 +156,7 @@ class CompileFailureTest {
     @Test
     @DisplayName("an empty rule list fails when the default language can't create the compiler facts are checked with")
     void emptyListNewCompilerThrows() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language("default",
+        CoreRulesEngine<Map<String, Object>> engine = engine(language("default",
                 throwing(new IllegalStateException("broken"))));
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class,

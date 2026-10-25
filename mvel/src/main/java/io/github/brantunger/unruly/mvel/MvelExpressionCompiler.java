@@ -20,7 +20,7 @@ import java.util.Set;
  */
 final class MvelExpressionCompiler implements ExpressionCompiler {
 
-    // The name of the engine's logger, as its documentation gives it: core's AbstractRulesEngine.LOGGER_NAME is
+    // The name of the engine's logger, as its documentation gives it: core's CoreRulesEngine.LOGGER_NAME is
     // package-private, and the core module doesn't export its package. The logger is got only when a scan gives up, so
     // MVEL's first load initializes no class of SLF4J's for it.
     static final String LOGGER_NAME = "io.github.brantunger.unruly.engine";

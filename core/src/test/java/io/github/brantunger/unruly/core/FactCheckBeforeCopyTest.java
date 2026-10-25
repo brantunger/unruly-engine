@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -21,7 +20,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -216,23 +214,18 @@ class FactCheckBeforeCopyTest {
                             throw rejection;
                         })))
                 .withListeners(List.of(recording)).build();
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
-            @Override
-            CopyPool currentRules() {
-                return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();
-            }
+        CoreRulesEngine<String> engine = TestEngines.withSeam(String::new, configuration,
+                new CoreRulesEngine.TestSeam<>() {
+                    @Override
+                    CopyPool currentRules(CoreRulesEngine<String> engine) {
+                        return reads.getAndIncrement() == 0 ? closedRules : super.currentRules(engine);
+                    }
 
-            @Override
-            RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-                return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("ran", List.of(), rules.loaded().checksum()));
-            }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
+                    @Override
+                    RuleExecutor.RunBody<String> body() {
+                        return (rules, copy, runFacts) -> RunResult.of("ran", List.of(), rules.loaded().checksum());
+                    }
+                });
         engine.load(List.of(Rule.builder().ruleName("r").language("x").condition("c").action("a").build()));
         reads.set(0);
 

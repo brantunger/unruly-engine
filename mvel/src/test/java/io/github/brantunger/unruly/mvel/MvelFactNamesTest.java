@@ -455,7 +455,7 @@ class MvelFactNamesTest {
     @Test
     @DisplayName("the check doesn't read an error that means the JVM itself is failing as a name that isn't a class")
     void virtualMachineErrorIsRethrown() {
-        // What the check itself does, not what a caller of the engine sees: AbstractRulesEngine catches what escapes
+        // What the check itself does, not what a caller of the engine sees: CoreRulesEngine catches what escapes
         // a fact-name check, and only Failures.fatalError — which passes a StackOverflowError over — is rethrown, so
         // a caller reads an IllegalArgumentException naming the fact instead. A class loader of the application's own,
         // so the check asks it for the class with no class file looked up.

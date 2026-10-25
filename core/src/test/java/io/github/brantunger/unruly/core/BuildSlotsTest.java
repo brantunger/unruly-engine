@@ -137,7 +137,7 @@ class BuildSlotsTest {
     private static RulesEngine<Map<String, Object>> unlimited(StepLanguage language, long stallWindow) {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .language(language).unlimitedCopies().build();
-        ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(stallWindow);
+        ((CoreRulesEngine<Map<String, Object>>) engine).stallWindow(stallWindow);
         engine.load(List.of(RULE));
         return engine;
     }

@@ -141,9 +141,9 @@ class ReloadCopyLimitTest {
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
                 .language(language).maxCopies(limit).build();
         // A window far longer than the test, so a run that waits never gives up and makes an extra copy.
-        ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(TimeUnit.MINUTES.toMillis(5));
+        ((CoreRulesEngine<Map<String, Object>>) engine).stallWindow(TimeUnit.MINUTES.toMillis(5));
         engine.load(List.of(rule("old", "gate.hold", "put rules 'old'")));
-        CopyPool oldRules = ((AbstractRulesEngine<Map<String, Object>>) engine).currentRules();
+        CopyPool oldRules = ((CoreRulesEngine<Map<String, Object>>) engine).currentRules();
         Sessions old = language.compilers.get(language.compilers.size() - 1);
         List<Throwable> failures = new CopyOnWriteArrayList<>();
         // A gate for each run that holds a copy, as a gate tells only when the first run has reached it.

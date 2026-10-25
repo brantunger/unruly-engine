@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
  */
 final class FlightRecorderEvents {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
 
     /** Whether both event classes loaded. Checked once, when the first engine is built. */
     static final boolean USABLE = loads(new LoadEvents());

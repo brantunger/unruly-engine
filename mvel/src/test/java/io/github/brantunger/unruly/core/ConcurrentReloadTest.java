@@ -56,7 +56,7 @@ class ConcurrentReloadTest {
             int mismatches = 0;
             long deadline = System.nanoTime() + TIME_BUDGET_NANOS;
             while (iterations < ITERATIONS && System.nanoTime() < deadline) {
-                StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+                CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                         builder -> builder.language(STRICT).language(new MvelExpressionLanguage())
                                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME));
                 CyclicBarrier barrier = new CyclicBarrier(2);
@@ -88,7 +88,7 @@ class ConcurrentReloadTest {
         }
     }
 
-    private static boolean acceptsBanned(StatefulRulesEngine<Map<String, Object>> engine) {
+    private static boolean acceptsBanned(CoreRulesEngine<Map<String, Object>> engine) {
         try {
             engine.run(new FactMap<>(new Fact<>("banned", 1)));
             return true;

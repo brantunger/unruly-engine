@@ -68,7 +68,7 @@ final class DeepFirstErrorLogScenario {
          * (logWrappedFromOnError).
          */
         WRAPPED_ON_ERROR,
-        /** Two rules match on a unique-match engine, logged as the run's failure (AbstractRulesEngine's failedRun). */
+        /** Two rules match on a unique-match engine, logged as the run's failure (CoreRulesEngine's failedRun). */
         UNIQUE_MATCH,
         /**
          * The output factory returns {@code null}, logged before the run fails (RuleExecutor's createOutput).
@@ -98,12 +98,11 @@ final class DeepFirstErrorLogScenario {
         SECOND_FATAL_ON_ERROR,
         /**
          * Another thread holds the one copy the engine allows, and the run times out waiting for it, logged at WARN
-         * (AbstractRulesEngine's reportStop).
+         * (CoreRulesEngine's reportStop).
          */
         STOPPED_WAITING,
         /**
-         * A rule's action interrupts the run's thread, logged at WARN as the run stops (AbstractRulesEngine's
-         * cancelled).
+         * A rule's action interrupts the run's thread, logged at WARN as the run stops (RuleExecutor's cancelled).
          */
         CANCELLED,
         /** The language warns about an expression as it compiles it, logged at WARN (EngineCompileContext's warn). */
@@ -236,7 +235,7 @@ final class DeepFirstErrorLogScenario {
                 .newSession(DeepFirstErrorLogScenario::newSession))
                 .listener(new Failing(site)).build();
         if (site == Site.EXTRA_COPY) {
-            ((AbstractRulesEngine<Object>) engine).stallWindow(1);
+            ((CoreRulesEngine<Object>) engine).stallWindow(1);
         }
         // Everything a load and a run do but fail, done at the top of the stack, so the deep calls reach the failure.
         List<Rule> passes = List.of(rule("passes", "pass"));

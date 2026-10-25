@@ -97,9 +97,9 @@ class CompiledRuleCopiesTest {
         }
     }
 
-    private static StatefulRulesEngine<Map<String, Object>> countingEngine(CountingLanguage language,
+    private static CoreRulesEngine<Map<String, Object>> countingEngine(CountingLanguage language,
                                                                         RuleListener... listeners) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(language).listeners(List.of(listeners)));
         engine.load(List.of(Rule.builder().ruleName("r").language(language.name()).condition("c").action("a")
                 .build()));
@@ -115,9 +115,9 @@ class CompiledRuleCopiesTest {
     @Test
     @DisplayName("a run started while another is still running gets its own sessions and the right result")
     void runDuringRun() {
-        AtomicReference<StatefulRulesEngine<Map<String, Object>>> self = new AtomicReference<>();
+        AtomicReference<CoreRulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         List<Object> innerOutputs = new CopyOnWriteArrayList<>();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.listener(new RuleListener() {
                     @Override
                     public void beforeExecute(Rule rule, Object output) {
@@ -139,7 +139,7 @@ class CompiledRuleCopiesTest {
     @Test
     @DisplayName("getCompiledRules returns the rules compiled by load, unmodifiable, or null before it")
     void compiledRules() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         assertNull(engine.getCompiledRules());
 
         engine.load(List.of(Rule.builder().ruleName("r").condition("x > 0").action("output.put('x', x)").build()));
@@ -154,7 +154,7 @@ class CompiledRuleCopiesTest {
     @DisplayName("every run evaluates the rules compiled by load, and sequential runs reuse one session")
     void compiledRulesSharedWithOneSession() {
         CountingLanguage language = new CountingLanguage();
-        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language);
+        CoreRulesEngine<Map<String, Object>> engine = countingEngine(language);
         CompiledRule compiled = engine.getCompiledRules().get(0);
 
         for (int i = 0; i < 3; i++) {
@@ -175,7 +175,7 @@ class CompiledRuleCopiesTest {
     @DisplayName("a run that throws gives its sessions back, so later runs reuse them instead of creating new ones")
     void failedRunsGiveBackTheirCopy() {
         CountingLanguage language = new CountingLanguage();
-        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language);
+        CoreRulesEngine<Map<String, Object>> engine = countingEngine(language);
         FactStore<Object> rejected = new FactMap<>();
         rejected.setValue("output", 1);
         FactStore<Object> failing = new FactMap<>();
@@ -198,9 +198,9 @@ class CompiledRuleCopiesTest {
             + " action")
     void overlappingRunGetsItsOwnSession() {
         CountingLanguage language = new CountingLanguage();
-        AtomicReference<StatefulRulesEngine<Map<String, Object>>> self = new AtomicReference<>();
+        AtomicReference<CoreRulesEngine<Map<String, Object>>> self = new AtomicReference<>();
         AtomicBoolean nested = new AtomicBoolean();
-        StatefulRulesEngine<Map<String, Object>> engine = countingEngine(language, new RuleListener() {
+        CoreRulesEngine<Map<String, Object>> engine = countingEngine(language, new RuleListener() {
             @Override
             public void beforeExecute(Rule rule, Object output) {
                 if (nested.compareAndSet(false, true)) {

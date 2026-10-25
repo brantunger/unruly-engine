@@ -52,7 +52,7 @@ class AddImportValidationTest {
     @Test
     @DisplayName("a fully qualified class name imports that class")
     void classImport() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports("java.time.LocalDate"));
         engine.load(List.of(rule("true", "output.put('d', LocalDate.of(2020, 1, 1))")));
 
@@ -63,7 +63,7 @@ class AddImportValidationTest {
     @ValueSource(strings = {"java.util.Map.Entry", "java.util.Map$Entry"})
     @DisplayName("a nested class is imported whether it is written with a dot or a dollar sign")
     void nestedClassImport(String name) {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports(name));
         engine.load(List.of(rule("true", "output.put('e', Entry)")));
 
@@ -74,7 +74,7 @@ class AddImportValidationTest {
     @DisplayName("a class nested two levels deep is imported by its dotted name, not taken for a package")
     void twoLevelNestedClassImport() {
         String name = "io.github.brantunger.unruly.core.AddImportValidationTest.Mid.Inner";
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports(name));
         engine.load(List.of(rule("true", "output.put('c', Inner)")));
 
@@ -85,7 +85,7 @@ class AddImportValidationTest {
     @Test
     @DisplayName("imports mix packages and classes")
     void mixedImports() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports(new LinkedHashSet<>(List.of("java.util", "java.time.LocalDate"))));
         engine.load(List.of(rule("Objects.nonNull(x)", "output.put('d', LocalDate.of(2020, 1, 1))")));
 
@@ -143,7 +143,7 @@ class AddImportValidationTest {
     @Test
     @DisplayName("a package import with exactly 64 parts is accepted, and a rule naming facts loads and runs with it")
     void packageWithSixtyFourPartsAccepted() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports("a.".repeat(63) + "Z"));
         engine.load(List.of(rule("v0 == 1 && v1 == 1 && v2 == 1", "output.put('k', 1)")));
 
@@ -179,7 +179,7 @@ class AddImportValidationTest {
     @Test
     @DisplayName("a class imported on its own can't be used as a fact name either")
     void classImportShadowsFactName() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.imports("java.time.LocalDate"));
         engine.load(List.of(rule("LocalDate != null", "output.put('k', 1)")));
 

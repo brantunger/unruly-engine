@@ -32,7 +32,7 @@ class ListenerFactsWriteTest {
     @DisplayName("beforeEvaluate and afterEvaluate get a message about listeners, and the facts are unchanged")
     void listenerWriteRejected() {
         List<String> messages = new CopyOnWriteArrayList<>();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void beforeEvaluate(Rule rule, Map<String, Object> facts) {

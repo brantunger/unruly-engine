@@ -3,7 +3,7 @@
  * any release.
  *
  * <p>Create an engine with {@link io.github.brantunger.unruly.api.RulesEngineBuilder} and use it through
- * {@link io.github.brantunger.unruly.api.RulesEngine}. The engine classes are package-private. The public types are
+ * {@link io.github.brantunger.unruly.api.RulesEngine}. The engine class is package-private. The public types are
  * the ones the builder and the test kit need: {@link io.github.brantunger.unruly.core.Engines}, the builder's entry
  * point; {@link io.github.brantunger.unruly.core.EngineConfiguration} and
  * {@link io.github.brantunger.unruly.core.CopyLimit}, the settings it collects;

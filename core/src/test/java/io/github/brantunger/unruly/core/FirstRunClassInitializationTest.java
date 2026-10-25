@@ -133,7 +133,7 @@ class FirstRunClassInitializationTest {
     // jar by a jar URL; the URL's file is the second group. Not a class the JDK reads from its own image, as in
     // "source: jrt:/java.base", or from the archive of classes it shares between JVMs, "source: shared objects file",
     // nor a class it makes, a lambda's or a method handle's, whose source is the class it makes it for, as in
-    // "source: io.github.brantunger.unruly.core.AbstractRulesEngine", or "source: __JVM_LookupDefineClass__" (#1210).
+    // "source: io.github.brantunger.unruly.core.CoreRulesEngine", or "source: __JVM_LookupDefineClass__" (#1210).
     private static final Pattern FROM_FILE = Pattern.compile(Pattern.quote(LOADED)
             + "(\\S+) source: (?:jar:)?(file:[^!\\s]+)");
     // The package of the JDK's locks, whose classes the JVM's first wait in one may be the first to load (#1112).
@@ -148,7 +148,7 @@ class FirstRunClassInitializationTest {
     // first load or run reaches it any more. Four are named by their names: NoSession isn't public, and the holders
     // of EngineCompileContext's logger and of RunClasses' prepared languages, and CopyPermits' count of what was given
     // back, are named so the test compiles without them.
-    private static final List<String> ENGINE_CLASSES = Stream.concat(Stream.of(AbstractRulesEngine.class,
+    private static final List<String> ENGINE_CLASSES = Stream.concat(Stream.of(CoreRulesEngine.class, MatchPolicy.class,
                     LanguageRegistry.class, ImportResolver.class, LanguageNames.Problem.class, FactNames.Problem.class,
                     RuleListCompiler.Mode.class, LoggedFailures.class, Faults.Step.class, Failures.class,
                     ExpressionKind.class, InvalidExpressionException.Issue.Severity.class, CopyPool.class,
@@ -158,7 +158,7 @@ class FirstRunClassInitializationTest {
                     ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                     CancelTimer.class, RuleExecutionException.class, ReportedFailure.class,
                     LoggedFailures.Logged.class, LoggedFailures.Outermost.class, ListenerNotifier.OnError.class,
-                    ListenerNotifier.OnRunError.class, AbstractRulesEngine.BeforeRun.class,
+                    ListenerNotifier.OnRunError.class, CoreRulesEngine.BeforeRun.class,
                     NestedFailures.class, NestedFailures.Below.class,
                     Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class,
                     IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
@@ -330,7 +330,7 @@ class FirstRunClassInitializationTest {
         // The engine's classes are read from a file as the scenario starts, so a criterion that matched no line the
         // JVM prints, or no class path's shape, would fail here rather than pass below.
         assertTrue(readFromFile(lines.subList(0, built), application).stream()
-                .anyMatch(line -> line.contains(LOADED + AbstractRulesEngine.class.getName() + " ")),
+                .anyMatch(line -> line.contains(LOADED + CoreRulesEngine.class.getName() + " ")),
                 "the engine's classes not shown read from a file:\n" + String.join("\n", lines));
         assertEquals(List.of(), readFromFile(lines.subList(built, next), application),
                 "read from a file by the first loads and the first run");

@@ -49,8 +49,8 @@ class RuleInstanceTest {
         }
     }
 
-    private static StatefulRulesEngine<Map<String, Object>> engine(Rule rule, RuleListener listener) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+    private static CoreRulesEngine<Map<String, Object>> engine(Rule rule, RuleListener listener) {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(listener));
         engine.load(List.of(rule));
         return engine;
@@ -61,7 +61,7 @@ class RuleInstanceTest {
     void sameInstance() {
         Rule rule = Rule.builder().ruleName("r").condition("true").action("put k 1").build();
         Recorder recorder = new Recorder();
-        StatefulRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
+        CoreRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
 
         assertEquals(Map.of("k", 1), engine.run(new FactMap<>()));
 
@@ -75,7 +75,7 @@ class RuleInstanceTest {
     void sameInstanceOnError() {
         Rule rule = Rule.builder().ruleName("r").condition("true").action("put k missing").build();
         Recorder recorder = new Recorder();
-        StatefulRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
+        CoreRulesEngine<Map<String, Object>> engine = engine(rule, recorder);
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 

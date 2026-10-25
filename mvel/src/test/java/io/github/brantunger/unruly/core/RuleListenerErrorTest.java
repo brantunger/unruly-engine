@@ -51,7 +51,7 @@ class RuleListenerErrorTest {
     };
 
     private RuleExecutionException runExpectingFailure(String condition, String action) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.listener(recorder));
         engine.load(List.of(Rule.builder()
                 .ruleName("failing")
@@ -111,7 +111,7 @@ class RuleListenerErrorTest {
                 throw new IllegalStateException("listener bug");
             }
         };
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.listener(throwing).listener(recorder));
         engine.load(List.of(Rule.builder().ruleName("failing").condition("null")
                 .action("output.put('k', 1)").build()));

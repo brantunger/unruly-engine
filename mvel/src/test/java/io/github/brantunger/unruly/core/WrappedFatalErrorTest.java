@@ -122,11 +122,11 @@ class WrappedFatalErrorTest {
         return withEngines.stream();
     }
 
-    private AbstractRulesEngine<Map<String, Object>> engine(String type, String condition, String action,
-                                                            RuleListener... more) {
+    private CoreRulesEngine<Map<String, Object>> engine(String type, String condition, String action,
+                                                        RuleListener... more) {
         UnaryOperator<RulesEngineBuilder<Map<String, Object>>> listeners =
                 builder -> builder.listener(recorder).listeners(List.of(more));
-        AbstractRulesEngine<Map<String, Object>> engine;
+        CoreRulesEngine<Map<String, Object>> engine;
         if ("first-match".equals(type)) {
             engine = TestEngines.firstMatch(HashMap::new, listeners);
         } else {
@@ -139,7 +139,7 @@ class WrappedFatalErrorTest {
     private FactStore<Object> facts() {
         FactStore<Object> inner = new FactMap<>();
         inner.setValue("bomb", new Bomb(oom));
-        StatefulRulesEngine<Map<String, Object>> nested = TestEngines.allMatches(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> nested = TestEngines.allMatches(HashMap::new);
         nested.load(List.of(Rule.builder().ruleName("inner").condition("true").action("bomb.explode()").build()));
 
         FactStore<Object> facts = new FactMap<>();
@@ -167,7 +167,7 @@ class WrappedFatalErrorTest {
         @ParameterizedTest(name = "{0} engine: condition calls {1}")
         @MethodSource("io.github.brantunger.unruly.core.WrappedFatalErrorTest#calls")
         void fromCondition(String type, String call, String condition, String action) {
-            AbstractRulesEngine<Map<String, Object>> engine = engine(type, condition, "output.put('k', 1)");
+            CoreRulesEngine<Map<String, Object>> engine = engine(type, condition, "output.put('k', 1)");
 
             assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(facts())));
 
@@ -180,7 +180,7 @@ class WrappedFatalErrorTest {
         @ParameterizedTest(name = "{0} engine: action calls {1}")
         @MethodSource("io.github.brantunger.unruly.core.WrappedFatalErrorTest#calls")
         void fromAction(String type, String call, String condition, String action) {
-            AbstractRulesEngine<Map<String, Object>> engine = engine(type, "true", action);
+            CoreRulesEngine<Map<String, Object>> engine = engine(type, "true", action);
 
             assertSame(oom, assertThrows(OutOfMemoryError.class, () -> engine.run(facts())));
 
@@ -192,7 +192,7 @@ class WrappedFatalErrorTest {
         @Test
         @DisplayName("a StackOverflowError from a method a rule calls is still wrapped")
         void stackOverflowStaysWrapped() {
-            AbstractRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "bomb.overflow()");
+            CoreRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "bomb.overflow()");
 
             RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(facts()));
 
@@ -209,7 +209,7 @@ class WrappedFatalErrorTest {
         @Test
         @DisplayName("an OutOfMemoryError inside the exception the factory throws is rethrown")
         void wrappedByFactory() {
-            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
+            CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
                 throw new IllegalStateException("factory failed", oom);
             });
             engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
@@ -224,7 +224,7 @@ class WrappedFatalErrorTest {
             CyclicException second = new CyclicException();
             first.loop = second;
             second.loop = first;
-            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
+            CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
                 throw first;
             });
             engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
@@ -243,7 +243,7 @@ class WrappedFatalErrorTest {
         @Test
         @DisplayName("an OutOfMemoryError inside an exception thrown by afterExecute propagates")
         void wrappedInAfterExecute() {
-            AbstractRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "output.put('k', 1)",
+            CoreRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "output.put('k', 1)",
                     new RuleListener() {
                 @Override
                 public void afterExecute(Rule rule, Object output) {
@@ -257,7 +257,7 @@ class WrappedFatalErrorTest {
         @Test
         @DisplayName("an OutOfMemoryError inside an exception thrown by beforeEvaluate stops the condition")
         void wrappedInBeforeEvaluate() {
-            AbstractRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "output.put('k', 1)",
+            CoreRulesEngine<Map<String, Object>> engine = engine("all-matches", "true", "output.put('k', 1)",
                     new RuleListener() {
                 @Override
                 public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
