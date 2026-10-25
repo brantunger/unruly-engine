@@ -31,31 +31,27 @@ final class FactIntake {
     // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
     // engines, which then convert nothing.
     private final Map<String, Class<?>> primitiveFacts;
-    // The language that reserves each fact name the engine's languages reserve for every rule list, by name, which no
-    // fact may have; and the names alone, which a run's names are looked up in.
-    private final Map<String, String> reservedFactNames;
-    private final Set<String> reserved;
+    // The fact names the engine's languages reserve for every rule list, which no fact may have, each with the
+    // language that reserves it.
+    private final ReservedNames reservedNames;
 
     /**
      * Creates the fact intake of an engine. Built with the engine, so {@code FactIntake} itself is loaded then, not by
      * a run, which may be nested deep in another run's stack (see StackHeadroom). The build loads {@link FactNames}
-     * before this, with {@link FactNames#reserved}, and initializes {@link FactNames.Problem} with the classes engines
-     * use (see RunClasses), and {@code FactIntake} itself neither loads a class nor bootstraps a lambda the first time
-     * a run's fact name is rejected or a run's fact declared with a primitive type is widened.
+     * before this, as {@link ReservedNames} reads the reserved names with it, and initializes
+     * {@link FactNames.Problem} with the classes engines use (see RunClasses), and {@code FactIntake} itself neither
+     * loads a class nor bootstraps a lambda the first time a run's fact name is rejected or a run's fact declared
+     * with a primitive type is widened.
      *
-     * @param log              The engine's logger
-     * @param declaredFacts     The declared type of each fact, by name
-     * @param allFactsDeclared  Whether a run may supply only the declared facts
-     * @param reservedFactNames The language that reserves each fact name the engine's languages reserve for every rule
-     *                          list, by name, as {@link FactNames#reserved(Map, Set)} returns them
+     * @param log      The engine's logger
+     * @param settings The engine's settings: its declared facts, whether a run may supply only those, and the fact
+     *                 names its languages reserve
      */
-    FactIntake(Logger log, Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
-               Map<String, String> reservedFactNames) {
+    FactIntake(Logger log, EngineSettings settings) {
         this.log = log;
-        this.declaredFacts = declaredFacts;
-        this.allFactsDeclared = allFactsDeclared;
-        this.reservedFactNames = reservedFactNames;
-        this.reserved = reservedFactNames.keySet();
+        this.declaredFacts = settings.declaredFacts();
+        this.allFactsDeclared = settings.allFactsDeclared();
+        this.reservedNames = settings.reservedNames();
         Map<String, Class<?>> primitives = new HashMap<>();
         declaredFacts.forEach((name, type) -> {
             // void is primitive, but nothing widens to it, and no value is a Void.
@@ -137,7 +133,7 @@ final class FactIntake {
      * @throws IllegalArgumentException if it is
      */
     private void checkName(String name) {
-        FactNames.Problem problem = FactNames.check(name, reserved);
+        FactNames.Problem problem = FactNames.check(name, reservedNames.forEveryRuleList());
         if (problem == null) {
             return;
         }
@@ -150,7 +146,7 @@ final class FactIntake {
         }
         // A language binds something of its own to this name, such as the output object, which would silently hide a
         // fact of the same name.
-        throw rejectedFact(FactNames.reservedMessage(name, reservedFactNames.get(name), false));
+        throw rejectedFact(FactNames.reservedMessage(name, reservedNames.languageReserving(name), false));
     }
 
     /**

@@ -55,17 +55,17 @@ final class RuleSetLifecycle {
      * {@code RuleSetLifecycle} itself is loaded then, not by a {@code load()} or {@code close()}, which may be called
      * deep in a run's stack, from an action (see StackHeadroom).
      *
-     * @param log          The engine's logger
-     * @param compiler     Compiles the rule lists {@code load()} is given
-     * @param copyLimit    How many compiled copies of the rules runs hold at once, and which runs that applies to
-     * @param copiesAtLoad How many copies of the rules {@code load()} makes, before runs can see them
+     * @param log      The engine's logger
+     * @param compiler Compiles the rule lists {@code load()} is given
+     * @param settings The engine's settings: how many compiled copies of the rules runs hold at once, and which runs
+     *                 that applies to, and how many copies {@code load()} makes, before runs can see them
      */
-    RuleSetLifecycle(Logger log, RuleListCompiler compiler, CopyLimit copyLimit, int copiesAtLoad) {
+    RuleSetLifecycle(Logger log, RuleListCompiler compiler, EngineSettings settings) {
         this.log = log;
         this.compiler = compiler;
-        this.copyLimit = copyLimit;
+        this.copyLimit = settings.copyLimit();
         this.copyPermits = new CopyPermits(copyLimit.maxCopies());
-        this.copiesAtLoad = copiesAtLoad;
+        this.copiesAtLoad = settings.copiesAtLoad();
     }
 
     /**

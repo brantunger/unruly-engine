@@ -8,13 +8,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -38,7 +35,6 @@ import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Text;
 
 /**
@@ -101,9 +97,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     private final ThreadLocal<RunContext> currentRun = new ThreadLocal<>();
 
     /**
-     * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
-     * resolves its imports with the building thread's context class loader. A limit on copies means a run that finds
-     * all of them in use waits for one; see {@link CopyPool}.
+     * Creates an engine with the builder's settings, which {@link EngineSettings#resolve(EngineConfiguration)}
+     * checks first: it takes or finds the languages and picks the default one, and resolves the imports with the
+     * building thread's context class loader. A limit on copies means a run that finds all of them in use waits for
+     * one; see {@link CopyPool}.
      *
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      * @param configuration The builder's settings
@@ -112,122 +109,41 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                  holding {@code null}, or options or imports are given for a language the
      *                                  engine doesn't have, as
      *                                  {@link io.github.brantunger.unruly.api.RulesEngineBuilder#build()} describes
-     * @throws IllegalArgumentException if a fact is declared with a name one of the engine's languages reserves for
-     *                                  every rule list (see {@link ExpressionLanguage#reservesForEveryRuleList()}); if
-     *                                  a language's own import has more than 1,000 characters; if an import has
-     *                                  more than 1,000 characters or more than 64 dot-separated parts, checked
-     *                                  before it is looked up; if it is neither a loadable class nor a valid package
-     *                                  name; or if it names a class that exists but can't be loaded, with the linkage
-     *                                  error's text cut to at most 1,000 characters, with a note of how many were left
-     *                                  out, then escaped, and a root cause it hides named
+     * @throws IllegalArgumentException if a fact is declared with a blank name, or a name one of the engine's
+     *                                  languages reserves for every rule list (see
+     *                                  {@link ExpressionLanguage#reservesForEveryRuleList()}); if a language's own
+     *                                  import has more than 1,000 characters; if an import has more than 1,000
+     *                                  characters or more than 64 dot-separated parts, checked before it is looked
+     *                                  up; if it is neither a loadable class nor a valid package name; or if it names
+     *                                  a class that exists but can't be loaded, with the linkage error's text cut to
+     *                                  at most 1,000 characters, with a note of how many were left out, then escaped,
+     *                                  and a root cause it hides named
      * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
      * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
      *                                  initialize the classes engines use, before any of them is touched (see
      *                                  {@link RunClasses}): {@link Engines} checks that before it creates the engine,
      *                                  and before the builder resolves its settings, and this checks it last for a
      *                                  caller that doesn't; or if a language the engine is built to use (see
-     *                                  {@link #languagesInUse}) is of a class no engine has prepared yet and the thread
-     *                                  has too little stack left to prepare it, checked last, before any language is
-     *                                  prepared
+     *                                  {@link EngineSettings#languagesInUse()}) is of a class no engine has prepared
+     *                                  yet and the thread has too little stack left to prepare it, checked last,
+     *                                  before any language is prepared
      */
     AbstractRulesEngine(Supplier<O> outputFactory, EngineConfiguration<O> configuration) {
-        LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
-                configuration.defaultLanguage(), ImportResolver.contextClassLoader());
-        // Every language the engine has, not only those it prepares now: a run's facts reach every rule, so a name
-        // any of them reserves is rejected whatever language the rules are written in. A language that reserves its
-        // names only for the rule lists that use it has them checked when such a rule list is loaded, and run.
-        Map<String, Set<String>> reservedByLanguage = FactNames.reservedByLanguage(languages.languages());
-        Set<String> reservedPerRuleList = FactNames.reservedPerRuleList(languages.languages());
-        Set<String> reservedForEveryRuleList = new HashSet<>(reservedByLanguage.keySet());
-        reservedForEveryRuleList.removeAll(reservedPerRuleList);
-        Map<String, String> reservedFactNames = FactNames.reserved(reservedByLanguage, reservedForEveryRuleList);
-        for (String name : configuration.declaredFacts().keySet()) {
-            String language = reservedFactNames.get(name);
-            if (language != null) {
-                throw new IllegalArgumentException(FactNames.reservedMessage(name, language, true));
-            }
-        }
-        // Checked once the languages are known, so an option for a language that isn't found isn't silently ignored.
-        for (String language : configuration.options().keySet()) {
-            checkLanguageKnown(languages, language, "Options");
-        }
-        // A language's own imports aren't looked up, so only their length is checked.
-        configuration.languageImports().forEach((language, names) -> {
-            checkLanguageKnown(languages, language, "Imports");
-            names.forEach(ImportSize::checkLength);
-        });
-        Set<String> packages = new LinkedHashSet<>();
-        Set<Class<?>> classes = new LinkedHashSet<>();
-        for (String name : configuration.imports()) {
-            Class<?> type = ImportResolver.resolve(name);
-            if (type != null) {
-                classes.add(type);
-            } else {
-                packages.add(name);
-            }
-        }
+        EngineSettings settings = EngineSettings.resolve(configuration);
         this.notifier = new ListenerNotifier(log, configuration.listeners());
         this.runTimeout = configuration.runTimeout();
-        this.clock = configuration.clock();
+        this.clock = settings.clock();
         this.outputWriter = configuration.outputWriter();
-        Map<String, Class<?>> declaredFacts = configuration.declaredFacts();
-        boolean allFactsDeclared = configuration.allFactsDeclared();
-        this.factIntake = new FactIntake(log, declaredFacts, allFactsDeclared, reservedFactNames);
-        this.compiler = new RuleListCompiler(log, languages, Collections.unmodifiableSet(packages),
-                Collections.unmodifiableSet(classes), configuration.outputType(), configuration.options(),
-                declaredFacts, allFactsDeclared, Set.copyOf(reservedFactNames.keySet()), reservedByLanguage,
-                reservedPerRuleList, configuration.languageImports());
-        this.ruleSets = new RuleSetLifecycle(log, compiler, configuration.copyLimit(), configuration.copiesAtLoad());
+        this.factIntake = new FactIntake(log, settings);
+        this.compiler = new RuleListCompiler(log, settings);
+        this.ruleSets = new RuleSetLifecycle(log, compiler, settings);
         this.outputFactory = Objects.requireNonNull(outputFactory, "outputFactory must not be null");
         // Last, so the settings are checked first: the classes engines use that have a static initializer, which a
         // load or a run, maybe deep in another run's stack, must not be the first to use (see RunClasses). Engines
         // has initialized them already, before the builder read its settings, unless the engine was created without
         // it. Then each language the engine is built to use initializes its own, before anything is compiled.
         RunClasses.initialize();
-        RunClasses.prepare(languagesInUse(languages, configuration));
-    }
-
-    /**
-     * Returns the languages an engine is built to use, which it prepares when it's built: every language the builder
-     * named, by naming it with {@code defaultLanguage()}, giving it with {@code language()}, or giving it options with
-     * {@code option()} or imports with {@code languageImports()}. A language found with
-     * {@link java.util.ServiceLoader} that none of those names, even the only one found, which is then the default, is
-     * prepared when a rule list first uses it, so building an engine loads none of its classes.
-     *
-     * @param languages     The engine's languages, already checked against the settings
-     * @param configuration The builder's settings
-     * @return The languages, the default first if the builder named it
-     */
-    private static List<ExpressionLanguage> languagesInUse(LanguageRegistry languages,
-                                                           EngineConfiguration<?> configuration) {
-        Set<String> names = new LinkedHashSet<>();
-        if (configuration.defaultLanguage() != null) {
-            names.add(configuration.defaultLanguage());
-        }
-        names.addAll(configuration.languages().keySet());
-        names.addAll(configuration.options().keySet());
-        names.addAll(configuration.languageImports().keySet());
-        List<ExpressionLanguage> inUse = new ArrayList<>();
-        for (String name : names) {
-            inUse.add(languages.languages().get(name));
-        }
-        return inUse;
-    }
-
-    /**
-     * Fails unless a language that options or imports are given for is one of the engine's languages.
-     *
-     * @param languages The engine's languages
-     * @param language  The name the setting was given for
-     * @param setting   What was given for it, {@code Options} or {@code Imports}, which starts the message
-     * @throws IllegalStateException if the engine has no language named {@code language}
-     */
-    private static void checkLanguageKnown(LanguageRegistry languages, String language, String setting) {
-        if (!languages.languages().containsKey(language)) {
-            throw new IllegalStateException(setting + " are given for the expression language '"
-                    + Text.quote(language) + "', which isn't one of the engine's expression languages: "
-                    + Text.quoteAll(new TreeSet<>(languages.languages().keySet())));
-        }
+        RunClasses.prepare(settings.languagesInUse());
     }
 
     /**
