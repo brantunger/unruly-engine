@@ -42,8 +42,10 @@ public final class ImportSize {
         if (tooLong != null) {
             return tooLong;
         }
-        // Counted with a loop rather than a stream, whose first use could overflow deep in a stack (#1012).
-        long parts = 1;
+        // Counted with a loop rather than a stream, whose first use could overflow deep in a stack (#1012), and in an
+        // int, which the length bounds: appending a long would initialize java.lang.Long, which JDK 21 doesn't at
+        // startup, so a first call through ImportLimits deep in a stack could break it for the JVM (#1260).
+        int parts = 1;
         for (int dot = name.indexOf('.'); dot >= 0; dot = name.indexOf('.', dot + 1)) {
             parts++;
         }

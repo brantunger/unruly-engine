@@ -145,9 +145,9 @@ class FirstRunClassInitializationTest {
     private static final String RUN_CLASSES = INITIALIZING + RunClasses.class.getName().replace('.', '/') + "'";
 
     // The engine's, so the test fails if building an engine stops initializing one, rather than passing because no
-    // first load or run reaches it any more. Four are named by their names: NoSession isn't public, and the holders
-    // of EngineCompileContext's logger and of RunClasses' prepared languages, and CopyPermits' count of what was given
-    // back, are named so the test compiles without them.
+    // first load or run reaches it any more. Five are named by their names: NoSession isn't public, and the holders
+    // of EngineCompileContext's logger, of Failures' logger and of RunClasses' prepared languages, and CopyPermits'
+    // count of what was given back, are named so the test compiles without them.
     private static final List<String> ENGINE_CLASSES = Stream.concat(Stream.of(CoreRulesEngine.class, MatchPolicy.class,
                     LanguageRegistry.class, ImportResolver.class, LanguageNames.Problem.class, FactNames.Problem.class,
                     RuleListCompiler.Mode.class, LoggedFailures.class, Faults.Step.class, Failures.class,
@@ -167,7 +167,8 @@ class FirstRunClassInitializationTest {
                     FatalErrors.class)
                     .map(Class::getName),
             Stream.of("io.github.brantunger.unruly.api.language.NoSession",
-                    EngineCompileContext.class.getName() + "$Warnings", RunClasses.class.getName() + "$Prepared",
+                    EngineCompileContext.class.getName() + "$Warnings", Failures.class.getName() + "$Log",
+                    RunClasses.class.getName() + "$Prepared",
                     CopyPermits.class.getName() + "$Returned"))
             .toList();
 

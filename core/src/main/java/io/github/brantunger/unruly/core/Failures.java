@@ -44,8 +44,6 @@ final class Failures {
     static final int STOP = 3;
     static final int SAME = 4;
 
-    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
-
     private Failures() {
     }
 
@@ -463,7 +461,7 @@ final class Failures {
         winner.addSuppressed(loser);
         // A throwable built with suppression disabled ignores addSuppressed().
         if (!carries(winner, loser)) {
-            logWarn(log, "The fatal error {} can't carry a suppressed exception, so it's rethrown without {}",
+            logWarn(Log.LOGGER, "The fatal error {} can't carry a suppressed exception, so it's rethrown without {}",
                     describeWithClass(winner), describeWithClass(loser));
         }
     }
@@ -584,7 +582,8 @@ final class Failures {
         laterFatal.addSuppressed(failure);
         // A fatal error built with suppression disabled ignores addSuppressed().
         if (laterFatal.getSuppressed().length == 0) {
-            log.warn("A failure was replaced by the fatal error {}, which can't carry it as a suppressed exception: {}",
+            Log.LOGGER.warn(
+                    "A failure was replaced by the fatal error {}, which can't carry it as a suppressed exception: {}",
                     describeWithClass(laterFatal), describeWithClass(failure));
         }
         return laterFatal;
@@ -609,7 +608,7 @@ final class Failures {
         // reaches it, so it can't be kept on it, and is logged instead.
         keepInterruptStatus(failure);
         keepAlso(fatal, other);
-        log.warn("A failure was replaced by the fatal error {} suppressed on it: {}", describeWithClass(fatal),
+        Log.LOGGER.warn("A failure was replaced by the fatal error {} suppressed on it: {}", describeWithClass(fatal),
                 describeWithClass(failure));
         return fatal;
     }
@@ -938,7 +937,7 @@ final class Failures {
      */
     static void reportCalledCodeFailure(String msg, Throwable e) {
         if (NestedFailures.unlogged(e)) {
-            Failures.logError(log, msg);
+            Failures.logError(Log.LOGGER, msg);
         }
         Failures.throwIfPresent(Failures.fatalError(e));
     }
@@ -965,5 +964,19 @@ final class Failures {
             return "";
         }
         return " at line " + issue.line() + (issue.column() == 0 ? "" : ", column " + issue.column());
+    }
+
+    /**
+     * The logger, in a class of its own so that this one has no static initializer: {@code api.language.Throwables}
+     * reads a fatal error and an interrupt through {@link FatalErrors}, maybe before any engine is built and deep in
+     * a stack, and creating the logger may start SLF4J, whose first initialization could overflow there and leave
+     * this class unusable for the life of the JVM (#1260). The engine initializes it when it's built (see RunClasses).
+     */
+    static final class Log {
+
+        static final Logger LOGGER = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
+
+        private Log() {
+        }
     }
 }

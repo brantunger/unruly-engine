@@ -408,8 +408,8 @@ final class RuleText {
      * @param name The name
      * @return How many dot-separated parts it has
      */
-    static long dottedParts(String name) {
-        long parts = 1;
+    static int dottedParts(String name) {
+        int parts = 1;
         for (int dot = name.indexOf('.'); dot >= 0; dot = name.indexOf('.', dot + 1)) {
             parts++;
         }

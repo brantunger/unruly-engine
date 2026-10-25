@@ -311,25 +311,27 @@ final class RunClasses {
         }
     }
 
-    // Initialized through a lookup in this package, which can reach each of them. CoreRulesEngine creates the
-    // engine's logger, which starts SLF4J and its provider if the application hasn't. FlightRecorderEvents initializes
-    // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
-    // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
-    // may not be there. OneStepStack makes the field updater that every change to a rule set's idle copies and open
-    // compilers goes through, which a load would otherwise make (#1220). The thirteen before the last twelve have no
-    // static initializer: they are what a rule's or a run's first failure would otherwise be the first to load, which
-    // can overflow deep in a stack as initializing a class can (#1066, #1093), so they are loaded here. So are the
-    // next five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be
-    // the first to load or initialize (#1097). The last seven are what the api and core packages share and what
-    // api.language publishes of it: Text has the table of the characters it escapes, and a failure's description is
-    // the first to read it; the rest have no static initializer, and a language's or the kit's first failure, read
-    // through Throwables, ImportLimits or FatalErrors, would otherwise be the first to load them (#1241). MatchPolicy,
-    // after the engine, makes the three match policies, which Engines names only once this has run.
+    // Initialized through a lookup in this package, which can reach each of them. CoreRulesEngine creates the engine's
+    // logger, which starts SLF4J and its provider if the application hasn't, and Failures.Log, beside the holder of
+    // EngineCompileContext's logger, creates Failures' own logger, kept out of Failures because Throwables reaches
+    // Failures before any engine is built (#1260). FlightRecorderEvents initializes RunEvent and RuleEvent, which
+    // register the engine's Flight Recorder events, where Flight Recorder is there, and decides whether they can be
+    // used. They aren't named, as naming a class loads it, and they extend a class that may not be there. OneStepStack
+    // makes the field updater that every change to a rule set's idle copies and open compilers goes through, which a
+    // load would otherwise make (#1220). The thirteen before the last twelve have no static initializer: they are what
+    // a rule's or a run's first failure would otherwise be the first to load, which can overflow deep in a stack as
+    // initializing a class can (#1066, #1093), so they are loaded here. So are the next five, which the JVM's first
+    // wait for a copy and its first failed load, in any language, would otherwise be the first to load or initialize
+    // (#1097). The last seven are what the api and core packages share and what api.language publishes of it: Text has
+    // the table of the characters it escapes, and a failure's description is the first to read it; the rest have no
+    // static initializer, and a language's or the kit's first failure, read through Throwables, ImportLimits or
+    // FatalErrors, would otherwise be the first to load them (#1241). MatchPolicy, after the engine, makes the three
+    // match policies, which Engines names only once this has run.
     private static List<Class<?>> engineClasses() {
         return List.of(CoreRulesEngine.class, MatchPolicy.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
-                EngineCompileContext.Warnings.class, Prepared.class, Ran.class, LoggedFailures.class,
-                Faults.Step.class, Failures.class, ExpressionKind.class,
+                EngineCompileContext.Warnings.class, Failures.Log.class, Prepared.class, Ran.class,
+                LoggedFailures.class, Faults.Step.class, Failures.class, ExpressionKind.class,
                 InvalidExpressionException.Issue.Severity.class, CopyPool.class, OneStepStack.class,
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
                 CopyPool.Kind.class, CopyPool.Held.class, Closing.class,

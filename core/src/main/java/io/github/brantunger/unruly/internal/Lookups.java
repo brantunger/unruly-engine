@@ -43,8 +43,27 @@ public final class Lookups {
         }
         String message = Causes.messageOf(error);
         String internal = name.replace('.', '/');
-        return message != null && (message.startsWith(internal + " (wrong name: ")
-                || message.endsWith(" (wrong name: " + internal + ")"));
+        if (message == null) {
+            return false;
+        }
+        String last = " (wrong name: " + internal + ")";
+        return hasAt(message, 0, internal + " (wrong name: ") || hasAt(message, message.length() - last.length(), last);
+    }
+
+    // Whether text has part at from. Compared a char at a time, not with String.startsWith, endsWith or
+    // regionMatches: on JDK 21 they compare eight bytes at a time, and a mismatch within one of those whole words calls
+    // Long.numberOfTrailingZeros, which initializes java.lang.Long, so a first call through Throwables deep in a stack
+    // could break it for the JVM (#1260).
+    private static boolean hasAt(String text, int from, String part) {
+        if (from < 0 || from > text.length() - part.length()) {
+            return false;
+        }
+        for (int i = 0; i < part.length(); i++) {
+            if (text.charAt(from + i) != part.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
