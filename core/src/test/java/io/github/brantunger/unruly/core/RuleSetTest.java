@@ -473,8 +473,8 @@ class RuleSetTest {
                 assertEquals(Map.of("a", new NumberedSession("a", 2)), second.sessions(),
                         "an overlapping run gets new sessions");
                 assertTrue(first.kept() && second.kept(), "without a limit every copy is kept");
-                assertEquals(List.of(RULE), rules.rules(), "every copy shares the compiled rules");
-                assertEquals(RuleSet.UNLIMITED, rules.limit());
+                assertEquals(List.of(RULE), rules.loaded().rules(), "every copy shares the compiled rules");
+                assertEquals(CopyLimit.UNLIMITED, rules.limit());
             } finally {
                 rules.release(second);
             }
@@ -920,7 +920,7 @@ class RuleSetTest {
         // One build slot for the whole engine, so a slot that isn't given back is gone for good: every later run
         // that needs a copy would then wait out the whole window before making one. The window is far longer than
         // the borrows' deadlines, so a wait that ended any other way would fail the test.
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
                         Map.of("a", compiler("a", sessions, new CopyOnWriteArrayList<>())))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
@@ -1404,7 +1404,7 @@ class RuleSetTest {
         StackOverflowError failure = new StackOverflowError("looking for an idle copy");
         HookedQueue idle = new HookedQueue(() -> {
         });
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE),
                         Map.of("a", compiler("a", new AtomicInteger(), new CopyOnWriteArrayList<>())))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
@@ -1430,7 +1430,7 @@ class RuleSetTest {
         List<Integer> closed = new CopyOnWriteArrayList<>();
         // One build slot, held by the first run while its new copy runs, so the second run waits for it. The window is
         // far longer than the test, so the run that waits never gives up and makes a copy without a slot.
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         VirtualRun holder = startVirtualRun(rules);
@@ -1460,7 +1460,7 @@ class RuleSetTest {
         // One build slot, held by a virtual run while its new copy runs, so a second virtual run waits for it. Runs on
         // platform threads take no slot, so giving their copies back wakes nobody. The window is far longer than the
         // test, so the run that waits never gives up.
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", closingCompiler(made, closed)))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         VirtualRun slotted = startVirtualRun(rules);
@@ -2163,6 +2163,6 @@ class RuleSetTest {
 
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("x", check)).build();
 
-        assertEquals(Map.of("x", check), rules.factChecks());
+        assertEquals(Map.of("x", check), rules.loaded().factChecks());
     }
 }

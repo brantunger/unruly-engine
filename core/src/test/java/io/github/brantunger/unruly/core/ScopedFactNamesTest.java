@@ -487,7 +487,7 @@ class ScopedFactNamesTest {
         try (RulesEngine<Map<String, Object>> engine = engine(answering(() -> read))) {
             engine.load(List.of(rule("k", 1, "kw", "true", "put k 1")));
 
-            assertSame(read, ((AbstractRulesEngine<?>) engine).currentRules().factNamesRead().get("kw"));
+            assertSame(read, ((AbstractRulesEngine<?>) engine).currentRules().loaded().factNamesRead().get("kw"));
         }
     }
 
@@ -524,7 +524,7 @@ class ScopedFactNamesTest {
             @Override
             RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
                 return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("ran", List.of(), rules.checksum()));
+                        RunResult.of("ran", List.of(), rules.loaded().checksum()));
             }
 
             @Override

@@ -7,8 +7,8 @@ import java.util.List;
  * What one run counts as it goes, for its {@link RunEvent}: the conditions evaluated and the actions that ran to
  * completion. Kept while the run runs, so a run that fails or stops still reports how far it got. For a run that needs
  * the room for a language's first run, also the languages of the actions that ran to completion, which the run
- * records as having run once it returns (see {@link RuleSet#ran(List)}). <b>Internal:</b> this class may change in any
- * release.
+ * records as having run once it returns (see {@link LanguagesRan#completed(List)}). <b>Internal:</b> this class may
+ * change in any release.
  */
 final class RunTally {
 

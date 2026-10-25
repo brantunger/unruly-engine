@@ -188,6 +188,33 @@ class ChecksumsTest {
     }
 
     @Test
+    @DisplayName("the rules hash in the order they run, highest priority first, whatever order they were loaded in")
+    void rulesHashInTheOrderTheyRun() throws NoSuchAlgorithmException {
+        // Rule 'b', priority 2, then rule 'a', priority 1: each language mvel, condition 'true', action 'x', enabled,
+        // no window and no tags.
+        ByteArrayOutputStream layout = new ByteArrayOutputStream();
+        for (String[] rule : new String[][]{{"b", "2"}, {"a", "1"}}) {
+            value(layout, ascii(rule[0]));
+            value(layout, ascii(rule[1]));
+            value(layout, ascii("mvel"));
+            value(layout, ascii("true"));
+            value(layout, ascii("x"));
+            value(layout, ascii("true"));
+            length(layout, -1);
+            length(layout, -1);
+            length(layout, 0);
+        }
+        String expected = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(layout.toByteArray()));
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
+
+        engine.load(List.of(Rule.builder().ruleName("a").priority(1).condition("true").action("x").build(),
+                Rule.builder().ruleName("b").priority(2).condition("true").action("x").build()));
+
+        assertEquals(expected, engine.rules().checksum(), "rule 'b', priority 2, then rule 'a', priority 1");
+    }
+
+    @Test
     @DisplayName("enabling a rule, or changing its window or tags, changes the checksum")
     void newFieldsChangeTheChecksum() {
         Rule rule = Rule.builder().ruleName("r").condition("true").action("x").build();

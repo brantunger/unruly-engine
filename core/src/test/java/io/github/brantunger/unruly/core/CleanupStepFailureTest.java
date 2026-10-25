@@ -364,7 +364,7 @@ class CleanupStepFailureTest {
     void aFailedBorrowGivesBackTheSlotAGiveBackFailedToGiveBack() throws InterruptedException {
         Counting language = new Counting();
         language.failSessions = true;
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // A virtual thread without a limit takes the only build slot to make its copy, fails to make it, and the
@@ -380,7 +380,7 @@ class CleanupStepFailureTest {
     void aGiveBackThatFailsOnceTheSlotIsBackNeverGivesItBackTwice() throws InterruptedException {
         Counting language = new Counting();
         language.failSessions = true;
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 

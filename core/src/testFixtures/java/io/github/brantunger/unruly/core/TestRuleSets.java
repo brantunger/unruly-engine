@@ -72,18 +72,10 @@ final class TestRuleSets {
      * Creates the rule set.
      *
      * @return The rule set
-     * @throws IllegalStateException if both an idle queue and reserved names were set, which no constructor but the
-     *                               private one takes together
      */
     RuleSet build() {
-        if (idle != null && !reservedFactNames.isEmpty()) {
-            throw new IllegalStateException("no RuleSet constructor takes both an idle queue and reserved names");
-        }
         CopyPermits givenPermits = permits != null ? permits : new CopyPermits(limit.maxCopies());
-        if (idle != null) {
-            return new RuleSet(rules, compilers, limit, givenPermits, stallWindowMillis, idle);
-        }
-        return new RuleSet(rules, compilers, Map.of(), reservedFactNames, Map.of(), limit, givenPermits,
-                stallWindowMillis);
+        return new RuleSet(new LoadedRules(rules, compilers, Map.of(), reservedFactNames, Map.of()), limit,
+                givenPermits, stallWindowMillis, idle != null ? idle : new OneStepStack<>());
     }
 }

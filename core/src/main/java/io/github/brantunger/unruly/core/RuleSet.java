@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
@@ -10,22 +9,19 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayDeque;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.Set;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
- * One loaded rule list: the rules as {@code load()} compiled them, the compilers of the languages they use, and
- * the copies of the rules that runs use. Keeping the compilers here lets a reload swap in the rules and their fact-name
- * checks with one write.
+ * One loaded rule list: the rules as {@code load()} compiled them and the compilers of the languages they use, in its
+ * {@link LoadedRules}, and the copies of the rules that runs use. Keeping the compilers here lets a reload swap in the
+ * rules and their fact-name checks with one write.
  *
  * <p>
  * Every run shares the compiled rules. What a language changes while its expressions run lives in a {@link Session},
@@ -97,9 +93,6 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  */
 final class RuleSet {
 
-    /** The limit of a rule set that makes as many copies as its runs need. */
-    static final int UNLIMITED = 0;
-
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
     // The number of users once the rule set is closed.
     private static final int CLOSED = -1;
@@ -127,19 +120,8 @@ final class RuleSet {
     private static final AtomicIntegerFieldUpdater<RuleSet> RETIRING =
             AtomicIntegerFieldUpdater.newUpdater(RuleSet.class, "retiring");
 
-    private final List<CompiledRule> compiledRules;
-    private final Map<String, ExpressionCompiler> compilers;
-    // What a run checks its facts' names against besides the compilers: the facts the rules of each language that can
-    // tell read, and the names the languages the rules use reserve only for the rule lists that use them.
-    private final Map<String, Set<String>> namesRead;
-    private final Map<String, String> reservedNames;
-    // Whether a run has finished with a language of each class these rules use, the flags of RunClasses.Ran, read
-    // once here so a run reads no class value: in a list for firstRun(), and by language name for ran().
-    private final List<AtomicBoolean> languagesRan;
-    private final Map<String, AtomicBoolean> ranByLanguage;
-    // Identify these rules, and when they were loaded, for RulesEngine.rules() and every run's result.
-    private final String ruleChecksum;
-    private final Instant loadTime;
+    // The rules and what their runs check their facts against, which every copy shares.
+    private final LoadedRules loadedRules;
     private final Queue<Map<String, Session>> idle;
     private final CopyLimit copyLimit;
     // With a limit, one permit for each kept copy that a limited run holds, shared with the engine's other rule sets.
@@ -299,171 +281,40 @@ final class RuleSet {
     }
 
     /**
-     * Creates a rule set whose idle copies wait in {@code idle}. It is a deliberate test seam: it lets a test hand
-     * the rule set a queue that fails, as one that can't allocate room for a copy does, which nothing but a test needs.
+     * Creates a rule set of the given rules whose limited runs take the given permits and give up waiting after
+     * {@code stallWindowMillis}, and whose idle copies wait in {@code idle}. The engine passes a new
+     * {@link OneStepStack}; a test may hand it a queue that fails, as one that can't allocate room for a copy does.
      *
-     * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name, in the order they
-     *                          check fact names
+     * @param loaded            The rules, and what their runs check their facts against
      * @param limit             How many copies runs may hold at once, and which runs that applies to
      * @param permits           The permits for {@code limit}, which other rule sets may share
      * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
      * @param idle              The queue the idle copies wait in, which runs share, so it must be thread-safe
      */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers, CopyLimit limit,
-            CopyPermits permits, long stallWindowMillis, Queue<Map<String, Session>> idle) {
-        this(compiledRules, compilers, Map.of(), Map.of(), Map.of(), limit, permits, stallWindowMillis, idle);
-    }
-
-    /**
-     * Creates a rule set whose languages say which facts their rules read, or reserve names only for the rule lists
-     * that use them, whose limited runs take the given permits and give up waiting after {@code stallWindowMillis}.
-     * The engine loads its rule lists with it.
-     *
-     * @param compiledRules     The compiled rules, in the order they run
-     * @param compilers         The compilers of the languages the rules use, by language name, in the order they
-     *                          check fact names
-     * @param namesRead         The names of the facts each compiler's rules read, by language name, for the compilers
-     *                          that can tell; empty when none can
-     * @param reservedFactNames The language that reserves each name, by name, of the languages the rules use that
-     *                          reserve their names only for the rule lists that use them; empty when none does
-     * @param languages         The languages the rules use, by name, whose first runs {@link #firstRun()} tells of
-     * @param limit             How many copies runs may hold at once, and which runs that applies to
-     * @param permits           The permits for {@code limit}, which other rule sets may share
-     * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
-     */
-    RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
-            Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames,
-            Map<String, ExpressionLanguage> languages, CopyLimit limit, CopyPermits permits, long stallWindowMillis) {
-        this(compiledRules, compilers, namesRead, reservedFactNames, languages, limit, permits, stallWindowMillis,
-                new OneStepStack<>());
-    }
-
-    private RuleSet(List<CompiledRule> compiledRules, Map<String, ExpressionCompiler> compilers,
-                    Map<String, Set<String>> namesRead, Map<String, String> reservedFactNames,
-                    Map<String, ExpressionLanguage> languages, CopyLimit limit, CopyPermits permits,
-                    long stallWindowMillis, Queue<Map<String, Session>> idle) {
-        this.compiledRules = List.copyOf(compiledRules);
-        this.compilers = Collections.unmodifiableMap(new LinkedHashMap<>(compilers));
-        this.namesRead = Map.copyOf(namesRead);
-        this.reservedNames = Map.copyOf(reservedFactNames);
-        Map<String, AtomicBoolean> ran = new HashMap<>();
-        for (Map.Entry<String, ExpressionLanguage> language : languages.entrySet()) {
-            ran.put(language.getKey(), RunClasses.Ran.CLASSES.get(language.getValue().getClass()));
-        }
-        this.ranByLanguage = Map.copyOf(ran);
-        this.languagesRan = List.copyOf(ran.values());
-        this.ruleChecksum = Checksums.ofRules(this.compiledRules);
-        this.loadTime = Instant.now();
+    RuleSet(LoadedRules loaded, CopyLimit limit, CopyPermits permits, long stallWindowMillis,
+            Queue<Map<String, Session>> idle) {
+        this.loadedRules = loaded;
         this.copyLimit = limit;
         this.permits = permits;
         this.stallWindow = stallWindowMillis;
         this.idle = idle;
         // Taken in the order the compilers check fact names, which is the order they're closed in.
-        this.openCompilers = new OneStepStack<>(List.copyOf(this.compilers.entrySet()));
+        this.openCompilers = new OneStepStack<>(List.copyOf(loaded.factChecks().entrySet()));
     }
 
     /**
-     * Returns the rules as {@code load()} compiled them, which every run shares.
+     * Returns the rules, and what their runs check their facts against.
      *
-     * @return An unmodifiable list of the compiled rules
+     * @return The loaded rules, which every copy shares
      */
-    List<CompiledRule> rules() {
-        return compiledRules;
-    }
-
-    /**
-     * Returns the checksum that identifies these rules, as
-     * {@link io.github.brantunger.unruly.api.RuleSetInfo#checksum()} describes it.
-     *
-     * @return The checksum
-     */
-    String checksum() {
-        return ruleChecksum;
-    }
-
-    /**
-     * Returns when these rules were compiled.
-     *
-     * @return The time the rule set was created
-     */
-    Instant loadedAt() {
-        return loadTime;
-    }
-
-    /**
-     * Returns the compilers that check the fact names of a run of these rules, and create its sessions.
-     *
-     * @return An unmodifiable map of the compilers by language name, in the order they check
-     */
-    Map<String, ExpressionCompiler> factChecks() {
-        return compilers;
-    }
-
-    /**
-     * Returns the names of the facts the rules of each language read, for the languages whose compilers can tell (see
-     * {@link ExpressionCompiler#factNamesRead()}): a run asks such a language to check only those names.
-     *
-     * @return An unmodifiable map of the names by language name; empty when no compiler can tell
-     */
-    Map<String, Set<String>> factNamesRead() {
-        return namesRead;
-    }
-
-    /**
-     * Tells whether a run of these rules needs the room for a language's first run, which
-     * {@link StackHeadroom#checkFirstRun()} checks: whether a language they use is of a class that no run has finished
-     * with yet in this JVM, as {@link #ran(List)} records it. A run that reads this while another records it may still
-     * find it {@code true}, and only checks more room than it needs. A rule list that uses a language none of whose
-     * actions ever completes in a run that returns (its rules never match, or its runs always throw) needs the room on
-     * every run.
-     *
-     * @return {@code true} if a language these rules use hasn't finished a run
-     */
-    boolean firstRun() {
-        for (AtomicBoolean ran : languagesRan) {
-            if (!ran.get()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Records that a run of these rules has finished for each of {@code languages}, so the runs of any rule list that
-     * uses a language of the same class no longer need the room for its first run (see {@link #firstRun()}). The
-     * engine calls it when a run that needed that room has returned normally, with the languages of the rules whose
-     * actions ran to completion. The room is for any first call the run makes, its conditions' too; an action that ran
-     * to completion is the sign taken that the run made its language's first calls. A run that threw, whatever it
-     * threw, records nothing, and a language none of whose actions the run ran isn't recorded. The run's first calls
-     * are those of the rules it ran, not every shape its language's rules call.
-     *
-     * @param languages The names of the languages; a name these rules don't use is ignored
-     */
-    void ran(List<String> languages) {
-        for (String language : languages) {
-            AtomicBoolean ran = ranByLanguage.get(language);
-            if (ran != null && !ran.get()) {
-                ran.set(true);
-            }
-        }
-    }
-
-    /**
-     * Returns the names that the languages these rules use reserve only for the rule lists that use them (see
-     * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}), which no fact
-     * of a run of these rules may have.
-     *
-     * @return An unmodifiable map of the language that reserves each name, by name; empty when no language does
-     */
-    Map<String, String> reservedFactNames() {
-        return reservedNames;
+    LoadedRules loaded() {
+        return loadedRules;
     }
 
     /**
      * Returns the most copies the runs the limit applies to hold at once.
      *
-     * @return The limit, or {@link #UNLIMITED}
+     * @return The limit, or {@link CopyLimit#UNLIMITED}
      */
     int limit() {
         return copyLimit.maxCopies();
@@ -645,7 +496,7 @@ final class RuleSet {
     private void warmUp(Map<String, Session> sessions) {
         for (Map.Entry<String, Session> session : sessions.entrySet()) {
             if (session.getValue() != Session.none()) {
-                warmUp(session.getKey(), compilers.get(session.getKey()), session.getValue());
+                warmUp(session.getKey(), loadedRules.factChecks().get(session.getKey()), session.getValue());
             }
         }
     }
@@ -1267,7 +1118,7 @@ final class RuleSet {
      * @param sessions The copy's sessions so far, by language name
      */
     private void addSessions(Map<String, Session> sessions) {
-        for (Map.Entry<String, ExpressionCompiler> compiler : compilers.entrySet()) {
+        for (Map.Entry<String, ExpressionCompiler> compiler : loadedRules.factChecks().entrySet()) {
             sessions.put(compiler.getKey(), newSession(compiler.getKey(), compiler.getValue()));
         }
     }

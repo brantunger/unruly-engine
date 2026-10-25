@@ -67,7 +67,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
             fired.add(rule.rule());
         }
 
-        return RunResult.of(outputObject, fired, matches.evaluations(), ruleSet.checksum());
+        return RunResult.of(outputObject, fired, matches.evaluations(), ruleSet.loaded().checksum());
     }
 
     @Override

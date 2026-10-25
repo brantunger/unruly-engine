@@ -207,7 +207,7 @@ class CopyPermitsTest {
     @Test
     @DisplayName("an engine has one build slot for each processor")
     void oneSlotForEachProcessor() throws InterruptedException {
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED);
         for (int slot = 0; slot < Runtime.getRuntime().availableProcessors(); slot++) {
             assertTrue(permits.awaitSlot(0, Deadline.NONE), "slot " + slot);
         }

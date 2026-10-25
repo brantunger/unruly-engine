@@ -346,11 +346,12 @@ final class RunClasses {
     }
 
     // Loaded through the same lookup: the engine's classes, none with a static initializer, that the JVM's first load
-    // and first run would otherwise be the first to load, from the engine's jar or class directory. The first nine,
+    // and first run would otherwise be the first to load, from the engine's jar or class directory. The first eleven,
     // the load's, may come after load()'s own check of the room: CompiledCondition and CompiledAction with the first
     // class of a language's that implements one, unless the language's prepare() or the application loaded it before,
-    // and OutputConverter and LanguageOutputConverter as each rule's converter is made (#1127). No test catches the
-    // two compiled kinds, as no scenario's first load is the first to read them. Of the run's,
+    // OutputConverter and LanguageOutputConverter as each rule's converter is made (#1127), and LoadedRules and its
+    // LanguagesRan once the rules have compiled. No test catches the two compiled kinds, as no scenario's first load
+    // is the first to read them. Of the run's,
     // RunBody, RuleSet's Copy, RunFacts and RunResult are loaded when the run links the lambda it runs its rules in,
     // after run()'s own check of the room and before the check for a language's first run, and the rest after that;
     // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
@@ -365,8 +366,8 @@ final class RunClasses {
     private static List<Class<?>> loadAndRunClasses() {
         return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
-                OutputConverter.class, LanguageOutputConverter.class, AbstractRulesEngine.RunBody.class,
-                RuleSet.Copy.class,
+                OutputConverter.class, LanguageOutputConverter.class, LoadedRules.class, LanguagesRan.class,
+                AbstractRulesEngine.RunBody.class, RuleSet.Copy.class,
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
@@ -446,8 +447,8 @@ final class RunClasses {
 
     /**
      * Whether a run has returned normally after running an action of a rule in a language of each class, which tells
-     * a run whether it needs the room for a language's first run (see {@link RuleSet#firstRun()}). A class value, so
-     * it keeps no class from being unloaded. In a class of its own, initialized with the engine's, as
+     * a run whether it needs the room for a language's first run (see {@link LanguagesRan#needsRoom()}). A class
+     * value, so it keeps no class from being unloaded. In a class of its own, initialized with the engine's, as
      * {@link Prepared} is.
      */
     static final class Ran {
