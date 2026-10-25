@@ -138,7 +138,7 @@ class DefaultCopyLimitTest {
             UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
         RulesEngine<Map<String, Object>> engine =
                 configuration.apply(RulesEngineBuilder.allMatches(HashMap::new)).build();
-        ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(LONGER_THAN_THE_TEST);
+        ((CoreRulesEngine<Map<String, Object>>) engine).stallWindow(LONGER_THAN_THE_TEST);
         engine.load(List.of(RULE));
         return engine;
     }

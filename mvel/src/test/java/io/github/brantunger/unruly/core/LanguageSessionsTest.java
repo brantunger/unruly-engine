@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
@@ -25,7 +24,6 @@ import java.util.HashMap;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -274,7 +272,7 @@ class LanguageSessionsTest {
 
         assertEquals(List.of(1), confined.closes());
         assertEquals(1, confined.compilersClosed.get());
-        assertNull(((AbstractRulesEngine<?>) engine).getCompiledRules());
+        assertNull(((CoreRulesEngine<?>) engine).getCompiledRules());
         assertEquals(CLOSED,
                 assertThrows(IllegalStateException.class, () -> engine.run(new FactMap<>())).getMessage());
         List<Rule> rules = List.of(rule("b", "confined"));
@@ -424,23 +422,19 @@ class LanguageSessionsTest {
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(Map.of()).build();
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
-            @Override
-            CopyPool currentRules() {
-                return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();
-            }
+        CoreRulesEngine<String> engine = TestEngines.withSeam(String::new, configuration,
+                new CoreRulesEngine.TestSeam<>() {
+                    @Override
+                    CopyPool currentRules(CoreRulesEngine<String> engine) {
+                        return reads.getAndIncrement() == 0 ? closedRules : super.currentRules(engine);
+                    }
 
-            @Override
-            RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-                return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("rules: " + rules.loaded().rules().size(), List.of(), rules.loaded().checksum()));
-            }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
+                    @Override
+                    RuleExecutor.RunBody<String> body() {
+                        return (rules, copy, runFacts) -> RunResult.of("rules: " + rules.loaded().rules().size(),
+                                List.of(), rules.loaded().checksum());
+                    }
+                });
         engine.load(List.of());
 
         assertEquals("rules: 0", engine.run(new FactMap<>()));

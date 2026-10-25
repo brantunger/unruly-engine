@@ -49,8 +49,8 @@ class RuleErrorHandlingTest {
         }
     };
 
-    private StatefulRulesEngine<Map<String, Object>> engine(String condition, String action, RuleListener... more) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+    private CoreRulesEngine<Map<String, Object>> engine(String condition, String action, RuleListener... more) {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.listener(recorder).listeners(List.of(more)));
         engine.load(List.of(Rule.builder().ruleName("failing").condition(condition).action(action).build()));
         return engine;
@@ -63,7 +63,7 @@ class RuleErrorHandlingTest {
         @Test
         @DisplayName("a StackOverflowError from an action is wrapped and ends beforeExecute with onError")
         void actionStackOverflow() {
-            StatefulRulesEngine<Map<String, Object>> engine = engine("true", "def f(n) { f(n + 1) }; f(1)");
+            CoreRulesEngine<Map<String, Object>> engine = engine("true", "def f(n) { f(n + 1) }; f(1)");
 
             RuleExecutionException thrown =
                     assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -77,7 +77,7 @@ class RuleErrorHandlingTest {
         @Test
         @DisplayName("an AssertionError from an action is wrapped and ends beforeExecute with onError")
         void actionAssertionError() {
-            StatefulRulesEngine<Map<String, Object>> engine = engine("true", "assert false");
+            CoreRulesEngine<Map<String, Object>> engine = engine("true", "assert false");
 
             RuleExecutionException thrown =
                     assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -89,7 +89,7 @@ class RuleErrorHandlingTest {
         @Test
         @DisplayName("an AssertionError from a condition is wrapped and ends beforeEvaluate with onError")
         void conditionAssertionError() {
-            StatefulRulesEngine<Map<String, Object>> engine = engine("assert false", "output.put('k', 1)");
+            CoreRulesEngine<Map<String, Object>> engine = engine("assert false", "output.put('k', 1)");
 
             RuleExecutionException thrown =
                     assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -101,7 +101,7 @@ class RuleErrorHandlingTest {
         @Test
         @DisplayName("an OutOfMemoryError from an action reaches onError and is rethrown unchanged")
         void actionFatalErrorRethrown() {
-            StatefulRulesEngine<Map<String, Object>> engine = engine("true", "new int[2147483647]");
+            CoreRulesEngine<Map<String, Object>> engine = engine("true", "new int[2147483647]");
 
             OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
 
@@ -118,7 +118,7 @@ class RuleErrorHandlingTest {
         @DisplayName("a StackOverflowError is wrapped in RuleExecutionException")
         void factoryStackOverflowWrapped() {
             StackOverflowError overflow = new StackOverflowError("simulated");
-            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
+            CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
                 throw overflow;
             });
             engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
@@ -133,7 +133,7 @@ class RuleErrorHandlingTest {
         @DisplayName("an OutOfMemoryError is rethrown unchanged")
         void factoryFatalErrorRethrown() {
             OutOfMemoryError oom = new OutOfMemoryError("simulated");
-            StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
+            CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(() -> {
                 throw oom;
             });
             engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("output.put('k', 1)").build()));
@@ -149,7 +149,7 @@ class RuleErrorHandlingTest {
         @Test
         @DisplayName("an AssertionError is logged and doesn't interrupt the run")
         void listenerAssertionErrorContained() {
-            StatefulRulesEngine<Map<String, Object>> engine = engine("true", "output.put('k', 1)", new RuleListener() {
+            CoreRulesEngine<Map<String, Object>> engine = engine("true", "output.put('k', 1)", new RuleListener() {
                 @Override
                 public void beforeEvaluate(Rule rule, Map<String, Object> facts) {
                     throw new AssertionError("listener assert");
@@ -163,7 +163,7 @@ class RuleErrorHandlingTest {
         @DisplayName("an OutOfMemoryError propagates out of run()")
         void listenerFatalErrorPropagates() {
             OutOfMemoryError oom = new OutOfMemoryError("simulated");
-            StatefulRulesEngine<Map<String, Object>> engine = engine("true", "output.put('k', 1)", new RuleListener() {
+            CoreRulesEngine<Map<String, Object>> engine = engine("true", "output.put('k', 1)", new RuleListener() {
                 @Override
                 public void afterExecute(Rule rule, Object output) {
                     throw oom;

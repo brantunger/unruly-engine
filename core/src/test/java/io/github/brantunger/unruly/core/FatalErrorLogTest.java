@@ -199,6 +199,6 @@ class FatalErrorLogTest {
         RuleExecutionException told = assertInstanceOf(RuleExecutionException.class, runError.get(),
                 "what onRunError was told");
         assertEquals("r", told.getRuleName());
-        assertNull(((AbstractRulesEngine<?>) engine).recordedFatalFailure(), "the failure left on the thread");
+        assertNull(((CoreRulesEngine<?>) engine).recordedFatalFailure(), "the failure left on the thread");
     }
 }

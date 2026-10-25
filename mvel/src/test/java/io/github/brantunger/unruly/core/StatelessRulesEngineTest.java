@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("an engine that fires the first matching rule")
 class StatelessRulesEngineTest {
 
-    private StatelessRulesEngine<Map<String, Object>> engine;
+    private CoreRulesEngine<Map<String, Object>> engine;
 
     @BeforeEach
     void setUp() {

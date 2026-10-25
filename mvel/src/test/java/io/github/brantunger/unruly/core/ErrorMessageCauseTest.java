@@ -48,7 +48,7 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("an exception without a message from a method the rule called is named by its class")
     void rootCauseNamed() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(Map::of);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(Map::of);
         engine.load(List.of(rule("a", "true", "output.put('k', null)")));
 
         RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
@@ -63,7 +63,7 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a failure five runs deep is described once and logged once")
     void nestedRunFailure() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("rec", "true",
                 "if (depth < 5) { store.setValue('depth', depth + 1); eng.run(store) } else { x.missing }")));
         FactMap<Object> facts = new FactMap<>();
@@ -84,7 +84,7 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a failure 150 runs deep is described once too, although each run adds a link to the cause chain")
     void deeplyNestedRunFailure() throws InterruptedException {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("rec", "true",
                 "if (depth < 150) { store.setValue('depth', depth + 1); eng.run(store) } else { x.missing }")));
         FactMap<Object> facts = new FactMap<>();
@@ -122,7 +122,7 @@ public class ErrorMessageCauseTest {
     void expressionTooLongToCompile() throws InterruptedException {
         // Far more terms than a thread of 1 MB holds: 20,000 overflowed one of 1 MB, and fitted in one of 4 MB.
         String condition = String.join(" || ", Collections.nCopies(200_000, "a == 1"));
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         // A stack of its own makes MVEL's recursive parser overflow however much stack the test JVM gives its threads.
         // Not a small one: once the parser's frames are gone, the engine checks for room to tell an expression too
@@ -147,7 +147,7 @@ public class ErrorMessageCauseTest {
     @Test
     @DisplayName("a very long exception message is cut short")
     void longMessageCut() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new);
         engine.load(List.of(rule("a", "true", "output.put('k', boom.fail())")));
         FactMap<Object> facts = new FactMap<>();
         facts.setValue("boom", new Boom());

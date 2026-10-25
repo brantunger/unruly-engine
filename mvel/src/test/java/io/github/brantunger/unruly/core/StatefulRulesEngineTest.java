@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("an engine that fires every matching rule")
 class StatefulRulesEngineTest {
 
-    private StatefulRulesEngine<Map<String, Object>> engine;
+    private CoreRulesEngine<Map<String, Object>> engine;
 
     @BeforeEach
     void setUp() {

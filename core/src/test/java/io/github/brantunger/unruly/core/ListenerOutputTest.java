@@ -21,7 +21,7 @@ class ListenerOutputTest {
     @DisplayName("the output passed to afterExecute is the object run() returns, already changed by the action")
     void afterExecuteReceivesOutput() {
         AtomicReference<Object> seen = new AtomicReference<>();
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void afterExecute(Rule rule, Object output) {

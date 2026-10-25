@@ -80,7 +80,7 @@ final class ListenerNotifier {
      * a fatal error a listener throws in its place still leaves the run's event saying the run stopped, as the
      * listeners were told, and so is an interrupt that caused it, so the thread's interrupt status is set again
      * before the copy is given back and when {@code run()} returns (see
-     * {@link AbstractRulesEngine#keepInterruptOfStop}). A fatal error a listener throws is rethrown in place of what
+     * {@link CoreRulesEngine#keepInterruptOfStop}). A fatal error a listener throws is rethrown in place of what
      * the run failed with, and carries that as a suppressed exception (see {@link Failures#keepAlso}).
      *
      * @param runs    What is in progress on the run's thread, which marks each listener's callback as a call-out (see

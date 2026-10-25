@@ -22,7 +22,6 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -487,7 +486,7 @@ class ScopedFactNamesTest {
         try (RulesEngine<Map<String, Object>> engine = engine(answering(() -> read))) {
             engine.load(List.of(rule("k", 1, "kw", "true", "put k 1")));
 
-            assertSame(read, ((AbstractRulesEngine<?>) engine).currentRules().loaded().factNamesRead().get("kw"));
+            assertSame(read, ((CoreRulesEngine<?>) engine).currentRules().loaded().factNamesRead().get("kw"));
         }
     }
 
@@ -510,28 +509,22 @@ class ScopedFactNamesTest {
      * An engine whose {@code currentRules()} hands back {@code first}, closed, at the first reading, and the rules it
      * loaded after that, as a reload between a run's reading and its borrowing does.
      */
-    private static AbstractRulesEngine<String> engineReading(CopyPool first, ExpressionLanguage kw) {
+    private static CoreRulesEngine<String> engineReading(CopyPool first, ExpressionLanguage kw) {
         Map<String, ExpressionLanguage> languages = Map.of("toy", plain("toy"), "kw", kw);
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(languages)
                 .withDefaultLanguage("toy").build();
         AtomicInteger reads = new AtomicInteger();
-        return new AbstractRulesEngine<>(String::new, configuration) {
+        return TestEngines.withSeam(String::new, configuration, new CoreRulesEngine.TestSeam<>() {
             @Override
-            CopyPool currentRules() {
-                return reads.getAndIncrement() == 0 ? first : super.currentRules();
+            CopyPool currentRules(CoreRulesEngine<String> engine) {
+                return reads.getAndIncrement() == 0 ? first : super.currentRules(engine);
             }
 
             @Override
-            RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-                return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("ran", List.of(), rules.loaded().checksum()));
+            RuleExecutor.RunBody<String> body() {
+                return (rules, copy, runFacts) -> RunResult.of("ran", List.of(), rules.loaded().checksum());
             }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
+        });
     }
 
     private static CopyPool closed(Map<String, String> reserved) {
@@ -544,14 +537,14 @@ class ScopedFactNamesTest {
     @DisplayName("a run checks its facts against the rule list it borrowed, not one a reload replaced before it could")
     void checkedAgainstTheRulesBorrowed() {
         // The run first reads a list that uses kw, closed by a reload; the list that replaced it doesn't use kw.
-        try (AbstractRulesEngine<String> engine = engineReading(closed(Map.of("self", "kw")),
+        try (CoreRulesEngine<String> engine = engineReading(closed(Map.of("self", "kw")),
                 keywordy(false, false))) {
             engine.load(List.of(rule("m", 1, "toy", "true", "put seen x")));
 
             assertEquals("ran", engine.run(fact("self")));
         }
         // And the other way round.
-        try (AbstractRulesEngine<String> engine = engineReading(closed(Map.of()), keywordy(false, false))) {
+        try (CoreRulesEngine<String> engine = engineReading(closed(Map.of()), keywordy(false, false))) {
             engine.load(List.of(rule("k", 1, "kw", "true", "put k 1")));
 
             IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,

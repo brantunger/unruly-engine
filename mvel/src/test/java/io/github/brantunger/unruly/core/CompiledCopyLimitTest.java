@@ -343,8 +343,8 @@ class CompiledCopyLimitTest {
         firstMatch.load(rules);
         allMatches.load(rules);
 
-        assertInstanceOf(StatelessRulesEngine.class, firstMatch);
-        assertInstanceOf(StatefulRulesEngine.class, allMatches);
+        assertSame(MatchPolicy.FIRST_MATCH, assertInstanceOf(CoreRulesEngine.class, firstMatch).matchPolicy());
+        assertSame(MatchPolicy.ALL_MATCHES, assertInstanceOf(CoreRulesEngine.class, allMatches).matchPolicy());
         assertEquals(Map.of("high", true), firstMatch.run(new FactMap<>()));
         assertEquals(Map.of("high", true, "low", true), allMatches.run(new FactMap<>()));
     }

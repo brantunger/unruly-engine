@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a language's fact-name check that fails unexpectedly is reported like a rejected name")
 class FactNameCheckFailureTest {
 
-    private StatefulRulesEngine<Map<String, Object>> engine;
+    private CoreRulesEngine<Map<String, Object>> engine;
 
     /** Builds an engine with a language named x whose checkFactName calls {@code check}, and loads one rule in it. */
     private void load(Consumer<String> check) {

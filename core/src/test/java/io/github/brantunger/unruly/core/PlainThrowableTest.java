@@ -3,7 +3,6 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
-import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleListener;
@@ -35,7 +34,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -530,7 +528,7 @@ class PlainThrowableTest {
         Throwable raw = new Throwable("raw");
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
-        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        CoreRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
 
         Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
@@ -550,7 +548,7 @@ class PlainThrowableTest {
         Throwable raw = new Throwable("raw", new InterruptedException("interrupted in the run"));
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
-        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        CoreRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
         Throwable thrown;
         boolean interrupted;
 
@@ -575,7 +573,7 @@ class PlainThrowableTest {
         Throwable raw = new Throwable("raw", fatal);
         List<String> calls = new CopyOnWriteArrayList<>();
         Recorder listener = new Recorder("A", calls);
-        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        CoreRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
@@ -592,7 +590,7 @@ class PlainThrowableTest {
         Throwable raw = new Throwable("raw");
         OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
         Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
-        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
+        CoreRulesEngine<String> engine = engineWhoseRunsThrow(raw, listener);
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
@@ -608,7 +606,7 @@ class PlainThrowableTest {
         OutOfMemoryError fatal = new OutOfMemoryError("run oom");
         OutOfMemoryError listenerFatal = new OutOfMemoryError("onRunError");
         Recorder listener = new Recorder("A", new CopyOnWriteArrayList<>(), "onRunError", listenerFatal);
-        AbstractRulesEngine<String> engine = engineWhoseRunsThrow(new Throwable("raw", fatal), listener);
+        CoreRulesEngine<String> engine = engineWhoseRunsThrow(new Throwable("raw", fatal), listener);
 
         Throwable thrown = capture(() -> engine.run(new FactMap<>())).thrown();
 
@@ -620,24 +618,20 @@ class PlainThrowableTest {
      * An engine with no rules whose every run's body throws {@code failure}, from where no rule, listener, language or
      * output is called, which is the one place in a run that nothing reports it but the run itself.
      */
-    private static AbstractRulesEngine<String> engineWhoseRunsThrow(Throwable failure, RuleListener listener) {
+    private static CoreRulesEngine<String> engineWhoseRunsThrow(Throwable failure, RuleListener listener) {
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
                         Map.of(StubExpressionLanguage.LANGUAGE_NAME, new StubExpressionLanguage()))
                 .withListeners(List.of(listener)).build();
-        AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
-            @Override
-            RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
-                return runInScope(facts, timeout, tags, (rules, copy, runFacts) -> {
-                    sneakyThrow(failure);
-                    return RunResult.of("ran", List.of(), rules.loaded().checksum());
+        CoreRulesEngine<String> engine = TestEngines.withSeam(String::new, configuration,
+                new CoreRulesEngine.TestSeam<>() {
+                    @Override
+                    RuleExecutor.RunBody<String> body() {
+                        return (rules, copy, runFacts) -> {
+                            sneakyThrow(failure);
+                            return RunResult.of("ran", List.of(), rules.loaded().checksum());
+                        };
+                    }
                 });
-            }
-
-            @Override
-            String matchPolicy() {
-                return "firstMatch";
-            }
-        };
         engine.load(List.of());
         return engine;
     }

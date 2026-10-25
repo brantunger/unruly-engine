@@ -103,14 +103,14 @@ class ValidateTest {
         };
     }
 
-    private static StatefulRulesEngine<Map<String, Object>> mvelEngine() {
+    private static CoreRulesEngine<Map<String, Object>> mvelEngine() {
         return TestEngines.allMatches(HashMap::new);
     }
 
     @Test
     @DisplayName("a list that would load returns no problem, and nothing is loaded")
     void validListLoadsNothing() {
-        StatefulRulesEngine<Map<String, Object>> engine = mvelEngine();
+        CoreRulesEngine<Map<String, Object>> engine = mvelEngine();
 
         List<RuleCompilationException> problems = engine.validate(List.of(GOOD));
 
@@ -138,7 +138,7 @@ class ValidateTest {
                 throw new IllegalStateException("no engine");
             }
         };
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(new MvelExpressionLanguage()).language(noCompiler)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME)
                 .fact("empty", String.class));
@@ -177,9 +177,9 @@ class ValidateTest {
     @Test
     @DisplayName("the problems are the failures load() throws for the same list")
     void sameAsLoad() {
-        StatefulRulesEngine<Map<String, Object>> validating = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> validating = TestEngines.allMatches(HashMap::new,
                 builder -> builder.fact("empty", String.class));
-        StatefulRulesEngine<Map<String, Object>> loading = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> loading = TestEngines.allMatches(HashMap::new,
                 builder -> builder.fact("empty", String.class));
         List<Rule> rules = List.of(GOOD, BROKEN,
                 Rule.builder().ruleName("also").priority(1).condition("y == == 2").action("a").build());
@@ -195,7 +195,7 @@ class ValidateTest {
     @DisplayName("the compilers are closed before validate returns, and warnings aren't logged")
     void closesCompilersAndSwallowsWarnings() {
         CountingLanguage language = new CountingLanguage();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(language));
 
         String logs = logsOf(() -> assertEquals(List.of(), engine.validate(List.of(in("counting", "r")))));
@@ -209,7 +209,7 @@ class ValidateTest {
     @DisplayName("guard: load() still logs a language's warnings")
     void loadStillLogsWarnings() {
         CountingLanguage language = new CountingLanguage();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(language));
 
         String logs = logsOf(() -> engine.load(List.of(in("counting", "r"))));
@@ -224,7 +224,7 @@ class ValidateTest {
     void fatalErrorRethrownAndCompilersClosed() {
         CountingLanguage counting = new CountingLanguage();
         OutOfMemoryError oom = new OutOfMemoryError("simulated");
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(counting).language(failing("fatal", oom)).defaultLanguage("counting"));
 
         assertLoggedThenRethrown(oom, "The 'fatal' expression language failed to create a compiler: simulated",
@@ -247,7 +247,7 @@ class ValidateTest {
                 throw new IllegalStateException("broken");
             }
         };
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(broken));
 
         List<RuleCompilationException> problems = engine.validate(List.of());

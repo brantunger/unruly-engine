@@ -143,7 +143,7 @@ final class RunClasses {
 
     /**
      * Prepares the languages an engine is built to use, as {@link ExpressionLanguage#prepare()} describes, on every
-     * build: those the builder named, its default language if named (see AbstractRulesEngine). If one is of a class no
+     * build: those the builder named, its default language if named (see CoreRulesEngine). If one is of a class no
      * engine has prepared a language of without a throw, the room for initializing classes is checked first, as the
      * JVM's first engine checks it for the engine's own, so a language first used by a later engine is covered too.
      * The engine's other languages are prepared when a rule list first uses them, by {@link #firstUse} and
@@ -311,7 +311,7 @@ final class RunClasses {
         }
     }
 
-    // Initialized through a lookup in this package, which can reach each of them. AbstractRulesEngine creates the
+    // Initialized through a lookup in this package, which can reach each of them. CoreRulesEngine creates the
     // engine's logger, which starts SLF4J and its provider if the application hasn't. FlightRecorderEvents initializes
     // RunEvent and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and
     // decides whether they can be used. They aren't named, as naming a class loads it, and they extend a class that
@@ -323,9 +323,10 @@ final class RunClasses {
     // the first to load or initialize (#1097). The last seven are what the api and core packages share and what
     // api.language publishes of it: Text has the table of the characters it escapes, and a failure's description is
     // the first to read it; the rest have no static initializer, and a language's or the kit's first failure, read
-    // through Throwables, ImportLimits or FatalErrors, would otherwise be the first to load them (#1241).
+    // through Throwables, ImportLimits or FatalErrors, would otherwise be the first to load them (#1241). MatchPolicy,
+    // after the engine, makes the three match policies, which Engines names only once this has run.
     private static List<Class<?>> engineClasses() {
-        return List.of(AbstractRulesEngine.class, LanguageRegistry.class, ImportResolver.class,
+        return List.of(CoreRulesEngine.class, MatchPolicy.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
                 EngineCompileContext.Warnings.class, Prepared.class, Ran.class, LoggedFailures.class,
                 Faults.Step.class, Failures.class, ExpressionKind.class,
@@ -336,7 +337,7 @@ final class RunClasses {
                 ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                 CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
                 LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
-                AbstractRulesEngine.BeforeRun.class, NestedFailures.class, NestedFailures.Below.class,
+                CoreRulesEngine.BeforeRun.class, NestedFailures.class, NestedFailures.Below.class,
                 Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class,
                 CopyPermits.Returned.class,
                 RuleCompilationException.class, InvalidExpressionException.class,

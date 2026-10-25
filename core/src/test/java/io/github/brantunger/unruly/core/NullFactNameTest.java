@@ -23,7 +23,7 @@ class NullFactNameTest {
     @DisplayName("a null name from a FactStore that allows one is rejected with IllegalArgumentException, logged at"
             + " ERROR")
     void nullNameRejected() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));
         engine.load(List.of(Rule.builder().ruleName("r").condition("true").action("put hit true").build()));
         HashFactStore facts = new HashFactStore();

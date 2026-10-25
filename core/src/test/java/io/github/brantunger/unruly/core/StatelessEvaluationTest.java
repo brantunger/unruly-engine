@@ -22,7 +22,7 @@ class StatelessEvaluationTest {
         return Rule.builder().ruleName(name).priority(priority).condition(condition).action(action).build();
     }
 
-    private static StatelessRulesEngine<Map<String, Object>> recording(List<String> evaluated) {
+    private static CoreRulesEngine<Map<String, Object>> recording(List<String> evaluated) {
         return TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
             @Override
@@ -36,7 +36,7 @@ class StatelessEvaluationTest {
     @DisplayName("the rules below the match aren't evaluated: they're neither matched nor unmatched")
     void stopsAtTheFirstMatch() {
         List<String> evaluated = new CopyOnWriteArrayList<>();
-        StatelessRulesEngine<Map<String, Object>> engine = recording(evaluated);
+        CoreRulesEngine<Map<String, Object>> engine = recording(evaluated);
         engine.load(List.of(
                 rule("high", 2, "true", "put fired 'high'"),
                 rule("low", 1, "true", "put fired 'low'")));
@@ -49,7 +49,7 @@ class StatelessEvaluationTest {
     @DisplayName("conditions are evaluated in priority order until one matches")
     void evaluatesUntilAMatch() {
         List<String> evaluated = new CopyOnWriteArrayList<>();
-        StatelessRulesEngine<Map<String, Object>> engine = recording(evaluated);
+        CoreRulesEngine<Map<String, Object>> engine = recording(evaluated);
         engine.load(List.of(
                 rule("high", 3, "false", "put fired 'high'"),
                 rule("middle", 2, "true", "put fired 'middle'"),
@@ -62,7 +62,7 @@ class StatelessEvaluationTest {
     @Test
     @DisplayName("a broken lower-priority condition no longer fails a run that a higher-priority rule already decided")
     void brokenLowerPriorityRuleIsNotEvaluated() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));
         engine.load(List.of(
                 rule("high", 2, "true", "put fired 'high'"),
@@ -76,7 +76,7 @@ class StatelessEvaluationTest {
     @Test
     @DisplayName("a broken condition still fails the run when no higher-priority rule matched first")
     void brokenConditionBeforeAMatchStillThrows() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));
         engine.load(List.of(
                 rule("broken", 2, "x.missing > 1", "put fired 'broken'"),
@@ -93,7 +93,7 @@ class StatelessEvaluationTest {
     @DisplayName("an all-matches engine still evaluates every condition before firing")
     void allMatchesStillEvaluatesEverything() {
         List<String> evaluated = new CopyOnWriteArrayList<>();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void afterEvaluate(Rule rule, Map<String, Object> facts, boolean matchResult) {

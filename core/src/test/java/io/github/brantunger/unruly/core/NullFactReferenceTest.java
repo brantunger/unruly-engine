@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a null FactReference is bound as a null fact")
 class NullFactReferenceTest {
 
-    private static StatelessRulesEngine<Map<String, Object>> engine() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+    private static CoreRulesEngine<Map<String, Object>> engine() {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));
         engine.load(List.of(Rule.builder().ruleName("is-null").condition("x == null")
                 .action("put isNull true").build()));

@@ -238,7 +238,7 @@ class WaitStopCallbackRunTest {
             Future<?> waiter = threads.submit(() -> engine.run(new FactMap<>()));
             // Interrupted once it waits for the copy, so the interrupt ends that wait, not a task that never started. A
             // run that has already stopped at its deadline doesn't keep this waiting: the test fails on it instead.
-            await(() -> ((AbstractRulesEngine<?>) engine).currentRules().waiters() == 1 || done.getCount() == 0, 30,
+            await(() -> ((CoreRulesEngine<?>) engine).currentRules().waiters() == 1 || done.getCount() == 0, 30,
                     "the waiting run waits for the copy");
             waiter.cancel(true);
             assertTrue(done.await(30, TimeUnit.SECONDS), "the waiting run's beforeRun started no run");

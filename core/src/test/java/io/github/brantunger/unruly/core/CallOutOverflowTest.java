@@ -114,7 +114,7 @@ class CallOutOverflowTest {
     }
 
     /** An engine with only {@code language}, which makes {@code copiesAtLoad} copies of the rules as it loads them. */
-    private static StatefulRulesEngine<Map<String, Object>> engine(ExpressionLanguage language, int copiesAtLoad) {
+    private static CoreRulesEngine<Map<String, Object>> engine(ExpressionLanguage language, int copiesAtLoad) {
         return TestEngines.allMatches(HashMap::new, builder -> builder.language(language).defaultLanguage("x")
                 .copiesAtLoad(copiesAtLoad));
     }
@@ -143,7 +143,7 @@ class CallOutOverflowTest {
     @MethodSource("overflows")
     @DisplayName("an overflow creating a compiler says the stack overflowed, maybe for the rule text (#1135)")
     void newCompilerOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER, overflow), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER, overflow), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
 
@@ -157,7 +157,7 @@ class CallOutOverflowTest {
     @DisplayName("an overflow telling which facts the rules read says the stack overflowed, maybe for the rule text"
             + " (#1135)")
     void factNamesReadOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.FACT_NAMES_READ, overflow), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.FACT_NAMES_READ, overflow), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
 
@@ -169,7 +169,7 @@ class CallOutOverflowTest {
     @MethodSource("overflows")
     @DisplayName("an overflow checking a fact name says the stack overflowed, maybe for the rule text (#1135)")
     void checkFactNameOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.CHECK_FACT_NAME, overflow), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.CHECK_FACT_NAME, overflow), 0);
         engine.load(rules());
 
         EngineLogs.Outcome<IllegalArgumentException> outcome = EngineLogs.capture(IllegalArgumentException.class,
@@ -186,7 +186,7 @@ class CallOutOverflowTest {
     @DisplayName("an overflow checking a declared fact's name fails load() with the words run() uses, and no note"
             + " naming the overflow's class")
     void declaredFactCheckOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(language(Call.CHECK_FACT_NAME, overflow)).defaultLanguage("x").copiesAtLoad(0)
                 .fact("f", Integer.class));
 
@@ -200,7 +200,7 @@ class CallOutOverflowTest {
     @MethodSource("overflows")
     @DisplayName("an overflow warming up a session says the stack overflowed, maybe for the rule text (#1135)")
     void warmUpOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.WARM_UP, overflow), 1);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.WARM_UP, overflow), 1);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
 
@@ -211,7 +211,7 @@ class CallOutOverflowTest {
     @MethodSource("overflows")
     @DisplayName("an overflow creating a session for a run says the stack overflowed (#1135)")
     void newSessionOverflows(String how, Supplier<Throwable> overflow) {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_SESSION, overflow), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_SESSION, overflow), 0);
         engine.load(rules());
 
         RuleExecutionException ex = assertLoggedAtError(RuleExecutionException.class,
@@ -223,7 +223,7 @@ class CallOutOverflowTest {
     @Test
     @DisplayName("an overflow creating a session for the copies made at load says the stack overflowed (#1135)")
     void newSessionAtLoadOverflows() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_SESSION, StackOverflowError::new),
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_SESSION, StackOverflowError::new),
                 1);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
@@ -234,7 +234,7 @@ class CallOutOverflowTest {
     @Test
     @DisplayName("a call's failure whose message names its cause's class has no note naming it again")
     void causeNamedOnce() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER,
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER,
                 () -> new RuntimeException(new IllegalStateException())), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
@@ -246,7 +246,7 @@ class CallOutOverflowTest {
     @Test
     @DisplayName("a class an overflow left unusable, met creating a compiler, is described, not taken for an overflow")
     void newCompilerDeadClass() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER,
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.NEW_COMPILER,
                 CallOutOverflowTest::deadClass), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
@@ -261,7 +261,7 @@ class CallOutOverflowTest {
     @DisplayName("a compile that fails on a class an overflow left unusable is described, not taken for an overflow"
             + " (#1116)")
     void compileDeadClass() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE,
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE,
                 () -> new IllegalStateException("[Error: Could not initialize class com.acme.Dead]", deadClass())), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
@@ -273,7 +273,7 @@ class CallOutOverflowTest {
     @Test
     @DisplayName("a compile that throws the NoClassDefFoundError of a class an overflow left unusable names it (#1116)")
     void compileThrowsDeadClass() {
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE,
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE,
                 CallOutOverflowTest::deadClass), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
@@ -289,7 +289,7 @@ class CallOutOverflowTest {
             + " and isn't rethrown as fatal (#1141)")
     void compileInternalErrorAroundOverflow() {
         InternalError wrapped = new InternalError(new StackOverflowError());
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE, () -> wrapped), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE, () -> wrapped), 0);
 
         RuleCompilationException ex = assertLoggedAtError(RuleCompilationException.class, () -> engine.load(rules()));
 
@@ -303,7 +303,7 @@ class CallOutOverflowTest {
             + " and isn't rethrown as fatal (#1141)")
     void conditionInternalErrorAroundOverflow() {
         InternalError wrapped = new InternalError(new InvocationTargetException(new StackOverflowError()));
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.CONDITION, () -> wrapped), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.CONDITION, () -> wrapped), 0);
         engine.load(rules());
 
         RuleExecutionException ex = assertLoggedAtError(RuleExecutionException.class,
@@ -333,7 +333,7 @@ class CallOutOverflowTest {
             + " chain kept")
     void runOverflowSaysSo(String how, Call call, Supplier<Throwable> overflow, String failed) {
         Throwable thrown = overflow.get();
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(call, () -> thrown), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(call, () -> thrown), 0);
         engine.load(rules());
 
         RuleExecutionException ex = assertLoggedAtError(RuleExecutionException.class,
@@ -347,9 +347,9 @@ class CallOutOverflowTest {
     @DisplayName("an action whose nested run failed on an overflow names the nested run's failure, as for any nested"
             + " run's")
     void nestedRunOverflowNamesTheNestedRun() {
-        StatefulRulesEngine<Map<String, Object>> inner = engine(language(Call.CONDITION, StackOverflowError::new), 0);
+        CoreRulesEngine<Map<String, Object>> inner = engine(language(Call.CONDITION, StackOverflowError::new), 0);
         inner.load(List.of(Rule.builder().ruleName("inner").condition("c").action("a").build()));
-        StatefulRulesEngine<Map<String, Object>> outer = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> outer = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(StubExpressionLanguage.named("y").action((context, session) -> {
                     inner.run(new FactMap<>());
                     return ActionResult.done();
@@ -366,7 +366,7 @@ class CallOutOverflowTest {
     @DisplayName("a condition or an action that fails on no overflow is described as it was")
     void runFailureWithoutOverflowUnchanged() {
         for (Call call : List.of(Call.CONDITION, Call.ACTION)) {
-            StatefulRulesEngine<Map<String, Object>> engine = engine(language(call,
+            CoreRulesEngine<Map<String, Object>> engine = engine(language(call,
                     () -> new IllegalStateException(deadClass())), 0);
             engine.load(rules());
 
@@ -383,7 +383,7 @@ class CallOutOverflowTest {
     @DisplayName("an InternalError with no overflow in its cause chain is still fatal, rethrown unchanged")
     void internalErrorStillFatal() {
         InternalError fatal = new InternalError("JVM fault", new IllegalStateException("cause"));
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE, () -> fatal), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.COMPILE, () -> fatal), 0);
 
         assertLoggedThenRethrown(fatal, "Condition for rule 'r' failed to compile: JVM fault",
                 () -> engine.load(rules()));
@@ -393,7 +393,7 @@ class CallOutOverflowTest {
     @DisplayName("an InternalError around a class an overflow left unusable is still fatal: that's no overflow")
     void internalErrorAroundDeadClassStillFatal() {
         InternalError fatal = new InternalError(deadClass());
-        StatefulRulesEngine<Map<String, Object>> engine = engine(language(Call.CONDITION, () -> fatal), 0);
+        CoreRulesEngine<Map<String, Object>> engine = engine(language(Call.CONDITION, () -> fatal), 0);
         engine.load(rules());
 
         assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));

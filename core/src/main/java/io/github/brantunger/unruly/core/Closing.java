@@ -22,7 +22,7 @@ import java.util.Map;
  */
 final class Closing {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
     private static final String ITS_COMPILER = "its compiler";
 
     private Closing() {

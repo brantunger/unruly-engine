@@ -37,7 +37,7 @@ import java.util.TreeSet;
  */
 record LanguageRegistry(Map<String, ExpressionLanguage> languages, String defaultLanguage) {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
 
     /** The resource name of {@link ExpressionLanguage}'s class file, in this library and in any copy of it. */
     private static final String API_CLASS_FILE = ExpressionLanguage.class.getName().replace('.', '/') + ".class";

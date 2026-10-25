@@ -44,7 +44,7 @@ final class Failures {
     static final int STOP = 3;
     static final int SAME = 4;
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
+    private static final Logger log = LoggerFactory.getLogger(CoreRulesEngine.LOGGER_NAME);
 
     private Failures() {
     }

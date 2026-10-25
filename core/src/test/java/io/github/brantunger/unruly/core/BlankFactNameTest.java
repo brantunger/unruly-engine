@@ -37,8 +37,8 @@ class BlankFactNameTest {
     /** The names the language was asked to check, in order. */
     private final List<String> checked = new ArrayList<>();
 
-    private StatelessRulesEngine<Map<String, Object>> engine(RuleListener listener) {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+    private CoreRulesEngine<Map<String, Object>> engine(RuleListener listener) {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new StubExpressionLanguage().checkFactName(checked::add))
                         .listener(listener));
         engine.load(List.of(RULE));
@@ -50,7 +50,7 @@ class BlankFactNameTest {
     @DisplayName("a blank name is rejected with IllegalArgumentException, logged at ERROR, and never reaches the"
             + " language")
     void blankNameRejected(String name) {
-        StatelessRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
+        CoreRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
         });
 
         IllegalArgumentException ex = assertLoggedAtError(IllegalArgumentException.class,
@@ -64,7 +64,7 @@ class BlankFactNameTest {
     @DisplayName("a blank name reaches onRunError, after beforeRun, as a null name or output does")
     void blankNameReachesOnRunError() {
         List<String> calls = new ArrayList<>();
-        StatelessRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
+        CoreRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
             @Override
             public void beforeRun(RunContext run) {
                 calls.add("beforeRun");
@@ -107,7 +107,7 @@ class BlankFactNameTest {
     @DisplayName("a name that isn't blank is still the language's to check, even one of spaces Java doesn't count as"
             + " whitespace")
     void nonBlankNameReachesTheLanguage() {
-        StatelessRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
+        CoreRulesEngine<Map<String, Object>> engine = engine(new RuleListener() {
         });
         // Character.isWhitespace accepts neither a no-break space nor a zero-width space, so neither is blank.
         List<String> names = List.of(" a ", "\u00A0", "\u200B");

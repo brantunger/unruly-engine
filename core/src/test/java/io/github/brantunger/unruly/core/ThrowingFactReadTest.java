@@ -38,8 +38,8 @@ class ThrowingFactReadTest {
         }
     }
 
-    private StatelessRulesEngine<Map<String, Object>> engine() {
-        StatelessRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
+    private CoreRulesEngine<Map<String, Object>> engine() {
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.firstMatch(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()).listener(new RuleListener() {
                     @Override
                     public void beforeRun(RunContext run) {
@@ -89,7 +89,7 @@ class ThrowingFactReadTest {
     void factReadFailureRethrownBeforeRun() {
         IllegalStateException unreadable = new IllegalStateException("value not ready");
         FactMap<Object> facts = factThrowing(unreadable);
-        StatelessRulesEngine<Map<String, Object>> engine = engine();
+        CoreRulesEngine<Map<String, Object>> engine = engine();
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class, () -> engine.run(facts));
 
@@ -103,7 +103,7 @@ class ThrowingFactReadTest {
     void factReadFailureRethrownBeforeRunWithResult() {
         IllegalStateException unreadable = new IllegalStateException("value not ready");
         FactMap<Object> facts = factThrowing(unreadable);
-        StatelessRulesEngine<Map<String, Object>> engine = engine();
+        CoreRulesEngine<Map<String, Object>> engine = engine();
 
         IllegalStateException thrown = assertThrows(IllegalStateException.class,
                 () -> engine.runWithResult(facts));
@@ -128,7 +128,7 @@ class ThrowingFactReadTest {
     void factReadErrorRethrownBeforeRun() {
         UnreadableValueError unreadable = new UnreadableValueError("value not ready");
         FactMap<Object> facts = factThrowing(unreadable);
-        StatelessRulesEngine<Map<String, Object>> engine = engine();
+        CoreRulesEngine<Map<String, Object>> engine = engine();
 
         UnreadableValueError thrown = assertThrows(UnreadableValueError.class, () -> engine.run(facts));
 
@@ -161,7 +161,7 @@ class ThrowingFactReadTest {
                 return null;
             }
         };
-        StatelessRulesEngine<Map<String, Object>> engine = engine();
+        CoreRulesEngine<Map<String, Object>> engine = engine();
 
         EngineLogs.Outcome<NullPointerException> outcome = EngineLogs.capture(NullPointerException.class,
                 () -> engine.run(facts));

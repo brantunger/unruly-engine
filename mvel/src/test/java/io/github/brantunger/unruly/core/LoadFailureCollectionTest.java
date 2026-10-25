@@ -65,7 +65,7 @@ class LoadFailureCollectionTest {
     }
 
     /** An engine with MVEL as its default language and {@code extra} beside it. */
-    private static StatefulRulesEngine<Map<String, Object>> withMvelAnd(ExpressionLanguage extra) {
+    private static CoreRulesEngine<Map<String, Object>> withMvelAnd(ExpressionLanguage extra) {
         return TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(new MvelExpressionLanguage()).language(extra)
                 .defaultLanguage(MvelExpressionLanguage.LANGUAGE_NAME));
@@ -77,7 +77,7 @@ class LoadFailureCollectionTest {
     @DisplayName("a language that can't create its compiler is one failure among the broken rules, in rule order")
     void failedLanguageIsReportedOnceWithTheBrokenRules() {
         AtomicInteger calls = new AtomicInteger();
-        StatefulRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", calls, throwing("no engine")));
+        CoreRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", calls, throwing("no engine")));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(BROKEN, in("b", "b1", 5), in("b", "b2", 1))));
@@ -95,7 +95,7 @@ class LoadFailureCollectionTest {
     @Test
     @DisplayName("a language that returns no compiler is collected the same way")
     void languageReturningNoCompilerIsCollected() {
-        StatefulRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", new AtomicInteger(), () -> null));
+        CoreRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", new AtomicInteger(), () -> null));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(BROKEN, in("b", "b1", 5))));
@@ -108,7 +108,7 @@ class LoadFailureCollectionTest {
     @Test
     @DisplayName("the language failure takes the place of the first rule that needed it")
     void failedLanguageIsReportedWhereItsFirstRuleWas() {
-        StatefulRulesEngine<Map<String, Object>> engine = withMvelAnd(
+        CoreRulesEngine<Map<String, Object>> engine = withMvelAnd(
                 language("b", new AtomicInteger(), throwing("no engine")));
 
         Rule later = Rule.builder().ruleName("later").priority(7).condition("y == == 2").action("a").build();
@@ -124,7 +124,7 @@ class LoadFailureCollectionTest {
     @DisplayName("guard: a language failure with no broken rule is still thrown as itself, and asked once")
     void lonelyLanguageFailureIsThrownAsItself() {
         AtomicInteger calls = new AtomicInteger();
-        StatefulRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", calls, throwing("no engine")));
+        CoreRulesEngine<Map<String, Object>> engine = withMvelAnd(language("b", calls, throwing("no engine")));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(in("b", "b1", 5), in("b", "b2", 1))));
@@ -138,7 +138,7 @@ class LoadFailureCollectionTest {
     @DisplayName("a failed default language isn't asked again to check the declared names")
     void failedDefaultLanguageIsNotAskedAgainForDeclaredNames() {
         AtomicInteger calls = new AtomicInteger();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(language("d", calls, throwing("no engine"))).fact("x", String.class));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
@@ -152,7 +152,7 @@ class LoadFailureCollectionTest {
     @DisplayName("when rules failed, the default language isn't created only to check the declared names")
     void defaultLanguageIsNotCreatedToCheckDeclaredNamesWhenRulesFailed() {
         AtomicInteger defaultCalls = new AtomicInteger();
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new, builder -> builder
                 .language(language("d", defaultCalls, throwing("default broken")))
                 .language(language("b", new AtomicInteger(), throwing("no engine")))
                 .defaultLanguage("d").fact("x", String.class));
@@ -169,7 +169,7 @@ class LoadFailureCollectionTest {
     @Test
     @DisplayName("a declared name the language rejects is reported after the broken rules, in the same load")
     void rejectedDeclaredNameIsReportedWithTheBrokenRules() {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.fact("empty", String.class));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
@@ -187,7 +187,7 @@ class LoadFailureCollectionTest {
     @Test
     @DisplayName("every rejected declared name is reported, after the broken rules")
     void everyRejectedDeclaredNameIsReported() {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.fact("empty", String.class).fact("x", String.class).fact("nil", String.class));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,
@@ -206,7 +206,7 @@ class LoadFailureCollectionTest {
     @Test
     @DisplayName("guard: when every failure is a rule's, the message still counts rules")
     void ruleFailuresAloneStillCountRules() {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.fact("x", String.class));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,

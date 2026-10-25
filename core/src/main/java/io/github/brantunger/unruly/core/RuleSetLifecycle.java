@@ -125,7 +125,7 @@ final class RuleSetLifecycle {
 
     /**
      * Sets how long the runs of the rule lists loaded from now on wait without one copy being given back before they
-     * make an extra one, as {@link AbstractRulesEngine#stallWindow(long)} describes.
+     * make an extra one, as {@link CoreRulesEngine#stallWindow(long)} describes.
      *
      * @param millis How long a run waits, in milliseconds
      */
@@ -134,7 +134,7 @@ final class RuleSetLifecycle {
     }
 
     /**
-     * Loads a rule list, as {@link AbstractRulesEngine#load(List)} describes.
+     * Loads a rule list, as {@link CoreRulesEngine#load(List)} describes.
      *
      * @param ruleList The rules
      */
@@ -306,7 +306,7 @@ final class RuleSetLifecycle {
     }
 
     /**
-     * Closes the engine's rules, as {@link AbstractRulesEngine#close()} describes.
+     * Closes the engine's rules, as {@link CoreRulesEngine#close()} describes.
      */
     // A closed engine has no rule set.
     @SuppressWarnings("PMD.NullAssignment")

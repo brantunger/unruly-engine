@@ -22,7 +22,7 @@ class DuplicateRuleNameTest {
     @Test
     @DisplayName("load() rejects two rules with the same name")
     void duplicateNamesRejected() {
-        StatefulRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
+        CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new,
                 builder -> builder.language(new ToyExpressionLanguage()));
 
         RuleCompilationException ex = assertThrows(RuleCompilationException.class,

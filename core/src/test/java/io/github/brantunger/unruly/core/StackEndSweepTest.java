@@ -158,7 +158,7 @@ class StackEndSweepTest {
     }
 
     /** One engine the sweep calls once, with its language and the parent its last run reported. */
-    private record Target(AbstractRulesEngine<Object> engine, Counting language, AtomicReference<RunContext> parent) {
+    private record Target(CoreRulesEngine<Object> engine, Counting language, AtomicReference<RunContext> parent) {
     }
 
     private static final List<Rule> RULES = List.of(
@@ -180,15 +180,15 @@ class StackEndSweepTest {
         if (call == Call.RUN_IDLE_COPY) {
             engine.run(new FactMap<>());
         }
-        return new Target((AbstractRulesEngine<Object>) engine, language, parent);
+        return new Target((CoreRulesEngine<Object>) engine, language, parent);
     }
 
-    private static Consumer<AbstractRulesEngine<Object>> action(Call call) {
+    private static Consumer<CoreRulesEngine<Object>> action(Call call) {
         return switch (call) {
             case RUN_NEW_COPY, RUN_IDLE_COPY -> engine -> engine.run(new FactMap<>());
             case RELOAD -> engine -> engine.load(RULES);
             case VALIDATE -> engine -> engine.validate(RULES);
-            case CLOSE -> AbstractRulesEngine::close;
+            case CLOSE -> CoreRulesEngine::close;
         };
     }
 
@@ -230,8 +230,8 @@ class StackEndSweepTest {
         assertTrue(outcomes[1] > 0, "some calls overflowed, so the window reached where the method overflows");
     }
 
-    private static void sweep(Call call, AbstractRulesEngine<Object> held, ExecutorService checker, int[] outcomes) {
-        Consumer<AbstractRulesEngine<Object>> action = action(call);
+    private static void sweep(Call call, CoreRulesEngine<Object> held, ExecutorService checker, int[] outcomes) {
+        Consumer<CoreRulesEngine<Object>> action = action(call);
         for (int i = 0; i < WARM_UPS; i++) {
             once(call, action, 0, i % 5, held, checker, null);
         }
@@ -259,8 +259,8 @@ class StackEndSweepTest {
 
     // Any Throwable a check throws fails the sweep: the stack has unwound, so it's no overflow of the call's own.
     // Returns whether the call returned.
-    private static boolean once(Call call, Consumer<AbstractRulesEngine<Object>> action, int depth, int pad,
-                             AbstractRulesEngine<Object> held, ExecutorService checker, int[] outcomes) {
+    private static boolean once(Call call, Consumer<CoreRulesEngine<Object>> action, int depth, int pad,
+                             CoreRulesEngine<Object> held, ExecutorService checker, int[] outcomes) {
         Target target = target(call);
         leaf = () -> action.accept(target.engine());
         thrown = null;
@@ -283,7 +283,7 @@ class StackEndSweepTest {
         return called && thrown == null;
     }
 
-    private static List<String> leftBehind(Target target, AbstractRulesEngine<Object> held, ExecutorService checker) {
+    private static List<String> leftBehind(Target target, CoreRulesEngine<Object> held, ExecutorService checker) {
         List<String> left = new ArrayList<>();
         if (Cancellation.deadlineFrom(null) != Deadline.NONE) {
             left.add("the thread's deadline");
@@ -294,7 +294,7 @@ class StackEndSweepTest {
         if (runCountedOnThread(held)) {
             left.add("the thread's count of runs in progress");
         }
-        AbstractRulesEngine<Object> engine = target.engine();
+        CoreRulesEngine<Object> engine = target.engine();
         if (isOpen(engine)) {
             int permits = freePermits(engine, checker);
             if (permits != 1) {
@@ -327,7 +327,7 @@ class StackEndSweepTest {
         }
     }
 
-    private static boolean runCountedOnThread(AbstractRulesEngine<Object> held) {
+    private static boolean runCountedOnThread(CoreRulesEngine<Object> held) {
         CopyPool rules = held.currentRules();
         try {
             rules.release(rules.borrow(PASSED));
@@ -340,7 +340,7 @@ class StackEndSweepTest {
         }
     }
 
-    private static boolean isOpen(AbstractRulesEngine<Object> engine) {
+    private static boolean isOpen(CoreRulesEngine<Object> engine) {
         try {
             engine.rules();
             return true;
@@ -352,7 +352,7 @@ class StackEndSweepTest {
     // On a thread of its own, which counts no run in progress, so a borrow that finds no permit free stops.
     // A second borrow on the same thread is nested, and takes a permit only if one is free, so the engine's one permit
     // lent twice was given back twice.
-    private static int freePermits(AbstractRulesEngine<Object> engine, ExecutorService checker) {
+    private static int freePermits(CoreRulesEngine<Object> engine, ExecutorService checker) {
         try {
             return checker.submit(() -> {
                 CopyPool rules = engine.currentRules();
