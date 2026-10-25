@@ -360,7 +360,9 @@ final class RunClasses {
     // thread, failing for the life of the JVM (#1210). Failures' Teardown is what every run makes as it ends, before it
     // closes its values, and LoggedFailures' Ring is what the first failure a run reports, or a nested run logs,
     // makes. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
-    // first retire() makes to read the copies an earlier call took, are preloaded too (#1220).
+    // first retire() makes to read the copies an earlier call took, are preloaded too (#1220). And
+    // EngineCompileContext, which a load's first compile context would otherwise be the first to load when no fact is
+    // declared, since the build checks a declared fact with it only when there is one.
     // Initializing a class doesn't load its nested or outer classes, so CopyPool's and RuleEvaluation.Outcome's, in the
     // list above, don't load these.
     private static List<Class<?>> loadAndRunClasses() {
@@ -371,7 +373,8 @@ final class RunClasses {
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, CopyPool.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
-                Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class);
+                Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class,
+                EngineCompileContext.class);
     }
 
     // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a

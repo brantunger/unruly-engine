@@ -47,53 +47,35 @@ final class RuleListCompiler {
     // those facts.
     private final Map<String, Class<?>> declaredFacts;
     private final boolean allFactsDeclared;
-    // The fact names the engine's languages reserve for every rule list, which no declared fact has.
-    private final Set<String> reservedFactNames;
-    // The names each language reserves, by language name, sorted by it, and the languages that reserve theirs only for
-    // the rule lists that use them, whose names a rule list's declared facts and runs are checked against.
-    private final Map<String, Set<String>> reservedByLanguage;
-    private final Set<String> reservedPerRuleList;
+    // The fact names the engine's languages reserve: those reserved for every rule list, which no declared fact has,
+    // and those of the languages that reserve theirs only for the rule lists that use them, which a rule list's
+    // declared facts and runs are checked against.
+    private final ReservedNames reservedNames;
     // Each language's own imports, by language name, as written.
     private final Map<String, List<String>> languageImports;
 
     /**
      * Creates the compiler of an engine's rule lists.
      *
-     * @param log                 The engine's logger
-     * @param languages           The engine's languages and its default language
-     * @param packageImports      The imported packages
-     * @param classImports        The imported classes
-     * @param outputType          The output type languages are told about
-     * @param options             Each language's options, by language name
-     * @param declaredFacts       The declared type of each fact, by name
-     * @param allFactsDeclared    Whether a run may supply only the declared facts
-     * @param reservedFactNames   The fact names the engine's languages reserve for every rule list
-     * @param reservedByLanguage  The names each language reserves, by language name, sorted by it, as
-     *                            {@link FactNames#reservedByLanguage} returns them
-     * @param reservedPerRuleList The names of the languages that reserve their names only for the rule lists that use
-     *                            them
-     * @param languageImports     Each language's own imports, by language name
+     * @param log      The engine's logger
+     * @param settings The engine's settings: its languages and default language, imports, output type, options,
+     *                 declared facts, whether a run may supply only those, the fact names its languages reserve, and
+     *                 each language's own imports
      */
-    RuleListCompiler(Logger log, LanguageRegistry languages, Set<String> packageImports, Set<Class<?>> classImports,
-                     Class<?> outputType, Map<String, Map<String, String>> options,
-                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared, Set<String> reservedFactNames,
-                     Map<String, Set<String>> reservedByLanguage, Set<String> reservedPerRuleList,
-                     Map<String, List<String>> languageImports) {
+    RuleListCompiler(Logger log, EngineSettings settings) {
         // Initialized here, when the engine is built, so load() and validate() never run a class's initializer: they
         // may be called deep in a run's stack, from an action (see StackHeadroom).
         Mode.values();
         this.log = log;
-        this.languages = languages;
-        this.packageImports = packageImports;
-        this.classImports = classImports;
-        this.outputType = outputType;
-        this.options = options;
-        this.declaredFacts = declaredFacts;
-        this.allFactsDeclared = allFactsDeclared;
-        this.reservedFactNames = reservedFactNames;
-        this.reservedByLanguage = reservedByLanguage;
-        this.reservedPerRuleList = reservedPerRuleList;
-        this.languageImports = languageImports;
+        this.languages = settings.languages();
+        this.packageImports = settings.packageImports();
+        this.classImports = settings.classImports();
+        this.outputType = settings.outputType();
+        this.options = settings.options();
+        this.declaredFacts = settings.declaredFacts();
+        this.allFactsDeclared = settings.allFactsDeclared();
+        this.reservedNames = settings.reservedNames();
+        this.languageImports = settings.languageImports();
     }
 
     /** Whether a rule list is compiled for {@code load()} or for {@code validate()}. */
@@ -102,22 +84,14 @@ final class RuleListCompiler {
         VALIDATE;
 
         /**
-         * Whether to stop at the first problem in the rule list itself, which is all {@code load()} reports.
-         *
-         * @return {@code true} for {@code load()}
-         */
-        boolean firstOnly() {
-            return this == LOAD;
-        }
-
-        /**
-         * Whether each failure, and each warning a language reports, is logged: {@code load()} logs,
-         * {@code validate()} doesn't. A failure a {@code run()} or a {@code load()} the language started reported
+         * Whether the rule list is loaded: then only the first problem in the rule list itself is reported, which is
+         * all {@code load()} reports, and each failure, and each warning a language reports, is logged, which
+         * {@code validate()} doesn't do. A failure a {@code run()} or a {@code load()} the language started reported
          * isn't logged either way: that run or load logged it.
          *
          * @return {@code true} for {@code load()}
          */
-        boolean logged() {
+        boolean loads() {
             return this == LOAD;
         }
     }
@@ -141,7 +115,7 @@ final class RuleListCompiler {
                 problems.add(compilationFailure("Duplicate rule name '" + Text.quote(rule.getRuleName()) + "'",
                         null, rule.getRuleName()));
             }
-            if (mode.firstOnly() && !problems.isEmpty()) {
+            if (mode.loads() && !problems.isEmpty()) {
                 return problems;
             }
         }
@@ -171,7 +145,7 @@ final class RuleListCompiler {
         private Map<String, ExpressionCompiler> used = Map.of();
         // The names the compile contexts reserve: the engine's for every rule list, and, once the rule list is known,
         // those of its languages that reserve their names only for the rule lists that use them.
-        private Set<String> contextReservedNames = reservedFactNames;
+        private Set<String> contextReservedNames = reservedNames.forEveryRuleList();
         // What the runs of the rule list check their facts' names against besides the compilers (see LoadedRules).
         private Map<String, Set<String>> readNames = Map.of();
         private Map<String, String> listReserved = Map.of();
@@ -180,10 +154,10 @@ final class RuleListCompiler {
          * Prepares a compilation with a compiler registry for the engine's languages.
          *
          * @param mode Whether the list is loaded or validated, which says whether each failure, and each warning a
-         *             language reports, is logged (see {@link Mode#logged()})
+         *             language reports, is logged (see {@link Mode#loads()})
          */
         private Compilation(Mode mode) {
-            this.logged = mode.logged();
+            this.logged = mode.loads();
             ClassLoader loader = ImportResolver.contextClassLoader();
             // Each language gets its own options and its own imports.
             compilers = new LanguageCompilers(languages.languages(), (name, language) -> newCompiler(name, language,
@@ -200,7 +174,7 @@ final class RuleListCompiler {
          */
         void compile(List<Rule> ruleList) {
             // Before any compiler is created, as each is given its context when a rule first uses its language.
-            if (!reservedPerRuleList.isEmpty()) {
+            if (reservedNames.anyPerRuleList()) {
                 contextReservedNames = contextReserved(ruleList);
             }
             for (Rule rule : inPriorityOrder(ruleList)) {
@@ -228,8 +202,8 @@ final class RuleListCompiler {
             } else {
                 used = compilers.created();
             }
-            if (!reservedPerRuleList.isEmpty()) {
-                listReserved = FactNames.reserved(reservedByLanguage, listReservedFor(used.keySet()));
+            if (reservedNames.anyPerRuleList()) {
+                listReserved = reservedNames.reservedBy(listReservedFor(used.keySet()));
             }
             // Only once every rule has compiled: a compiler some of whose rules failed can't say what they read.
             if (failures.isEmpty()) {
@@ -254,9 +228,9 @@ final class RuleListCompiler {
             if (ruleList.isEmpty()) {
                 named.add(languages.defaultLanguage());
             }
-            Set<String> reserved = new HashSet<>(reservedFactNames);
+            Set<String> reserved = new HashSet<>(reservedNames.forEveryRuleList());
             for (String language : listReservedFor(named)) {
-                reserved.addAll(reservedByLanguage.get(language));
+                reserved.addAll(reservedNames.of(language));
             }
             return Set.copyOf(reserved);
         }
@@ -270,7 +244,7 @@ final class RuleListCompiler {
         private Set<String> listReservedFor(Set<String> names) {
             Set<String> scoped = new HashSet<>();
             for (String name : names) {
-                if (reservedPerRuleList.contains(name)) {
+                if (reservedNames.perRuleList(name)) {
                     scoped.add(name);
                 }
             }

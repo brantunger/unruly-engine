@@ -29,9 +29,8 @@ import java.util.Objects;
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
  * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
- *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it, and no
- *                        fact may have a blank name. The engine rejects a name one of its languages reserves, once it
- *                        has found them
+ *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it. The
+ *                        engine rejects a blank name, and, once it has found its languages, a name one of them reserves
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param languageImports Each language's own imports, by language name, as written and in order, not resolved
@@ -45,65 +44,22 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
                                      Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
                                      Map<String, List<String>> languageImports) {
 
-    // The message for a null language name, language's options, option name or option value.
-    private static final String NULL_OPTION = "options must not contain null";
-    // The message for a null language name, language's imports or import.
-    private static final String NULL_LANGUAGE_IMPORT = "languageImports must not contain null";
-
     /**
      * Keeps unmodifiable copies of the languages, lists, options, declarations and language imports, so later changes
-     * to the builder don't change an engine. A declared type is checked as
-     * {@link EngineCompileContext#checkDeclaration(String, Class)} checks it, and kept as it was declared. A declared
-     * name a language reserves isn't checked here: the languages may be found only when the engine is created.
+     * to the builder don't change an engine. Nothing is checked here: the builder checks each setting as it's given,
+     * and the engine checks them against each other when it's created (see EngineSettings). A declared type is kept as
+     * it was declared.
      *
-     * @throws NullPointerException     if an argument other than {@code defaultLanguage} and {@code runTimeout}, or an
-     *                                  element, a language's name or a language, is {@code null}
-     * @throws IllegalArgumentException if a fact is declared with a blank name
+     * @throws NullPointerException if a map or list argument is {@code null}, or holds {@code null} where
+     *                              {@link Map#copyOf(Map)} or {@link List#copyOf(java.util.Collection)} rejects it
      */
     public EngineConfiguration {
-        Objects.requireNonNull(languages, "languages must not be null");
-        Objects.requireNonNull(imports, "imports must not be null");
-        Objects.requireNonNull(listeners, "listeners must not be null");
-        Objects.requireNonNull(copyLimit, "copyLimit must not be null");
-        Objects.requireNonNull(clock, "clock must not be null");
-        Objects.requireNonNull(outputType, "outputType must not be null");
-        Objects.requireNonNull(outputWriter, "outputWriter must not be null");
-        Objects.requireNonNull(options, "options must not be null");
-        Objects.requireNonNull(declaredFacts, "declaredFacts must not be null");
-        Objects.requireNonNull(languageImports, "languageImports must not be null");
-        languages.forEach((name, language) -> {
-            Objects.requireNonNull(name, "languages must not contain null");
-            Objects.requireNonNull(language, "languages must not contain null");
-        });
-        for (String name : imports) {
-            Objects.requireNonNull(name, "imports must not contain null");
-        }
-        for (RuleListener listener : listeners) {
-            Objects.requireNonNull(listener, "listeners must not contain null");
-        }
-        options.forEach((language, values) -> {
-            Objects.requireNonNull(language, NULL_OPTION);
-            Objects.requireNonNull(values, NULL_OPTION);
-            values.forEach((name, value) -> {
-                Objects.requireNonNull(name, NULL_OPTION);
-                Objects.requireNonNull(value, NULL_OPTION);
-            });
-        });
-        languageImports.forEach((language, names) -> {
-            Objects.requireNonNull(language, NULL_LANGUAGE_IMPORT);
-            Objects.requireNonNull(names, NULL_LANGUAGE_IMPORT);
-            for (String name : names) {
-                Objects.requireNonNull(name, NULL_LANGUAGE_IMPORT);
-            }
-        });
         languages = Map.copyOf(languages);
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
         options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
         options = Collections.unmodifiableMap(copied);
-        // checkDeclaration names a null fact name or type itself.
-        declaredFacts.forEach(EngineCompileContext::checkDeclaration);
         declaredFacts = Map.copyOf(declaredFacts);
         Map<String, List<String>> copiedImports = new LinkedHashMap<>();
         languageImports.forEach((language, names) -> copiedImports.put(language, List.copyOf(names)));
