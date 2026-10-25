@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.2](https://github.com/brantunger/unruly-engine/compare/v2.33.1...v2.33.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* a deep first call of a language-API facade, with no engine built yet, no longer breaks Failures or java.lang.Long for the life of the JVM; Failures' logger moves to a holder, the part counters count in an int, and isWrongName compares without startsWith ([#1287](https://github.com/brantunger/unruly-engine/issues/1287)) ([a5826f5](https://github.com/brantunger/unruly-engine/commit/a5826f53942a4051ef58fc5db58bb79a1988e4fe))
+
 ## [2.33.1](https://github.com/brantunger/unruly-engine/compare/v2.33.0...v2.33.1) (2026-10-24)
 
 
