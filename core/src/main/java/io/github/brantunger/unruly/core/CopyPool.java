@@ -161,8 +161,8 @@ final class CopyPool {
     private final AtomicInteger partsDone = new AtomicInteger();
     private final Queue<Map.Entry<String, ExpressionCompiler>> openCompilers;
     // The next rule set in the engine's list of those still to retire, while this one is in it, and the load() or
-    // close() that has claimed it for retiring, if one has: that call's number, or 0. The lock of the engine's
-    // RuleSetLifecycle guards both.
+    // close() that has claimed it for retiring, if one has: that call's number, or 0. Only the engine's RetireQueue
+    // reads or writes them, and the lock of its RuleSetLifecycle guards both.
     CopyPool nextUnretired;
     long retiringClaim;
 

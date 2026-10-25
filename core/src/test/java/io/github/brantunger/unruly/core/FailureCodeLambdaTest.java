@@ -34,12 +34,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link RuleCompilationException}, which every failed load creates. #1241: nor the readers and text helpers the
  * {@code internal} package holds for them, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
  * what {@code api.language} publishes of them, {@link Throwables}, {@link ImportLimits} and the {@link FatalErrors}
- * bridge, which a language's first failure may be the first to call. This reads their class files, and those of their
- * nested classes, from the directory or jar each was loaded from, as {@code StringConcatenationTest} reads the
- * library's, and fails if one names {@code LambdaMetafactory}, as the constant pool does for a call site linked to
- * it, if a method of one has any other {@code invokedynamic}, which the JVM links the same way, or if the class itself
- * isn't read. {@link FailureMethodLambdaTest} checks the methods of classes whose other code links lambdas.
- * {@link FirstRunClassInitializationTest} checks that the engine's other failure paths link none either.
+ * bridge, which a language's first failure may be the first to call. #1244: nor {@link RetireQueue}, which retires
+ * the rule sets an engine no longer uses, as a {@code load()} or {@code close()} deep in a stack may. This reads
+ * their class files, and those of their nested classes, from the directory or jar each was loaded from, as
+ * {@code StringConcatenationTest} reads the library's, and fails if one names {@code LambdaMetafactory}, as the
+ * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
+ * JVM links the same way, or if the class itself isn't read. {@link FailureMethodLambdaTest} checks the methods of
+ * classes whose other code links lambdas. {@link FirstRunClassInitializationTest} checks that the engine's other
+ * failure paths link none either.
  */
 @DisplayName("failure handling links no lambda (#1093, #1097)")
 class FailureCodeLambdaTest {
@@ -48,7 +50,7 @@ class FailureCodeLambdaTest {
     @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
             UniqueMatchRulesEngine.class, Closing.class, CopyPermits.class, RuleCompilationException.class,
             Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
-            ImportLimits.class})
+            ImportLimits.class, RetireQueue.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {
