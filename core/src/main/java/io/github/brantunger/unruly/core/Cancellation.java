@@ -25,7 +25,7 @@ final class Cancellation {
 
     // The deadline of the run this thread is in, whichever engine runs it, so a run started from inside it (an action
     // that runs another engine, say) stops no later than the run that started it. A plain ThreadLocal, like
-    // RuleSet's count of runs on a thread.
+    // CopyPool's count of runs on a thread.
     private static final ThreadLocal<Deadline> RUN_DEADLINE = new ThreadLocal<>();
 
     /** Why a run must stop, as {@link #reason(Deadline)} finds it. */

@@ -510,14 +510,14 @@ class ScopedFactNamesTest {
      * An engine whose {@code currentRules()} hands back {@code first}, closed, at the first reading, and the rules it
      * loaded after that, as a reload between a run's reading and its borrowing does.
      */
-    private static AbstractRulesEngine<String> engineReading(RuleSet first, ExpressionLanguage kw) {
+    private static AbstractRulesEngine<String> engineReading(CopyPool first, ExpressionLanguage kw) {
         Map<String, ExpressionLanguage> languages = Map.of("toy", plain("toy"), "kw", kw);
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(languages)
                 .withDefaultLanguage("toy").build();
         AtomicInteger reads = new AtomicInteger();
         return new AbstractRulesEngine<>(String::new, configuration) {
             @Override
-            RuleSet currentRules() {
+            CopyPool currentRules() {
                 return reads.getAndIncrement() == 0 ? first : super.currentRules();
             }
 
@@ -534,8 +534,8 @@ class ScopedFactNamesTest {
         };
     }
 
-    private static RuleSet closed(Map<String, String> reserved) {
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of()).withReservedFactNames(reserved).build();
+    private static CopyPool closed(Map<String, String> reserved) {
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of()).withReservedFactNames(reserved).build();
         rules.retire();
         return rules;
     }

@@ -37,8 +37,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * new copy then waits as long as its deadline lets it, and makes its copy without a slot.
  *
  * <p>
- * Kept apart from {@code RuleSetTest}, and borrowing through {@link #borrow(RuleSet)}, which gives the deadline as
- * whatever type {@code RuleSet.borrow} takes, so the same test compiles against releases whose deadlines differ.
+ * Kept apart from {@code RuleSetTest}, and borrowing through {@link #borrow(CopyPool)}, which gives the deadline as
+ * whatever type {@code CopyPool.borrow} takes.
  * </p>
  */
 // A deadline for the test, as RuleSetTest has, on JUnit's own thread for the same reason.
@@ -46,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("a run whose look for an idle copy fails once it has taken a build slot gives the slot back")
 class SlotGivenBackTest {
 
-    /** A compiled expression that is never run: RuleSet only lends sessions for it. */
+    /** A compiled expression that is never run: CopyPool only lends sessions for it. */
     private record Stub() implements CompiledCondition, CompiledAction {
         @Override
         public Object evaluate(EvaluationContext context, Session session) {
@@ -128,11 +128,12 @@ class SlotGivenBackTest {
      * @param rules The rule set to borrow from
      * @return The copy
      */
-    private static RuleSet.Copy borrow(RuleSet rules) throws Throwable {
+    private static CopyPool.Copy borrow(CopyPool rules) throws Throwable {
         // Found by reflection so this compiles whatever type the deadline is, which the proof on main needs.
-        List<Method> borrows = Arrays.stream(RuleSet.class.getDeclaredMethods())
+        List<Method> borrows = Arrays.stream(CopyPool.class.getDeclaredMethods())
                 .filter(method -> method.getName().equals("borrow") && method.getParameterCount() == 1).toList();
-        assertEquals(1, borrows.size(), "RuleSet should have exactly one borrow method with one parameter: " + borrows);
+        assertEquals(1, borrows.size(),
+                "CopyPool should have exactly one borrow method with one parameter: " + borrows);
         Method borrow = borrows.get(0);
         Class<?> type = borrow.getParameterTypes()[0];
         Object deadline;
@@ -145,7 +146,7 @@ class SlotGivenBackTest {
         }
         borrow.setAccessible(true);
         try {
-            return (RuleSet.Copy) borrow.invoke(rules, deadline);
+            return (CopyPool.Copy) borrow.invoke(rules, deadline);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -153,10 +154,10 @@ class SlotGivenBackTest {
 
     /** A run on a virtual thread that borrows one copy and holds it until it's asked back. */
     private record VirtualRun(Thread thread, CountDownLatch borrowed, CountDownLatch askedBack,
-                              AtomicReference<RuleSet.Copy> held, AtomicReference<Throwable> failure) {
+                              AtomicReference<CopyPool.Copy> held, AtomicReference<Throwable> failure) {
 
         /** Waits for the borrow to end and returns the copy it took, failing the test if it took none. */
-        RuleSet.Copy copy() throws InterruptedException {
+        CopyPool.Copy copy() throws InterruptedException {
             assertTrue(borrowed.await(30, TimeUnit.SECONDS), "the run never finished borrowing");
             if (failure.get() != null) {
                 throw new AssertionError("the run borrowing a copy failed", failure.get());
@@ -173,13 +174,13 @@ class SlotGivenBackTest {
     }
 
     /** Starts a run on a virtual thread that borrows one copy and holds it, returning before the borrow ends. */
-    private static VirtualRun startVirtualRun(RuleSet rules) {
+    private static VirtualRun startVirtualRun(CopyPool rules) {
         CountDownLatch borrowed = new CountDownLatch(1);
         CountDownLatch askedBack = new CountDownLatch(1);
-        AtomicReference<RuleSet.Copy> held = new AtomicReference<>();
+        AtomicReference<CopyPool.Copy> held = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread thread = Thread.ofVirtual().start(() -> {
-            RuleSet.Copy copy;
+            CopyPool.Copy copy;
             try {
                 copy = borrow(rules);
                 held.set(copy);
@@ -201,7 +202,7 @@ class SlotGivenBackTest {
     }
 
     /** Waits until {@code count} runs are waiting for a build slot of {@code rules}. */
-    private static void awaitWaiters(RuleSet rules, int count) throws InterruptedException {
+    private static void awaitWaiters(CopyPool rules, int count) throws InterruptedException {
         long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (rules.waiters() != count) {
             assertTrue(System.nanoTime() < giveUp, rules.waiters() + " of the " + count + " runs started waiting");
@@ -218,10 +219,10 @@ class SlotGivenBackTest {
         // needs a new copy would then wait as long as its deadline lets it and make its copy without one. The window
         // is far longer than the test, so the run that waits never gives up and makes a copy without a slot.
         CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
-        RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", compiler(new AtomicInteger())))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", compiler(new AtomicInteger())))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         VirtualRun holder = startVirtualRun(rules);
-        assertEquals(RuleSet.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
+        assertEquals(CopyPool.Held.SLOT, holder.copy().held(), "the first run took the only build slot");
         VirtualRun failing = startVirtualRun(rules);
         awaitWaiters(rules, 1);
         // The run has looked once, found nothing and is waiting for the slot, so the look that fails is the one it
@@ -236,9 +237,9 @@ class SlotGivenBackTest {
         assertEquals(0, rules.waiters(), "the run is no longer counted as waiting");
         // The copy given back is taken first, so the run after it needs a new copy, and a build slot to make it.
         VirtualRun reusing = startVirtualRun(rules);
-        assertEquals(RuleSet.Held.NOTHING, reusing.copy().held(), "the run took the copy given back");
+        assertEquals(CopyPool.Held.NOTHING, reusing.copy().held(), "the run took the copy given back");
         VirtualRun making = startVirtualRun(rules);
-        assertEquals(RuleSet.Held.SLOT, making.copy().held(),
+        assertEquals(CopyPool.Held.SLOT, making.copy().held(),
                 "the slot taken before looking failed was never given back");
         reusing.giveBack();
         making.giveBack();

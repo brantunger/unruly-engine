@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  */
 final class OneStepStack<E> extends AbstractQueue<E> {
 
-    // Changes top. A field updater, as RuleSet's RETIRING, whose compare-and-set checks the stack and the node it's
+    // Changes top. A field updater, as CopyPool's RETIRING, whose compare-and-set checks the stack and the node it's
     // given before it changes anything, so it can't fail once the stack has changed. Raw, as newUpdater makes it, and
     // of this class, not of Queue, as it changes this class's own field, whatever PMD says.
     @SuppressWarnings({"rawtypes", "PMD.LooseCoupling"})

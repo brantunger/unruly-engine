@@ -363,14 +363,14 @@ class CloseEverySessionTest {
      * A rule set of no rules in one language, made by hand, whose runs share {@code permits}, a limit of one copy,
      * and wait for a copy until they're interrupted.
      */
-    private static RuleSet ruleSet(RecordingCompiler compiler, CopyPermits permits, Queue<Map<String, Session>> idle) {
+    private static CopyPool ruleSet(RecordingCompiler compiler, CopyPermits permits, Queue<Map<String, Session>> idle) {
         // A stall window no test outlasts, so that a run waits for a copy however slow the machine is.
         return TestRuleSets.ruleSet(List.of(), Map.of(LANGUAGE, compiler))
                 .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(Long.MAX_VALUE).withIdle(idle).build();
     }
 
     /** The same rule set, whose idle copies wait in the stack the engine keeps them in. */
-    private static RuleSet ruleSet(RecordingCompiler compiler, CopyPermits permits) {
+    private static CopyPool ruleSet(RecordingCompiler compiler, CopyPermits permits) {
         return TestRuleSets.ruleSet(List.of(), Map.of(LANGUAGE, compiler))
                 .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(Long.MAX_VALUE).build();
     }
@@ -1165,8 +1165,8 @@ class CloseEverySessionTest {
         OutOfMemoryError fatal = new OutOfMemoryError("keeping the copy");
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1), idle);
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(fatal);
         AtomicReference<Error> returned = new AtomicReference<>();
 
@@ -1189,8 +1189,8 @@ class CloseEverySessionTest {
         OutOfMemoryError closing = new OutOfMemoryError("closing the copy");
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1), idle);
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(keeping);
         compiler.sessionCloseFailure = closing;
         AtomicReference<Error> returned = new AtomicReference<>();
@@ -1211,8 +1211,8 @@ class CloseEverySessionTest {
     void nonFatalFromKeepingACopyClosesIt() throws InterruptedException, TimeoutException {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1), idle);
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(new IllegalStateException("queue full"));
         AtomicReference<Error> returned = new AtomicReference<>();
 
@@ -1232,8 +1232,8 @@ class CloseEverySessionTest {
         OutOfMemoryError fatal = new OutOfMemoryError("keeping the copy");
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
-        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1), idle);
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
         idle.addFailure.set(fatal);
         AtomicReference<Error> returned = new AtomicReference<>();
         Outcome<Throwable> outcome;
@@ -1256,8 +1256,8 @@ class CloseEverySessionTest {
     void overflowTakingAnIdleCopyLeavesItIdle() throws InterruptedException, TimeoutException {
         RecordingCompiler compiler = new RecordingCompiler();
         CopyPermits permits = new CopyPermits(1);
-        RuleSet rules = ruleSet(compiler, permits);
-        RuleSet.Copy first = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, permits);
+        CopyPool.Copy first = rules.borrow(Deadline.NONE);
         assertNull(rules.release(first));
         StackOverflowError overflow = new StackOverflowError();
         Throwable thrown;
@@ -1271,7 +1271,7 @@ class CloseEverySessionTest {
         assertSame(overflow, thrown);
         assertEquals(List.of(), compiler.closed, "nothing closed");
         assertEquals(1, permits.available().availablePermits(), "the permit taken for it was given back");
-        RuleSet.Copy again = rules.borrow(Deadline.NONE);
+        CopyPool.Copy again = rules.borrow(Deadline.NONE);
         assertSame(first.sessions(), again.sessions(), "the copy left idle, lent again");
         assertEquals(1, compiler.sessionsMade.get());
         assertNull(rules.release(again));
@@ -1284,8 +1284,8 @@ class CloseEverySessionTest {
             + " logged, and nothing returned (#1220)")
     void overflowKeepingACopyClosesItOnce() throws InterruptedException, TimeoutException {
         RecordingCompiler compiler = new RecordingCompiler();
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1));
-        RuleSet.Copy copy = rules.borrow(Deadline.NONE);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1));
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
         AtomicReference<Error> returned = new AtomicReference<>();
         Outcome<Throwable> outcome;
         try {
@@ -1311,7 +1311,7 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
         idle.addFailure.set(fatal);
-        RuleSet rules = ruleSet(compiler, new CopyPermits(1), idle);
+        CopyPool rules = ruleSet(compiler, new CopyPermits(1), idle);
 
         Throwable thrown = thrownBy(() -> rules.prepareCopies(1));
         assertNull(rules.retire());
@@ -1329,7 +1329,7 @@ class CloseEverySessionTest {
         RecordingCompiler compiler = new RecordingCompiler();
         FailingQueue idle = new FailingQueue();
         CopyPermits permits = new CopyPermits(1);
-        RuleSet rules = ruleSet(compiler, permits, idle);
+        CopyPool rules = ruleSet(compiler, permits, idle);
         rules.prepareCopies(1);
         idle.pollFailure.set(fatal);
 
@@ -1442,9 +1442,9 @@ class CloseEverySessionTest {
     void interruptedWaitThenFatalCloseKeepsTheInterruptStatus() throws InterruptedException, TimeoutException {
         OutOfMemoryError fatal = new OutOfMemoryError("closing the compiler");
         CopyPermits permits = new CopyPermits(1);
-        RuleSet held = ruleSet(new RecordingCompiler(), permits, new ConcurrentLinkedQueue<>());
+        CopyPool held = ruleSet(new RecordingCompiler(), permits, new ConcurrentLinkedQueue<>());
         RecordingCompiler compiler = new RecordingCompiler();
-        RuleSet waitedFor = ruleSet(compiler, permits, new ConcurrentLinkedQueue<>());
+        CopyPool waitedFor = ruleSet(compiler, permits, new ConcurrentLinkedQueue<>());
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         AtomicReference<List<String>> closedBeforeLeaving = new AtomicReference<>();
         AtomicReference<Error> left = new AtomicReference<>();
@@ -1456,7 +1456,7 @@ class CloseEverySessionTest {
             interrupted.set(Thread.currentThread().isInterrupted());
         });
         // The one permit, held with a copy of the other rule set, so the waiter waits for it.
-        RuleSet.Copy copy = held.borrow(Deadline.NONE);
+        CopyPool.Copy copy = held.borrow(Deadline.NONE);
         try {
             logsOf(() -> {
                 waiter.start();
@@ -1492,7 +1492,7 @@ class CloseEverySessionTest {
                                                          boolean waiterLeavesFirst, AtomicReference<Throwable> thrown) {
         CopyPermits permits = new CopyPermits(1);
         FailingQueue idle = new FailingQueue();
-        RuleSet rules = ruleSet(compiler, permits, idle);
+        CopyPool rules = ruleSet(compiler, permits, idle);
         CountDownLatch stopped = new CountDownLatch(1);
         CountDownLatch waiterLeft = new CountDownLatch(1);
         CountDownLatch copyGivenBack = new CountDownLatch(1);
@@ -1518,7 +1518,7 @@ class CloseEverySessionTest {
             waiter.interrupt();
             awaitQuietly(stopped, waiterLeavesFirst ? waiterLeft : stopped);
         };
-        RuleSet.Copy copy;
+        CopyPool.Copy copy;
         try {
             copy = rules.borrow(Deadline.NONE);
         } catch (InterruptedException | TimeoutException e) {

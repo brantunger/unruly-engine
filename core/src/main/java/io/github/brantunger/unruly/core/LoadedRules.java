@@ -15,7 +15,7 @@ import java.util.Set;
  * compilers of the languages they use, the facts those languages' rules read and the names they reserve. Also whether
  * those languages have finished a run, their checksum and when they were loaded. None of its fields changes once it's
  * made, though the flags of whether a language has run are set as runs finish, and every run of the rule list shares
- * it. The engine makes it with {@link RuleListCompiler.Compilation#loadedRules()}, and its {@link RuleSet} holds it.
+ * it. The engine makes it with {@link RuleListCompiler.Compilation#loadedRules()}, and its {@link CopyPool} holds it.
  * <b>Internal:</b> this class may change in any release.
  */
 final class LoadedRules {

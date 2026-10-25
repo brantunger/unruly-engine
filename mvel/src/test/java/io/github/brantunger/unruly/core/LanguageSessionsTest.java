@@ -420,13 +420,13 @@ class LanguageSessionsTest {
     @Test
     @DisplayName("a run that reads rules just as they're closed reads the rules again")
     void runRetriesAfterRulesClosed() {
-        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
+        CopyPool closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closedRules.retire();
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(Map.of()).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
-            RuleSet currentRules() {
+            CopyPool currentRules() {
                 return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();
             }
 

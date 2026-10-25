@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Queue;
 
 /**
- * Builds a {@link RuleSet} for tests in this package that make one by hand rather than load it into an engine. A test
+ * Builds a {@link CopyPool} for tests in this package that make one by hand rather than load it into an engine. A test
  * sets only the parts it cares about; the others keep the defaults below, so a part added to the rule set needs a
  * default here and no change to the tests.
  *
@@ -23,7 +23,7 @@ final class TestRuleSets {
     private final Map<String, ExpressionCompiler> compilers;
     private CopyLimit limit = CopyLimit.none();
     private CopyPermits permits;
-    private long stallWindowMillis = RuleSet.STALL_WINDOW_MILLIS;
+    private long stallWindowMillis = CopyPool.STALL_WINDOW_MILLIS;
     private Queue<Map<String, Session>> idle;
     private Map<String, String> reservedFactNames = Map.of();
 
@@ -73,9 +73,9 @@ final class TestRuleSets {
      *
      * @return The rule set
      */
-    RuleSet build() {
+    CopyPool build() {
         CopyPermits givenPermits = permits != null ? permits : new CopyPermits(limit.maxCopies());
-        return new RuleSet(new LoadedRules(rules, compilers, Map.of(), reservedFactNames, Map.of()), limit,
+        return new CopyPool(new LoadedRules(rules, compilers, Map.of(), reservedFactNames, Map.of()), limit,
                 givenPermits, stallWindowMillis, idle != null ? idle : new OneStepStack<>());
     }
 }
