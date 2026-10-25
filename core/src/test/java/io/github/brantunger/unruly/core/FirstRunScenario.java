@@ -58,8 +58,9 @@ import java.util.function.Supplier;
  * that throws; a listener that throws; an action that throws an exception with a suppressed exception; a listener
  * that throws an {@link OutOfMemoryError}; and a unique-match engine whose two rules match. Then, #1097, a load of one
  * rule that fails to compile and one of two; a write of a {@code Long} that no setter accepts; a run that waits for
- * the only copy, which a run on another thread holds; a run on a virtual thread that finds no idle copy, and takes a
- * build slot; and a borrow that fails as the last user of rules a load replaced, whose retiring failed part way. The
+ * the only copy, which a run on another thread holds, and one that stops waiting for it, as its deadline passes; a run
+ * on a virtual thread that finds no idle copy, and takes a build slot; and a borrow that fails as the last user of
+ * rules a load replaced, whose retiring failed part way. The
  * steps whose runs, loads, writes or borrows fail, or whose runs wait, are listed in {@link #FAILING}, and
  * {@link #FAILURES_FIRST} takes them before the steps that could hide what they load first. Last, it closes an engine,
  * the JVM's first {@code close()}.
@@ -86,6 +87,8 @@ final class FirstRunScenario {
     static final String LOAD_FAILS_TWICE = "a load of two rules that fail to compile";
     static final String WRITE_REFUSED = "a write of a Long that no setter accepts, to setCount(int)";
     static final String PERMIT_WAIT = "a run that waits for the only copy, which another thread's run holds";
+    static final String WAIT_STOPS = "a run that stops waiting for the only copy, which another thread's run holds, "
+            + "as its deadline passes";
     static final String SLOT_WAIT = "a run on a virtual thread that finds no idle copy, and takes a build slot";
     static final String RETIRED_BORROW_FAILS = "a failed borrow, the last user of rules a load replaced, whose "
             + "retiring failed";
@@ -106,7 +109,7 @@ final class FirstRunScenario {
             DEADLINE, "a fact of the wrong type, and a declared fact left out, with requireDeclaredFacts()",
             "a fact with a name a language reserves: output, and ctx", ACTION_THROWS, ACTION_ERRS, SETTER_THROWS,
             LISTENER_THROWS, ACTION_SUPPRESSES, LISTENER_FATAL, UNIQUE, LOAD_FAILS, LOAD_FAILS_TWICE, WRITE_REFUSED,
-            PERMIT_WAIT, SLOT_WAIT, RETIRED_BORROW_FAILS);
+            PERMIT_WAIT, WAIT_STOPS, SLOT_WAIT, RETIRED_BORROW_FAILS);
 
     private FirstRunScenario() {
     }
@@ -582,6 +585,9 @@ final class FirstRunScenario {
         Holder limitedHolder = new Holder();
         RulesEngine<Map<String, Object>> limited = RulesEngineBuilder.firstMatch(maps).maxCopies(1)
                 .language(holding(limitedHolder, new Sessions())).build();
+        Holder stoppingHolder = new Holder();
+        RulesEngine<Map<String, Object>> stopping = RulesEngineBuilder.firstMatch(maps).maxCopies(1)
+                .language(holding(stoppingHolder, new Sessions())).build();
         Holder unlimitedHolder = new Holder();
         RulesEngine<Map<String, Object>> unlimited = RulesEngineBuilder.firstMatch(maps).unlimitedCopies()
                 .language(holding(unlimitedHolder, new Sessions())).build();
@@ -637,7 +643,7 @@ final class FirstRunScenario {
         suppressing.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
         unique.load(List.of(Rule.builder().ruleName("one").condition("true").action("put k 1").build(),
                 Rule.builder().ruleName("two").condition("true").action("put k 2").build()));
-        for (RulesEngine<?> stub : List.of(writesLong, limited, unlimited, retiring)) {
+        for (RulesEngine<?> stub : List.of(writesLong, limited, stopping, unlimited, retiring)) {
             stub.load(List.of(Rule.builder().ruleName("acts").condition("x").action("x").build()));
         }
         if (!failuresFirst) {
@@ -688,6 +694,7 @@ final class FirstRunScenario {
         mark(STEP + WRITE_REFUSED);
         asExpected &= throwsOnRun(writesLong, new FactMap<>(), RuleExecutionException.class);
         asExpected &= waitsForCopies(limited, limitedHolder, unlimited, unlimitedHolder);
+        asExpected &= stopsWaitingForACopy(stopping, stoppingHolder);
         asExpected &= failsToBorrowRetired(retiring, retiringHolder, refusingSessions, retiringLanguage);
         if (failuresFirst) {
             asExpected &= failsToLoad(broken);
@@ -701,7 +708,7 @@ final class FirstRunScenario {
         }
         for (RulesEngine<?> engine : List.of(map, bean, declared, failing, toData, fatal, outer, strict, writing, slow,
                 overrun, windowed, reserving, throwing, erring, refusing, listened, suppressing, fatalListened,
-                unique, writesLong, limited, unlimited, retiring)) {
+                unique, writesLong, limited, stopping, unlimited, retiring)) {
             engine.close();
         }
     }
@@ -718,6 +725,25 @@ final class FirstRunScenario {
                 .build())).isEmpty();
         return asExpected && !broken.validate(List.of(Rule.builder().ruleName("syntax").condition("a b c d")
                 .action("put k 1").build())).isEmpty();
+    }
+
+    // A run that stops waiting for the only copy, which another thread's run holds until the step ends, as its deadline
+    // passes: the JVM's first run that stops before it gets a copy, whose listeners hear of it in a scope it opens
+    // without one, so that path loads nothing, a lambda's class included (#1093, #1245).
+    private static boolean stopsWaitingForACopy(RulesEngine<Map<String, Object>> stopping, Holder holder) {
+        mark(STEP + "a run on another thread that holds the only copy, until the run that waits for it has stopped");
+        holder.start(stopping);
+        mark(STEP + WAIT_STOPS);
+        boolean asExpected;
+        try {
+            stopping.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofMillis(1)));
+            asExpected = false;
+        } catch (RuleExecutionException e) {
+            asExpected = true;
+        }
+        mark(STEP + "the other thread's run ends");
+        holder.release();
+        return asExpected;
     }
 
     // #1097: loads of rules that fail to compile, one rule and then two, each in a step of its own.

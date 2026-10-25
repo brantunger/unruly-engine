@@ -98,7 +98,7 @@ final class DeepFirstErrorLogScenario {
         SECOND_FATAL_ON_ERROR,
         /**
          * Another thread holds the one copy the engine allows, and the run times out waiting for it, logged at WARN
-         * (AbstractRulesEngine's stoppedWaiting).
+         * (AbstractRulesEngine's reportStop).
          */
         STOPPED_WAITING,
         /**
