@@ -369,10 +369,10 @@ final class RunClasses {
         return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
                 OutputConverter.class, LanguageOutputConverter.class, LoadedRules.class, LanguagesRan.class,
-                AbstractRulesEngine.RunBody.class, CopyPool.Copy.class,
+                RuleExecutor.RunBody.class, CopyPool.Copy.class,
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, CopyPool.Loan.class, EngineRunContext.class, RuleListener.class,
-                RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
+                RuleEvaluation.class, RuleExecutor.Matches.class, EngineActionContext.class, Accessors.class,
                 Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class,
                 EngineCompileContext.class);
     }

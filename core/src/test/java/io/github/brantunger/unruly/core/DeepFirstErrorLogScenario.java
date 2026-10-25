@@ -71,11 +71,11 @@ final class DeepFirstErrorLogScenario {
         /** Two rules match on a unique-match engine, logged as the run's failure (AbstractRulesEngine's failedRun). */
         UNIQUE_MATCH,
         /**
-         * The output factory returns {@code null}, logged before the run fails (AbstractRulesEngine's createOutput).
+         * The output factory returns {@code null}, logged before the run fails (RuleExecutor's createOutput).
          */
         NULL_OUTPUT,
         /**
-         * The output factory throws, logged before the run fails (AbstractRulesEngine's reportCalledCodeFailure).
+         * The output factory throws, logged before the run fails (Failures' reportCalledCodeFailure).
          */
         OUTPUT_THROWS,
         /** A fact of a type other than the one declared, logged as the run rejects it (FactIntake's rejectedFact). */

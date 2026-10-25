@@ -485,7 +485,7 @@ final class CopyPool {
             Failures.keepInterruptStatus(e);
             String msg = "The '" + Text.quote(language) + "' expression language failed to warm up a session: "
                     + NestedFailures.describeCallOut(e, true);
-            AbstractRulesEngine.reportCalledCodeFailure(msg, e);
+            Failures.reportCalledCodeFailure(msg, e);
             throw NestedFailures.report(msg, e);
         }
     }
@@ -1117,7 +1117,7 @@ final class CopyPool {
         } catch (Throwable e) {
             Failures.keepInterruptStatus(e);
             String msg = failed + "failed to create a session: " + NestedFailures.describeCallOut(e, false);
-            AbstractRulesEngine.reportCalledCodeFailure(msg, e);
+            Failures.reportCalledCodeFailure(msg, e);
             throw NestedFailures.report(msg, e);
         }
         if (session == null) {

@@ -49,7 +49,7 @@ final class UniqueMatchRulesEngine<O> extends AbstractRulesEngine<O> {
      *                                to no rule; or, when one rule matched, {@inheritDoc}
      */
     @Override
-    RunResult<O> fire(Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
+    RunResult<O> fire(RuleExecutor.Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
         List<CompiledRule> matched = matches.matched();
         if (matched.size() > ALLOWED_MATCHES) {
             // The list of names is cut like text copied from an exception: a table whose rows all match would

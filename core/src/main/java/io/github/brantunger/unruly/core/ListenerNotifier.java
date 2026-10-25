@@ -489,7 +489,7 @@ final class ListenerNotifier {
      * {@link NestedFailures#describe}); a fatal error wrapped so is still rethrown. So is what a listener's
      * {@code onError} wrapped such an error in (see {@link #logWrappedFromOnError}).
      * An interrupt in {@code cause} has set the thread's interrupt status again already: every caller with a cause is
-     * reached through {@link AbstractRulesEngine#stopped}, which sets it first. Returns the exception for the
+     * reached through {@link RuleExecutor#stopped}, which sets it first. Returns the exception for the
      * caller to throw, unless
      * the cause is or wraps a fatal {@link Error}, which is rethrown unchanged once listeners have been told, or a
      * listener threw a fatal error from {@code onError}, which is rethrown once every listener has been told.

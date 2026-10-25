@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * How the engine treats what rules, listeners and expression languages throw: which errors must reach the caller
  * unchanged, and how an exception is described in an error message. Only {@link #closingInsteadOf},
- * {@link #insteadOf} and {@link #keepAlso} log, and under the engine's logger name,
+ * {@link #insteadOf}, {@link #keepAlso} and {@link #reportCalledCodeFailure} log, and under the engine's logger name,
  * {@code io.github.brantunger.unruly.engine}, as every failure is logged. What was thrown is read as {@link Causes}
  * reads it, and text is shortened and escaped as {@link Text} does it; {@code api.language} publishes both, and
  * {@link FatalErrors} the search for a fatal error made here.
@@ -923,6 +923,24 @@ final class Failures {
                 throw internal;
             }
         }
+    }
+
+    /**
+     * Logs the failure of code the engine calls but doesn't own, such as a language's session or the output factory,
+     * unless a nested run or load already logged it (see {@link LoggedFailures}), and rethrows a fatal {@link Error}
+     * found in its cause chain, or suppressed on it, unchanged (see {@link Failures#fatalError}). The caller keeps the
+     * interrupt status first (see {@link Failures#keepInterruptStatus}), then builds the message, as describing the
+     * failure reads what was logged before this records it, and throws a {@link ReportedFailure} with that message
+     * itself once this returns.
+     *
+     * @param msg What failed
+     * @param e   What the called code threw
+     */
+    static void reportCalledCodeFailure(String msg, Throwable e) {
+        if (NestedFailures.unlogged(e)) {
+            Failures.logError(log, msg);
+        }
+        Failures.throwIfPresent(Failures.fatalError(e));
     }
 
     /**
