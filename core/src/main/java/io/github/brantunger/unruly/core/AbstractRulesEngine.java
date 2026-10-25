@@ -421,57 +421,82 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                     Objects.requireNonNull(clock.instant(), "the engine's clock returned a null instant"), tags);
             Map<String, Object> values = factIntake.factValues(facts, runs);
             Map<String, Object> listenerFacts = ReadOnlyFacts.forListeners(values);
-            // Checked before the run waits for a copy, which facts the engine will reject needn't do.
-            RuntimeException rejected = factIntake.factRejection(values);
+            // Checked before the run waits for a copy, which facts the engine will reject needn't do. What the run
+            // fails with in its scope, once its listeners have heard of it: what the check threw, or the stop of a run
+            // that stopped before it got a copy.
+            RuntimeException failure = factIntake.factRejection(values);
             RunFacts runFacts = RunFacts.of(values, listenerFacts, deadline, runId, parent, tally, selection, runs);
-            if (rejected == null) {
-                copy = borrow(rules, runFacts);
-                int read = 1;
-                while (copy == null) {
-                    // The rule set the run read was closed before it could borrow from it, which a reload does to the
-                    // set it replaced, and close() to the set it detaches: reading again finds the set that replaced
-                    // it, or reports the closed engine. A run the caller has stopped meanwhile stops here rather than
-                    // reading again, and one that keeps finding the same set closed fails rather than spinning for
-                    // ever. A different set starts the count again: a reload got through, however many overtake the
-                    // run.
-                    stopIfCancelledWhileReading(rules, runFacts);
-                    if (read == RULE_READS_PER_RUN) {
-                        throw new IllegalStateException("The engine's rule list was found closed "
-                                + RULE_READS_PER_RUN + " times in a row while this run was borrowing a copy of it. A"
-                                + " rule list is closed only after it has been retired, and only a rule list that is"
-                                + " no longer the engine's current one is retired, so the list a run reads can never"
-                                + " already be closed: that invariant has broken. Please report this stack trace at"
-                                + " https://github.com/brantunger/unruly-engine/issues");
+            // What a wait for a copy stopped with, the run still counted on the rule set it waited on.
+            Exception waitStopped = null;
+            if (failure == null) {
+                // An interrupt while waiting for a copy, or the run's deadline passing under a limit, stops the run;
+                // the interrupt status is set again, so the caller still sees it. A thread whose status is already set
+                // doesn't wait, and gets a free copy: the run then stops at its first rule, the same way it does
+                // without a limit on copies.
+                try {
+                    copy = rules.borrow(deadline);
+                    int read = 1;
+                    while (copy == null) {
+                        // The rule set the run read was closed before it could borrow from it, which a reload does to
+                        // the set it replaced, and close() to the set it detaches: reading again finds the set that
+                        // replaced it, or reports the closed engine. A run the caller has stopped meanwhile stops here
+                        // rather than reading again, and one that keeps finding the same set closed fails rather than
+                        // spinning for ever. A different set starts the count again: a reload got through, however
+                        // many overtake the run.
+                        failure = stopIfCancelledWhileReading(runFacts);
+                        if (failure != null) {
+                            break;
+                        }
+                        if (read == RULE_READS_PER_RUN) {
+                            throw new IllegalStateException("The engine's rule list was found closed "
+                                    + RULE_READS_PER_RUN + " times in a row while this run was borrowing a copy of"
+                                    + " it. A rule list is closed only after it has been retired, and only a rule list"
+                                    + " that is no longer the engine's current one is retired, so the list a run reads"
+                                    + " can never already be closed: that invariant has broken. Please report this"
+                                    + " stack trace at https://github.com/brantunger/unruly-engine/issues");
+                        }
+                        CopyPool again = currentRules();
+                        if (!firstRun && again.loaded().languagesRan().needsRoom()) {
+                            firstRun = true;
+                            tally.recordLanguages();
+                        }
+                        read = again == rules ? read + 1 : 1;
+                        rules = again;
+                        copy = rules.borrow(deadline);
                     }
-                    CopyPool again = currentRules();
-                    if (!firstRun && again.loaded().languagesRan().needsRoom()) {
-                        firstRun = true;
-                        tally.recordLanguages();
-                    }
-                    read = again == rules ? read + 1 : 1;
-                    rules = again;
-                    copy = borrow(rules, runFacts);
+                } catch (InterruptedException | TimeoutException e) {
+                    // Straight on, allocating nothing: the run is still counted on the rule set until it leaves there,
+                    // which it does only once it has reported the stop (see endRun), so the stop reaches the listeners
+                    // and the log even when leaving closes a retired rule set that throws a fatal Error.
+                    waitStopped = e;
                 }
             }
             // The copy is given back however the run ends, even when setting it up fails: the engine's permits
             // outlive its rule lists, so a permit that isn't returned would lower its limit for good. Before that, once
             // every listener has been told how the run ended, the values its languages kept to be closed are closed.
             // A fatal Error from closing them, or the rules as the copy is given back, replaces a failure of the run
-            // that isn't fatal, and never the other way round. A run whose facts were rejected holds no copy, and
-            // gives nothing back.
+            // that isn't fatal, and never the other way round. A run whose facts were rejected, or that stopped before
+            // it got a copy, holds none, and gives nothing back; one whose wait for a copy stopped leaves the rule set
+            // it waited on instead.
             RunResult<O> result;
             try {
-                result = runWithCopy(rules, copy, runFacts, rejected, body);
+                // Reported inside the try, so the run leaves the rule set however reporting the stop ends.
+                if (waitStopped != null) {
+                    failure = waitStop(rules, runFacts, waitStopped);
+                }
+                result = runWithCopy(rules, copy, runFacts, failure, body);
             } catch (Throwable t) {
                 // Given back even if setting the interrupt status again fails, as it can when it runs out of stack.
                 try {
                     keepInterruptOfStop(tally);
                 } finally {
-                    Failures.rethrowUnchecked(failedRunEnding(t, endRun(rules, copy, runFacts, teardown)));
+                    Failures.rethrowUnchecked(
+                            failedRunEnding(t, endRun(rules, copy, waitStopped != null, runFacts, teardown)));
                 }
                 throw t;
             }
-            Failures.rethrowUnchecked(endRun(rules, copy, runFacts, teardown));
+            // Only a run that holds a copy gets here: one without fails in its scope.
+            Failures.rethrowUnchecked(endRun(rules, copy, false, runFacts, teardown));
             // A run that ran an action of a language has made that language's first calls, so later runs of it need
             // no more room than run() checks for.
             List<String> ranLanguages = tally.firedLanguages();
@@ -522,18 +547,23 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Ends a run once every listener has been told how it ended: closes the values its languages kept with
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScopedClosing}, then gives back its copy of
-     * the rules. It throws nothing: what closing the values or giving back the copy throws, as logging what a
-     * {@code close()} threw can when it runs out of stack, is returned for the run to throw, and the copy is given back
-     * whatever closing the values threw. The values are handed over first, so none can be made once they're handed
-     * over: an init running on another thread finishes first, and its value is handed over with them (see
-     * {@link RunScope#end()}). If handing them over fails, as waiting for that init can when the stack or the heap
-     * runs out, nothing is handed over, so it's tried once more, and only once: what that hands over is closed all the
-     * same, and what the first try threw is returned all the same. Each step's failure is only stored where it's
-     * caught, which can't fail again, in a {@link Failures.Teardown} the run made before it held anything; they are
-     * combined last, so nothing is allocated here before that after a run that has run out of memory (#855).
+     * the rules, or, if its wait for one stopped, leaves the rule set it waited on, which
+     * {@link CopyPool#borrow(Deadline)} left the run counted on so it could report the stop first. Leaving closes the
+     * rule set only if it was retired and this run was its last user. It throws nothing: what closing the values or
+     * giving back the copy throws, as logging what a {@code close()} threw can when it runs out of stack, is returned
+     * for the run to throw, and the copy is given back, or the rule set left, whatever closing the values threw. The
+     * values are handed over first, so none can be made once they're handed over: an init running on another thread
+     * finishes first, and its value is handed over with them (see {@link RunScope#end()}). If handing them over fails,
+     * as waiting for that init can when the stack or the heap runs out, nothing is handed over, so it's tried once
+     * more, and only once: what that hands over is closed all the same, and what the first try threw is returned all
+     * the same. Each step's failure is only stored where it's caught, which can't fail again, in a
+     * {@link Failures.Teardown} the run made before it held anything; they are combined last, so nothing is allocated
+     * here before that after a run that has run out of memory (#855).
      *
-     * @param rules    The rule set the run borrowed its copy from
-     * @param copy     The run's copy, or {@code null} if its facts were rejected and it holds none
+     * @param rules    The rule set the run borrowed its copy from, or waited on
+     * @param copy     The run's copy, or {@code null} if its facts were rejected, or it stopped before it got one, and
+     *                 it holds none
+     * @param waited   Whether the run's wait for a copy stopped, so it leaves {@code rules} rather than give one back
      * @param facts    The run's facts, whose evaluation context holds the run's values
      * @param teardown Where each step's failure is kept, made for the four steps and not yet added to
      * @return What the run throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error} closing
@@ -544,9 +574,10 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
-    private static Throwable endRun(CopyPool rules, CopyPool.Copy copy, RunFacts facts, Failures.Teardown teardown) {
+    private static Throwable endRun(CopyPool rules, CopyPool.Copy copy, boolean waited, RunFacts facts,
+                                    Failures.Teardown teardown) {
         // The four steps, each adding what it threw: ending the scope, taking its values, closing them and giving
-        // back the copy.
+        // back the copy, or leaving the rule set.
         Throwable endFailed = null;
         Throwable taking = null;
         List<AutoCloseable> values = List.of();
@@ -577,6 +608,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         try {
             if (copy != null) {
                 releasing = rules.release(copy);
+            } else if (waited) {
+                releasing = rules.leaveAfterStop();
             }
         } catch (Throwable t) {
             releasing = t;
@@ -624,15 +657,18 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Runs the rules with a copy the caller borrowed and gives back, inside the run's listener and deadline scope. A
      * run whose facts the engine rejected before it borrowed one opens the same scope without a copy, and fails in it
-     * with what the check threw.
+     * with what the check threw; so does a run that stopped before it got one, because it was interrupted or passed its
+     * deadline while it waited for one or read the engine's rules again, with the stop the caller reported. The stop
+     * still carries the run's deadline and makes the run the parent, so a run a listener starts then is treated like
+     * one started from any other callback of a run that stopped.
      *
-     * @param copy     The copy the run borrowed, or {@code null} if its facts were rejected
-     * @param facts    The run's facts, and what the run carries with them
-     * @param rejected What the engine's checks of the facts threw before the run borrowed a copy, or {@code null} if
-     *                 they passed
+     * @param copy            The copy the run borrowed, or {@code null} if its facts were rejected, or it stopped
+     * @param facts           The run's facts, and what the run carries with them
+     * @param stopOrRejection What the engine's checks of the facts threw before the run borrowed a copy, or the stop
+     *                        of a run that stopped before it got one, or {@code null} if the run holds a copy
      */
-    private RunResult<O> runWithCopy(CopyPool rules, CopyPool.Copy copy, RunFacts facts, RuntimeException rejected,
-                                     RunBody<O> body) {
+    private RunResult<O> runWithCopy(CopyPool rules, CopyPool.Copy copy, RunFacts facts,
+                                     RuntimeException stopOrRejection, RunBody<O> body) {
         EngineRunContext run = newRun(rules, facts);
         // Read before the scope is opened, and the scope opened inside the try, so it's closed even if opening it
         // fails part way, as it can when it runs out of stack.
@@ -642,9 +678,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             RunResult<O> result;
             try {
                 // Inside the try, so a fatal Error from a listener's beforeRun still closes every listener's run.
-                notifier.notifyRun(facts.runs(), "beforeRun", listener -> listener.beforeRun(run));
-                if (rejected != null) {
-                    throw rejected;
+                notifier.notifyRun(facts.runs(), "beforeRun", new BeforeRun(run));
+                if (stopOrRejection != null) {
+                    throw stopOrRejection;
                 }
                 // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name;
                 // and with the rule list the run borrowed from, whose languages reserve their names and check them,
@@ -659,6 +695,11 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 notifier.notifyRunError(facts.runs(), run, e, e, facts.tally());
                 throw e;
             } catch (Error e) {
+                // A run that stopped before it got a copy stopped, though an error from beforeRun keeps the stop from
+                // reaching onRunError, which records it for every other stop: its event says so.
+                if (ReportedFailure.isStop(stopOrRejection)) {
+                    facts.tally().markStopped();
+                }
                 // run() rethrows the error itself; listeners see what it failed with.
                 notifier.notifyRunError(facts.runs(), run, notifier.runFailure(e), e, facts.tally());
                 throw e;
@@ -688,16 +729,20 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * Opens the scope a run's listeners hear of it in: {@code run} becomes the thread's current run, which a run
      * started from one of its callbacks takes as its parent, and {@code deadline} the one such a run inherits. A fatal
      * failure a rule of an earlier run left recorded is cleared, so a run started from {@code onRunError} of a run a
-     * fatal {@link Error} left isn't told of that run's rule. {@link #runInScope} has set the run's deadline already;
-     * it's set again here, and put back by {@link #leaveRun}, with the run's context. The caller reads the deadline to
-     * put back with {@link Cancellation#current()} first, and calls this inside the {@code try} whose {@code finally}
-     * calls {@link #leaveRun}, so a scope opened part way is closed too.
+     * fatal {@link Error} left isn't told of that run's rule. {@link #runInScope} has set the run's deadline already,
+     * before it read the facts; it's set again here, and put back by {@link #leaveRun}, with the run's context, for a
+     * run started while the facts were read or the copy borrowed that failed to put this one's back as it ended, as
+     * setting a thread-local can when the stack or the heap runs out, where the code that started it caught that error
+     * and went on: this run's rules and listeners still pass its own deadline on. The caller reads the deadline to put
+     * back with {@link Cancellation#current()} first, and calls this inside the {@code try} whose {@code finally} calls
+     * {@link #leaveRun}, so a scope opened part way is closed too.
      *
      * @param run      The run that is starting
      * @param deadline When the run must stop, {@link Deadline#NONE} if it has none
      */
     private void enterRun(EngineRunContext run, Deadline deadline) {
         currentRun.set(run);
+        // Again, in case a run started while the facts were read or the copy borrowed left its own deadline behind.
         Cancellation.enter(deadline);
         notifier.clearFatalFailure();
     }
@@ -805,154 +850,91 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /**
-     * Borrows a copy of the rules for one run. An interrupt while waiting for one fails the run; the interrupt status
-     * is set again, so the caller still sees it. A thread whose status is already set doesn't wait, and gets a free
-     * copy: the run then stops at its first rule, the same way it does without a limit on copies.
+     * Reports a run whose wait for a copy of the rules stopped, as {@link #reportStop} reports it: interrupted while it
+     * waited for a copy, or for a build slot to make one, or past its deadline while it waited for a copy under a
+     * limit. {@link CopyPool#borrow(Deadline)} left the run counted on the rule set it waited on, so it reports the
+     * stop first and leaves there only once the stop has reached its listeners, as {@link #endRun} ends the run: the
+     * stop reaches the listeners and the log even when leaving closes a retired rule set that throws a fatal
+     * {@link Error}. Leaving closes the rule set only if it was retired and this run was its last user; a fatal error
+     * from that closing is thrown in place of the stop, carrying it as a suppressed exception, unless a listener threw
+     * a fatal error while the stop was reported, which came first and is thrown instead, carrying the one from closing.
+     * An interrupted run sets its thread's interrupt status again before it leaves, and {@code run()} again when it
+     * returns (see {@link #keepInterruptOfStop}).
      *
-     * <p>
-     * A run stopped while it waits is reported first, and only then leaves the rule set, so the stop reaches the
-     * listeners and the log even when leaving closes a retired rule set that throws a fatal {@link Error}. That error
-     * is thrown in place of the stop, which it carries as a suppressed exception.
-     * </p>
-     *
-     * @param rules The rule set to borrow from
-     * @param facts The run's facts, and what the run carries with them
-     * @return The copy, to give back with {@link CopyPool#release(CopyPool.Copy)}
-     * @throws RuleExecutionException if the thread is interrupted while it waits for a copy, or for a build slot to
-     *                                make one, or if the run's deadline passes while it waits for a copy under a
-     *                                limit
-     */
-    private CopyPool.Copy borrow(CopyPool rules, RunFacts facts) {
-        try {
-            return rules.borrow(facts.deadline());
-        } catch (InterruptedException | TimeoutException e) {
-            // Straight on, allocating nothing: the run is still counted on the rule set until it leaves there.
-            throw stoppedThenLeft(rules, facts, e);
-        }
-    }
-
-    /**
-     * Reports a run that stopped waiting for a copy, as {@link #stoppedWaiting} does, and then leaves the rule set it
-     * waited on, which {@link CopyPool#borrow(Deadline)} left the run counted on for this. The caller always throws
-     * what this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its
-     * last user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
-     * exception, unless a listener threw a fatal error while the stop was reported, which came first and is thrown
-     * instead, carrying the one from closing. An interrupted run sets its thread's interrupt status again before it
-     * leaves, and {@code run()} again when it returns (see {@link #keepInterruptOfStop}).
-     *
+     * @param rules The rule set the run waited on
      * @param facts The run's facts, and what the run carries with them
      * @param stop  What the wait stopped with: an {@link InterruptedException} or a {@link TimeoutException}
-     * @return The stop, for the caller to throw
+     * @return The stop, for the run to fail with in its scope
      */
-    // Any Throwable: the run must leave however reporting the stop ends, as a finally would, and a failure that isn't
-    // fatal is kept under a fatal Error from closing. Everything that allocates, the message too, is inside the try.
-    private RuleExecutionException stoppedThenLeft(CopyPool rules, RunFacts facts, Exception stop) {
-        RuleExecutionException failure;
-        try {
-            Deadline deadline = facts.deadline();
-            boolean interrupted = stop instanceof InterruptedException;
-            String msg;
-            if (interrupted) {
-                // Without a limit, the only wait is for a build slot, on a virtual thread.
-                msg = "run() was interrupted while waiting " + (rules.limit() == CopyLimit.UNLIMITED
-                        ? "to make a compiled copy of the rules: every build slot was in use"
-                        : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
-            } else {
-                msg = "run() passed its deadline of " + IsoInstant.text(deadline.instant())
-                        + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use";
-            }
-            // The deadline passed, or none did when an interrupt stopped the run.
-            failure = stoppedWaiting(rules, facts, msg, stop, interrupted ? null : deadline);
-        } catch (Throwable t) {
-            // The run leaves even if setting the interrupt status again fails, as it can when it runs out of stack.
-            try {
-                keepInterruptOfStop(facts.tally());
-            } finally {
-                Failures.throwIfPresent(Failures.closingInsteadOf(t, rules.leaveAfterStop()));
-            }
-            throw t;
+    private RuleExecutionException waitStop(CopyPool rules, RunFacts facts, Exception stop) {
+        Deadline deadline = facts.deadline();
+        boolean interrupted = stop instanceof InterruptedException;
+        String msg;
+        if (interrupted) {
+            // Without a limit, the only wait is for a build slot, on a virtual thread.
+            msg = "run() was interrupted while waiting " + (rules.limit() == CopyLimit.UNLIMITED
+                    ? "to make a compiled copy of the rules: every build slot was in use"
+                    : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
+        } else {
+            msg = "run() passed its deadline of " + IsoInstant.text(deadline.instant())
+                    + " while waiting for a compiled copy of the rules: all " + rules.limit() + " were in use";
         }
-        try {
-            keepInterruptOfStop(facts.tally());
-        } finally {
-            Failures.throwIfPresent(Failures.closingInsteadOf(failure, rules.leaveAfterStop()));
-        }
-        return failure;
+        // The deadline passed, or none did when an interrupt stopped the run.
+        return reportStop(facts, msg, stop, interrupted ? null : deadline);
     }
 
     /**
      * Stops a run that was interrupted, or passed its deadline, while reading the engine's rules again because the
-     * rule set it read had been closed. Reported like a run that stopped waiting for a copy: it too stopped before
-     * it got one, and for the same two reasons.
+     * rule set it read had been closed. Reported like a run whose wait for a copy stopped (see {@link #waitStop}): it
+     * too stopped before it got one, and for the same two reasons. It isn't counted on the rule set it found closed, so
+     * it leaves nothing.
      *
-     * @param rules The rule set the run found closed
      * @param facts The run's facts, and what the run carries with them
-     * @throws RuleExecutionException if the thread is interrupted, or the run's deadline has passed
+     * @return The stop, for the run to fail with in its scope, or {@code null} if the thread isn't interrupted and the
+     *         run's deadline hasn't passed
      */
-    private void stopIfCancelledWhileReading(CopyPool rules, RunFacts facts) {
+    private RuleExecutionException stopIfCancelledWhileReading(RunFacts facts) {
         Deadline deadline = facts.deadline();
         String reading = " while reading the engine's rules again: the rules this run read had been closed by a"
                 + " reload or by close()";
         Cancellation.Reason reason = Cancellation.reason(deadline);
         if (reason == Cancellation.Reason.INTERRUPTED) {
-            throw stoppedWaiting(rules, facts, "run() was interrupted" + reading, new InterruptedException(), null);
+            return reportStop(facts, "run() was interrupted" + reading, new InterruptedException(), null);
         }
         if (reason == Cancellation.Reason.TIMED_OUT) {
-            throw stoppedWaiting(rules, facts,
-                    "run() passed its deadline of " + IsoInstant.text(deadline.instant()) + reading,
+            return reportStop(facts, "run() passed its deadline of " + IsoInstant.text(deadline.instant()) + reading,
                     Cancellation.timedOut(deadline), deadline);
         }
+        return null;
     }
 
     /**
      * Reports a run that stopped before it got a copy of the rules, because it was interrupted or passed its deadline
      * while waiting. Logged at WARN, like the check between rules: a run the caller stopped isn't the rules or the
-     * engine failing.
+     * engine failing. The run then fails with the stop in its scope (see {@link #runWithCopy}), which tells its
+     * listeners.
      *
-     * @param rules  The rule set the run was waiting on
      * @param facts  The run's facts, and what the run carries with them
      * @param msg    What to log and what the exception says
      * @param cause  An {@link InterruptedException} or a {@link TimeoutException}
      * @param passed The deadline the run passed, or {@code null} if it was interrupted instead
-     * @return The exception to throw
+     * @return The stop, for the run to fail with in its scope, where {@link #runWithCopy} throws it
      */
-    private RuleExecutionException stoppedWaiting(CopyPool rules, RunFacts facts, String msg, Exception cause,
-                                                  Deadline passed) {
-        RunTally tally = facts.tally();
+    private RuleExecutionException reportStop(RunFacts facts, String msg, Exception cause, Deadline passed) {
         // Recorded before any listener is told, as a fatal error from beforeRun would keep the stop from reaching
         // onRunError, which records it for every other stop.
         if (cause instanceof InterruptedException) {
-            tally.markInterrupted();
+            facts.tally().markInterrupted();
         }
         Failures.logWarn(log, msg);
-        RuleExecutionException failure = NestedFailures.stop(msg, cause, passed);
-        // The run never got a copy, so it opens and closes a scope of its own for listeners. The scope still carries
-        // the run's deadline and makes it the parent, so a run a listener starts here is treated like one started
-        // from any other callback of a run that stopped.
-        EngineRunContext run = newRun(rules, facts);
-        Deadline outerDeadline = Cancellation.current();
-        try {
-            enterRun(run, facts.deadline());
-            try {
-                notifier.notifyRun(facts.runs(), "beforeRun", new BeforeRun(run));
-            } catch (Error e) {
-                // The run stopped, though the error keeps the stop from reaching onRunError: its event says so.
-                tally.markStopped();
-                notifier.notifyRunError(facts.runs(), run, notifier.runFailure(e), e, tally);
-                throw e;
-            }
-            notifier.notifyRunError(facts.runs(), run, failure, failure, tally);
-            return failure;
-        } finally {
-            leaveRun(facts.parent(), outerDeadline);
-        }
+        return NestedFailures.stop(msg, cause, passed);
     }
 
     /**
-     * Calls {@link RuleListener#beforeRun} for a run that stopped before it got a copy, which may be the JVM's first
-     * failure. A class of its own rather than a lambda, so that run links no call site, and loaded when the JVM's first
-     * engine is built (see RunClasses), so it loads no class either, either of which could overflow deep in a stack
-     * (#1093).
+     * Calls {@link RuleListener#beforeRun} for a run, one that stopped before it got a copy too, which may be the JVM's
+     * first failure. A class of its own rather than a lambda, so that run links no call site, and loaded when the JVM's
+     * first engine is built (see RunClasses), so it loads no class either, either of which could overflow deep in a
+     * stack (#1093).
      */
     static final class BeforeRun implements Consumer<RuleListener> {
         private final RunContext run;
