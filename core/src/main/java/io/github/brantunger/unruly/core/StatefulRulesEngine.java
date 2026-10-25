@@ -57,13 +57,13 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws RuleExecutionException {@inheritDoc}
      */
     @Override
-    RunResult<O> fire(Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
-        O outputObject = createOutput(facts);
+    RunResult<O> fire(RuleExecutor.Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
+        O outputObject = executor.createOutput(facts);
 
         // Run the action of every rule on given data, saving state each time
         List<Rule> fired = new ArrayList<>();
         for (CompiledRule rule : matches.matched()) {
-            outputObject = this.executeRule(rule, copy, outputObject, facts);
+            outputObject = executor.executeRule(rule, copy, outputObject, facts);
             fired.add(rule.rule());
         }
 
