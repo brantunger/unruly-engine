@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -23,13 +24,16 @@ import java.util.zip.ZipFile;
  * fails or waits must have none. A class whose code is all such code is checked whole, by {@link #namesLambdaFactory};
  * a class whose other code links lambdas on paths every run takes is checked method by method, by
  * {@link #invokeDynamicMethods}, which walks each method's bytecode, as a byte of {@code 0xBA}, the opcode, can also be
- * an operand or a constant. There is no class-file library on the test class path, so this reads the format itself
+ * an operand or a constant. {@link #fieldRefs} lists the fields a class's code uses, so a test can check which classes
+ * touch a field, as #1244 needs. There is no class-file library on the test class path, so this reads the format itself
  * (JVMS chapter 4).
  */
 public final class ClassFiles {
 
     private static final byte[] FACTORY = "java/lang/invoke/LambdaMetafactory".getBytes(StandardCharsets.UTF_8);
     private static final int INVOKEDYNAMIC = 0xBA;
+    // The tag of a field reference in the constant pool (JVMS 4.4.2).
+    private static final int FIELDREF = 9;
 
     private ClassFiles() {
     }
@@ -45,21 +49,42 @@ public final class ClassFiles {
      * @throws URISyntaxException if the class's location isn't a path
      */
     public static Map<String, byte[]> of(Class<?> type) throws IOException, URISyntaxException {
-        Path classes = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
         String name = type.getName().replace('.', '/');
+        return read(type, entry -> isOf(entry, name));
+    }
+
+    /**
+     * Reads the class files of every class in a class's package, nested ones too, but none of a package within it,
+     * from the directory or jar the class was loaded from.
+     *
+     * @param type A class of the package
+     * @return Each class file's bytes, by its entry name, as {@link #of} returns them
+     * @throws IOException        if one can't be read
+     * @throws URISyntaxException if the class's location isn't a path
+     */
+    public static Map<String, byte[]> ofPackage(Class<?> type) throws IOException, URISyntaxException {
+        String folder = type.getPackageName().replace('.', '/') + "/";
+        return read(type, entry -> entry.startsWith(folder) && entry.endsWith(".class")
+                && entry.indexOf('/', folder.length()) < 0);
+    }
+
+    // Reads the class files whose entry names the filter takes, from the directory or jar the class was loaded from.
+    private static Map<String, byte[]> read(Class<?> type, Predicate<String> filter)
+            throws IOException, URISyntaxException {
+        Path classes = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
         Map<String, byte[]> read = new LinkedHashMap<>();
         if (Files.isDirectory(classes)) {
             try (Stream<Path> files = Files.walk(classes)) {
                 for (Path file : files.toList()) {
                     String entry = classes.relativize(file).toString().replace('\\', '/');
-                    if (isOf(entry, name)) {
+                    if (filter.test(entry)) {
                         read.put(entry, Files.readAllBytes(file));
                     }
                 }
             }
         } else {
             try (ZipFile jar = new ZipFile(classes.toFile())) {
-                for (ZipEntry entry : jar.stream().filter(e -> isOf(e.getName(), name)).toList()) {
+                for (ZipEntry entry : jar.stream().filter(e -> filter.test(e.getName())).toList()) {
                     try (InputStream in = jar.getInputStream(entry)) {
                         read.put(entry.getName(), in.readAllBytes());
                     }
@@ -123,7 +148,7 @@ public final class ClassFiles {
         }
         in.readUnsignedShort();
         in.readUnsignedShort();
-        String[] utf8 = constantPool(in);
+        String[] utf8 = constantPool(in).utf8();
         in.readUnsignedShort();
         in.readUnsignedShort();
         in.readUnsignedShort();
@@ -160,6 +185,34 @@ public final class ClassFiles {
     }
 
     /**
+     * Lists the fields a class file's code reads or writes, from the field references in its constant pool, which
+     * javac adds only for a field the code uses.
+     *
+     * @param classFile The class file's bytes
+     * @return Each field, as the internal name of the class the reference names and the field's name, such as
+     *         {@code io/github/brantunger/unruly/core/CopyPool.nextUnretired}
+     * @throws IOException if the class file is malformed
+     */
+    public static List<String> fieldRefs(byte[] classFile) throws IOException {
+        DataInputStream in = new DataInputStream(new ByteArrayInputStream(classFile));
+        if (in.readInt() != 0xCAFEBABE) {
+            throw new IOException("not a class file");
+        }
+        in.readUnsignedShort();
+        in.readUnsignedShort();
+        ConstantPool pool = constantPool(in);
+        List<String> fields = new ArrayList<>();
+        for (int i = 1; i < pool.tags().length; i++) {
+            if (pool.tags()[i] == FIELDREF) {
+                String owner = pool.utf8()[pool.first()[pool.first()[i]]];
+                String name = pool.utf8()[pool.first()[pool.second()[i]]];
+                fields.add(owner + "." + name);
+            }
+        }
+        return fields;
+    }
+
+    /**
      * The methods of a class file: every method's name, and each one whose code has an {@code invokedynamic}, by its
      * name and descriptor.
      *
@@ -190,17 +243,25 @@ public final class ClassFiles {
         return entry.equals(name + ".class") || entry.startsWith(name + "$") && entry.endsWith(".class");
     }
 
-    // Reads the constant pool, and returns its UTF-8 entries by index; the others are skipped.
-    private static String[] constantPool(DataInputStream in) throws IOException {
+    // Reads the constant pool: by index, its UTF-8 entries, and the indexes a class, a field reference or a name and
+    // type holds; the others are skipped.
+    private static ConstantPool constantPool(DataInputStream in) throws IOException {
         int count = in.readUnsignedShort();
-        String[] utf8 = new String[count];
+        ConstantPool pool = new ConstantPool(new int[count], new String[count], new int[count], new int[count]);
+        String[] utf8 = pool.utf8();
         for (int i = 1; i < count; i++) {
             int tag = in.readUnsignedByte();
+            pool.tags()[i] = tag;
             switch (tag) {
                 case 1 -> utf8[i] = in.readUTF();
-                case 7, 8, 16, 19, 20 -> in.skipNBytes(2);
+                case 7 -> pool.first()[i] = in.readUnsignedShort();
+                case FIELDREF, 12 -> {
+                    pool.first()[i] = in.readUnsignedShort();
+                    pool.second()[i] = in.readUnsignedShort();
+                }
+                case 8, 16, 19, 20 -> in.skipNBytes(2);
                 case 15 -> in.skipNBytes(3);
-                case 3, 4, 9, 10, 11, 12, 17, 18 -> in.skipNBytes(4);
+                case 3, 4, 10, 11, 17, 18 -> in.skipNBytes(4);
                 case 5, 6 -> {
                     in.skipNBytes(8);
                     // A long or a double takes two entries.
@@ -209,7 +270,13 @@ public final class ClassFiles {
                 default -> throw new IOException("unknown constant pool tag " + tag + " at entry " + i);
             }
         }
-        return utf8;
+        return pool;
+    }
+
+    // A constant pool, by index: each entry's tag, a UTF-8 entry's text, and the indexes a class holds (its name's, in
+    // first), a field reference holds (its class's and its name and type's) or a name and type holds (its name's and
+    // its descriptor's).
+    private record ConstantPool(int[] tags, String[] utf8, int[] first, int[] second) {
     }
 
     private static void skipAttributes(DataInputStream in) throws IOException {
