@@ -28,13 +28,13 @@ final class Faults {
         SLOT_RELEASED,
         /** A rule set lending the sessions a run took or made as its copy, before it has. */
         COPY_LENT,
-        /** {@link RuleSet#retire()} setting aside an idle copy it has taken, before it has. */
+        /** {@link CopyPool#retire()} setting aside an idle copy it has taken, before it has. */
         COPY_TAKEN,
-        /** {@link RuleSet#retire()} marking the rule set retired, before it has. */
+        /** {@link CopyPool#retire()} marking the rule set retired, before it has. */
         RETIRE_MARKED,
         /** A rule set closing a queue of copies, retired or idle, before it has closed any. */
         COPIES_CLOSING,
-        /** {@link RuleSet#retire()}, once it has closed the copies it took, before it counts that done. */
+        /** {@link CopyPool#retire()}, once it has closed the copies it took, before it counts that done. */
         RETIRED_COPIES_CLOSED,
         /** {@code load()} making the copies of the rules it makes at load, before it has made any. */
         COPIES_PREPARED,

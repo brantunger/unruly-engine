@@ -216,7 +216,7 @@ and a missing one fails the build naming the version. The build passes `unruly.t
 PMD runs on the main sources of every project, and never on tests ([why](#-what-build-runs)). A finding is fixed,
 unless the code is right and the rule is wrong for it; then the suppression is as narrow as PMD allows, and a comment
 on the line above says why. Every existing suppression has that shape. For example,
-`core/src/main/java/io/github/brantunger/unruly/core/RuleSet.java`:
+`core/src/main/java/io/github/brantunger/unruly/core/CopyPool.java`:
 
 ```java
 /** Whether every language of these rules returned {@link Session#none()}, so a copy holds nothing of its own. */

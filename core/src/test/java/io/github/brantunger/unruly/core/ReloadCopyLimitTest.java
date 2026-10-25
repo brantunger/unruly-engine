@@ -80,7 +80,7 @@ class ReloadCopyLimitTest {
     }
 
     /** Waits until {@code count} runs are waiting for a copy of {@code rules}. */
-    private static void awaitWaiting(RuleSet rules, int count) throws InterruptedException {
+    private static void awaitWaiting(CopyPool rules, int count) throws InterruptedException {
         long giveUp = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (rules.waiters() != count) {
             assertTrue(System.nanoTime() < giveUp, rules.waiters() + " of the " + count + " runs started waiting");
@@ -143,7 +143,7 @@ class ReloadCopyLimitTest {
         // A window far longer than the test, so a run that waits never gives up and makes an extra copy.
         ((AbstractRulesEngine<Map<String, Object>>) engine).stallWindow(TimeUnit.MINUTES.toMillis(5));
         engine.load(List.of(rule("old", "gate.hold", "put rules 'old'")));
-        RuleSet oldRules = ((AbstractRulesEngine<Map<String, Object>>) engine).currentRules();
+        CopyPool oldRules = ((AbstractRulesEngine<Map<String, Object>>) engine).currentRules();
         Sessions old = language.compilers.get(language.compilers.size() - 1);
         List<Throwable> failures = new CopyOnWriteArrayList<>();
         // A gate for each run that holds a copy, as a gate tells only when the first run has reached it.

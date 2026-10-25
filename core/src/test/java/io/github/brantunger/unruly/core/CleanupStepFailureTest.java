@@ -155,12 +155,12 @@ class CleanupStepFailureTest {
     private static int freePermits(AbstractRulesEngine<Object> engine) throws InterruptedException {
         AtomicInteger free = new AtomicInteger(-1);
         Thread checker = new Thread(() -> {
-            RuleSet rules = engine.currentRules();
+            CopyPool rules = engine.currentRules();
             try {
-                RuleSet.Copy first = rules.borrow(PASSED);
-                RuleSet.Copy second = rules.borrow(PASSED);
-                free.set((first.held() == RuleSet.Held.PERMIT ? 1 : 0)
-                        + (second.held() == RuleSet.Held.PERMIT ? 1 : 0));
+                CopyPool.Copy first = rules.borrow(PASSED);
+                CopyPool.Copy second = rules.borrow(PASSED);
+                free.set((first.held() == CopyPool.Held.PERMIT ? 1 : 0)
+                        + (second.held() == CopyPool.Held.PERMIT ? 1 : 0));
                 Failures.throwIfPresent(rules.release(second));
                 Failures.throwIfPresent(rules.release(first));
             } catch (TimeoutException e) {
@@ -365,7 +365,7 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         language.failSessions = true;
         CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // A virtual thread without a limit takes the only build slot to make its copy, fails to make it, and the
         // first give-back of the slot fails.
@@ -381,7 +381,7 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         language.failSessions = true;
         CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 
         Throwable failure = failVirtualBorrow(rules, Faults.Step.SLOT_RELEASED);
@@ -392,7 +392,7 @@ class CleanupStepFailureTest {
 
     // Borrows on a virtual thread, which takes a build slot, with the step failing on that thread; returns what the
     // borrow threw.
-    private static Throwable failVirtualBorrow(RuleSet rules, Faults.Step step) throws InterruptedException {
+    private static Throwable failVirtualBorrow(CopyPool rules, Faults.Step step) throws InterruptedException {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread run = Thread.ofVirtual().unstarted(() -> TestLogs.logsOf(() -> {
             try {
@@ -434,7 +434,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 retire: a retire() that fails before it marks the rule set retired retires it when called again")
     void aRetireThatFailsBeforeMarkingCanBeCalledAgain() {
         Counting language = new Counting();
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         StackOverflowError failure = new StackOverflowError("marking the rule set retired");
@@ -727,7 +727,7 @@ class CleanupStepFailureTest {
             + " took, so the compilers close after them")
     void aRetireThatFailedPartWayKeepsOthersOutWhileItClosesItsCopies() {
         AtomicInteger compilersClosed = new AtomicInteger();
-        AtomicReference<RuleSet> rules = new AtomicReference<>();
+        AtomicReference<CopyPool> rules = new AtomicReference<>();
         AtomicInteger closedMeanwhile = new AtomicInteger(-1);
         ExpressionCompiler compiler = new ExpressionCompiler() {
             @Override
@@ -773,7 +773,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 retire: a retire() that fails once it has marked the rule set retired is finished by the next")
     void aRetireThatFailsAfterMarkingIsFinishedByTheNext() {
         Counting language = new Counting();
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("counting the copies closed"));
@@ -866,7 +866,7 @@ class CleanupStepFailureTest {
         ExecutorService holder = Executors.newSingleThreadExecutor();
         try {
             // The engine's only permit, held on a thread of its own, so the run waits for it until its deadline.
-            RuleSet.Copy held = holder.submit(() -> engine.currentRules().borrow(Deadline.NONE)).get();
+            CopyPool.Copy held = holder.submit(() -> engine.currentRules().borrow(Deadline.NONE)).get();
             Faults.inject(Faults.Step.INTERRUPT_KEPT, 1, new StackOverflowError("setting the interrupt status"));
 
             TestLogs.logsOf(() -> assertThrows(StackOverflowError.class,
@@ -884,7 +884,7 @@ class CleanupStepFailureTest {
     @DisplayName("#839 sessions: a retire() that fails taking the idle copies closes every copy it had taken")
     void aRetireThatFailsTakingItsCopiesClosesThoseItTook() {
         Counting language = new Counting();
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withLimit(CopyLimit.of(3)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(3);
         // The second copy taken fails to be set aside, with the first set aside and the third still idle.
@@ -904,7 +904,7 @@ class CleanupStepFailureTest {
             + " later call has closed them")
     void aRetireThatFailsClosingItsCopiesLeavesTheCompilersOpen() {
         Counting language = new Counting();
-        RuleSet rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         // Closing the copies it took fails both times it's tried.

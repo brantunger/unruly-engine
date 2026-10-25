@@ -43,7 +43,7 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     static final String LOGGER_NAME = "org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer";
 
     // Set while a rule's expression compiles or runs on this thread, and removed when the outermost one ends, so a
-    // pooled thread keeps nothing. A plain ThreadLocal, like RuleSet's count of runs on a thread.
+    // pooled thread keeps nothing. A plain ThreadLocal, like CopyPool's count of runs on a thread.
     private static final ThreadLocal<Boolean> RUNNING = new ThreadLocal<>();
     // Held because java.util.logging keeps a logger only weakly: once collected, the logger MVEL gets next would
     // be a new one, without the filter.

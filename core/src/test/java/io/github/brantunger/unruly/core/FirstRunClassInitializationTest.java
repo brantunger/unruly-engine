@@ -145,15 +145,15 @@ class FirstRunClassInitializationTest {
     private static final String RUN_CLASSES = INITIALIZING + RunClasses.class.getName().replace('.', '/') + "'";
 
     // The engine's, so the test fails if building an engine stops initializing one, rather than passing because no
-    // first load or run reaches it any more. Six are named by their names: RuleSet's Source and Warning are private,
-    // NoSession isn't public, and the holders of EngineCompileContext's logger and of RunClasses' prepared languages,
-    // and CopyPermits' count of what was given back, are named so the test compiles without them.
+    // first load or run reaches it any more. Four are named by their names: NoSession isn't public, and the holders
+    // of EngineCompileContext's logger and of RunClasses' prepared languages, and CopyPermits' count of what was given
+    // back, are named so the test compiles without them.
     private static final List<String> ENGINE_CLASSES = Stream.concat(Stream.of(AbstractRulesEngine.class,
                     LanguageRegistry.class, ImportResolver.class, LanguageNames.Problem.class, FactNames.Problem.class,
                     RuleListCompiler.Mode.class, LoggedFailures.class, Faults.Step.class, Failures.class,
-                    ExpressionKind.class, InvalidExpressionException.Issue.Severity.class, RuleSet.class,
+                    ExpressionKind.class, InvalidExpressionException.Issue.Severity.class, CopyPool.class,
                     OneStepStack.class, FlightRecorderEvents.class, RunEvent.class, RuleEvent.class, Cancellation.class,
-                    Cancellation.Reason.class, Deadline.class, RuleSet.Kind.class, RuleSet.Held.class, Closing.class,
+                    Cancellation.Reason.class, Deadline.class, CopyPool.Kind.class, CopyPool.Held.class, Closing.class,
                     Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                     ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                     CancelTimer.class, RuleExecutionException.class, ReportedFailure.class,
@@ -166,8 +166,7 @@ class FirstRunClassInitializationTest {
                     Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
                     FatalErrors.class)
                     .map(Class::getName),
-            Stream.of(RuleSet.class.getName() + "$Source", RuleSet.class.getName() + "$Warning",
-                    "io.github.brantunger.unruly.api.language.NoSession",
+            Stream.of("io.github.brantunger.unruly.api.language.NoSession",
                     EngineCompileContext.class.getName() + "$Warnings", RunClasses.class.getName() + "$Prepared",
                     CopyPermits.class.getName() + "$Returned"))
             .toList();

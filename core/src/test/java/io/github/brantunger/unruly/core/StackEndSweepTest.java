@@ -205,7 +205,7 @@ class StackEndSweepTest {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         int[] outcomes = new int[3];
         try {
-            RuleSet.Copy holding = holder.submit(() -> held.engine().currentRules().borrow(Deadline.NONE)).get();
+            CopyPool.Copy holding = holder.submit(() -> held.engine().currentRules().borrow(Deadline.NONE)).get();
             Thread sweep = new Thread(null, () -> {
                 try {
                     TestLogs.logsOf(() -> sweep(call, held.engine(), checker, outcomes));
@@ -328,7 +328,7 @@ class StackEndSweepTest {
     }
 
     private static boolean runCountedOnThread(AbstractRulesEngine<Object> held) {
-        RuleSet rules = held.currentRules();
+        CopyPool rules = held.currentRules();
         try {
             rules.release(rules.borrow(PASSED));
             return true;
@@ -355,12 +355,12 @@ class StackEndSweepTest {
     private static int freePermits(AbstractRulesEngine<Object> engine, ExecutorService checker) {
         try {
             return checker.submit(() -> {
-                RuleSet rules = engine.currentRules();
+                CopyPool rules = engine.currentRules();
                 try {
-                    RuleSet.Copy first = rules.borrow(PASSED);
-                    RuleSet.Copy second = rules.borrow(PASSED);
-                    int permits = (first.held() == RuleSet.Held.PERMIT ? 1 : 0)
-                            + (second.held() == RuleSet.Held.PERMIT ? 1 : 0);
+                    CopyPool.Copy first = rules.borrow(PASSED);
+                    CopyPool.Copy second = rules.borrow(PASSED);
+                    int permits = (first.held() == CopyPool.Held.PERMIT ? 1 : 0)
+                            + (second.held() == CopyPool.Held.PERMIT ? 1 : 0);
                     Failures.throwIfPresent(rules.release(second));
                     Failures.throwIfPresent(rules.release(first));
                     return permits;

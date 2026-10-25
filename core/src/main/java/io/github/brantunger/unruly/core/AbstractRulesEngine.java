@@ -46,13 +46,13 @@ import io.github.brantunger.unruly.internal.Text;
  * {@link RuleSetLifecycle} swaps in and retires, borrowing a compiled copy for each run, evaluating conditions and
  * running actions, cancellation and failure reporting, and listener callbacks and the reporting of rule and run
  * failures to listeners, which {@link ListenerNotifier} does. A subclass supplies the match policy through
- * {@link #untilFirst()} and {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)}, which
+ * {@link #untilFirst()} and {@link #fire(Matches, CopyPool, CopyPool.Copy, RunFacts)}, which
  * {@link #runRules(FactStore, Duration, Set)} calls, and names it in {@link #matchPolicy()}. The two hooks are one
  * policy, as {@code fire} describes.
  *
  * <p>
  * The engine changes no global setting of any language: a session is used by one run at a time, so a language keeps
- * whatever changes while its expressions run there; see {@link RuleSet}.
+ * whatever changes while its expressions run there; see {@link CopyPool}.
  * </p>
  *
  * @param <O> The output object to instantiate
@@ -103,7 +103,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Creates an engine with the builder's settings: takes or finds its languages and picks the default one, and
      * resolves its imports with the building thread's context class loader. A limit on copies means a run that finds
-     * all of them in use waits for one; see {@link RuleSet}.
+     * all of them in use waits for one; see {@link CopyPool}.
      *
      * @param outputFactory The {@link Supplier} to use to instantiate the output object with
      * @param configuration The builder's settings
@@ -240,7 +240,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     // null, not an empty list: an empty rule list is loaded, and null means none is.
     @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     List<CompiledRule> getCompiledRules() {
-        RuleSet rules = ruleSets.current();
+        CopyPool rules = ruleSets.current();
         return rules != null ? rules.loaded().rules() : null;
     }
 
@@ -256,7 +256,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
          * @param facts The run's fact values, already checked, and the views built over them
          * @return What the run did
          */
-        RunResult<O> run(RuleSet rules, RuleSet.Copy copy, RunFacts facts);
+        RunResult<O> run(CopyPool rules, CopyPool.Copy copy, RunFacts facts);
     }
 
     /**
@@ -280,7 +280,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Fires the rules the way this engine fires them: evaluates the conditions in priority order, stopping at the
      * first match if {@link #untilFirst()} says to, and returns no output if no rule matched; otherwise
-     * {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)} fires the matched rules.
+     * {@link #fire(Matches, CopyPool, CopyPool.Copy, RunFacts)} fires the matched rules.
      *
      * @param facts   The facts the run was given
      * @param timeout How long the run may take, or {@code null} if it has no deadline
@@ -301,7 +301,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     /**
      * Returns whether a run stops evaluating conditions at the first match. By default it doesn't: every condition
      * is evaluated, except those of rules the run skips. It is one policy with
-     * {@link #fire(Matches, RuleSet, RuleSet.Copy, RunFacts)}, as that describes.
+     * {@link #fire(Matches, CopyPool, CopyPool.Copy, RunFacts)}, as that describes.
      *
      * @return {@code true} to stop at the first match
      */
@@ -330,7 +330,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *                                {@link Failures#fatalError}) from the output factory is rethrown unchanged, as
      *                                {@link #createOutput(RunFacts)} describes.
      */
-    RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
+    RunResult<O> fire(Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
         // Run the action of the selected rule on given data and return the output.
         CompiledRule resolvedRule = matches.matched().get(0);
         O output = this.executeRule(resolvedRule, copy, createOutput(facts), facts);
@@ -376,7 +376,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     RunResult<O> runInScope(FactStore<?> facts, Duration timeout, Set<String> tags, RunBody<O> body) {
         Objects.requireNonNull(facts, "facts must not be null");
         // Misuse, before the run is numbered or recorded: it reaches no listener and no recording either.
-        RuleSet rules = currentRules();
+        CopyPool rules = currentRules();
         // A first run of a language needs more room than run() checked for, as its rules' first calls may make the JDK
         // generate classes: checked before the run counts, borrows or sets anything, as there (see StackHeadroom). A
         // run that finds the rules it read closed, and borrows from a list a reload put in their place, isn't checked
@@ -406,7 +406,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // deadline fails once it has stored it, or counting the run fails, as an OutOfMemoryError can make it.
         Deadline enclosingDeadline = Cancellation.current();
         boolean counted = false;
-        RuleSet.Copy copy = null;
+        CopyPool.Copy copy = null;
         // What ending the run throws is kept in this, made before the run holds anything, so that ending a run that
         // has run out of memory allocates nothing until what it threw is combined (#855).
         Failures.Teardown teardown = new Failures.Teardown(4, Faults.Step.RUN_ENDING_COMBINED);
@@ -443,7 +443,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                 + " already be closed: that invariant has broken. Please report this stack trace at"
                                 + " https://github.com/brantunger/unruly-engine/issues");
                     }
-                    RuleSet again = currentRules();
+                    CopyPool again = currentRules();
                     if (!firstRun && again.loaded().languagesRan().needsRoom()) {
                         firstRun = true;
                         tally.recordLanguages();
@@ -544,7 +544,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
-    private static Throwable endRun(RuleSet rules, RuleSet.Copy copy, RunFacts facts, Failures.Teardown teardown) {
+    private static Throwable endRun(CopyPool rules, CopyPool.Copy copy, RunFacts facts, Failures.Teardown teardown) {
         // The four steps, each adding what it threw: ending the scope, taking its values, closing them and giving
         // back the copy.
         Throwable endFailed = null;
@@ -631,7 +631,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param rejected What the engine's checks of the facts threw before the run borrowed a copy, or {@code null} if
      *                 they passed
      */
-    private RunResult<O> runWithCopy(RuleSet rules, RuleSet.Copy copy, RunFacts facts, RuntimeException rejected,
+    private RunResult<O> runWithCopy(CopyPool rules, CopyPool.Copy copy, RunFacts facts, RuntimeException rejected,
                                      RunBody<O> body) {
         EngineRunContext run = newRun(rules, facts);
         // Read before the scope is opened, and the scope opened inside the try, so it's closed even if opening it
@@ -738,7 +738,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     }
 
     /** Creates the context one run is reported to listeners with. */
-    private EngineRunContext newRun(RuleSet rules, RunFacts facts) {
+    private EngineRunContext newRun(CopyPool rules, RunFacts facts) {
         return new EngineRunContext(facts.runId(), facts.parent(), matchPolicy(), rules.loaded().checksum(),
                 facts.forListeners(), facts.selection().tags(), facts.selection().startedAt());
     }
@@ -773,7 +773,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     @Override
     public RuleSetInfo rules() {
-        RuleSet rules = ruleSets.currentIfOpen();
+        CopyPool rules = ruleSets.currentIfOpen();
         if (rules == null) {
             return RuleSetInfo.of(List.of(), Checksums.ofRules(List.of()), null);
         }
@@ -788,7 +788,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The rule set
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed
      */
-    RuleSet currentRules() {
+    CopyPool currentRules() {
         return ruleSets.currentOrThrow("load() must be called before run()");
     }
 
@@ -817,12 +817,12 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @param rules The rule set to borrow from
      * @param facts The run's facts, and what the run carries with them
-     * @return The copy, to give back with {@link RuleSet#release(RuleSet.Copy)}
+     * @return The copy, to give back with {@link CopyPool#release(CopyPool.Copy)}
      * @throws RuleExecutionException if the thread is interrupted while it waits for a copy, or for a build slot to
      *                                make one, or if the run's deadline passes while it waits for a copy under a
      *                                limit
      */
-    private RuleSet.Copy borrow(RuleSet rules, RunFacts facts) {
+    private CopyPool.Copy borrow(CopyPool rules, RunFacts facts) {
         try {
             return rules.borrow(facts.deadline());
         } catch (InterruptedException | TimeoutException e) {
@@ -833,9 +833,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Reports a run that stopped waiting for a copy, as {@link #stoppedWaiting} does, and then leaves the rule set it
-     * waited on, which {@link RuleSet#borrow(Deadline)} left the run counted on for this. The caller always throws what
-     * this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its last
-     * user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
+     * waited on, which {@link CopyPool#borrow(Deadline)} left the run counted on for this. The caller always throws
+     * what this returns, or what it throws. Leaving closes the rule set only if it was retired and this run was its
+     * last user; a fatal {@link Error} from that closing is thrown in place of the stop, carrying it as a suppressed
      * exception, unless a listener threw a fatal error while the stop was reported, which came first and is thrown
      * instead, carrying the one from closing. An interrupted run sets its thread's interrupt status again before it
      * leaves, and {@code run()} again when it returns (see {@link #keepInterruptOfStop}).
@@ -846,7 +846,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      */
     // Any Throwable: the run must leave however reporting the stop ends, as a finally would, and a failure that isn't
     // fatal is kept under a fatal Error from closing. Everything that allocates, the message too, is inside the try.
-    private RuleExecutionException stoppedThenLeft(RuleSet rules, RunFacts facts, Exception stop) {
+    private RuleExecutionException stoppedThenLeft(CopyPool rules, RunFacts facts, Exception stop) {
         RuleExecutionException failure;
         try {
             Deadline deadline = facts.deadline();
@@ -889,7 +889,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param facts The run's facts, and what the run carries with them
      * @throws RuleExecutionException if the thread is interrupted, or the run's deadline has passed
      */
-    private void stopIfCancelledWhileReading(RuleSet rules, RunFacts facts) {
+    private void stopIfCancelledWhileReading(CopyPool rules, RunFacts facts) {
         Deadline deadline = facts.deadline();
         String reading = " while reading the engine's rules again: the rules this run read had been closed by a"
                 + " reload or by close()";
@@ -916,7 +916,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @param passed The deadline the run passed, or {@code null} if it was interrupted instead
      * @return The exception to throw
      */
-    private RuleExecutionException stoppedWaiting(RuleSet rules, RunFacts facts, String msg, Exception cause,
+    private RuleExecutionException stoppedWaiting(CopyPool rules, RunFacts facts, String msg, Exception cause,
                                                   Deadline passed) {
         RunTally tally = facts.tally();
         // Recorded before any listener is told, as a fatal error from beforeRun would keep the stop from reaching
@@ -1047,7 +1047,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Closes the engine. The rule list is closed once no run is using it: a run holding a copy finishes, and so does
-     * one waiting for a copy, because {@link RuleSet#borrow(Deadline)} counts the run before it waits, and a rule list
+     * one waiting for a copy, because {@link CopyPool#borrow(Deadline)} counts the run before it waits, and a rule list
      * with a run counted on it can't close. Their sessions are closed as each one returns, unless a run still waiting
      * for a copy of the same rules is there to take them: then the last run to leave closes the copies it kept. The
      * languages' compilers are closed after them, once this method has closed the idle copies too. Afterwards,
@@ -1178,7 +1178,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return The matched rules and every rule's outcome
      * @throws RuleExecutionException if a condition fails, or the run was cancelled before one
      */
-    Matches match(List<CompiledRule> ruleList, RuleSet.Copy copy, RunFacts facts, boolean untilFirst) {
+    Matches match(List<CompiledRule> ruleList, CopyPool.Copy copy, RunFacts facts, boolean untilFirst) {
         List<CompiledRule> matched = new ArrayList<>();
         List<RuleEvaluation> evaluations = new ArrayList<>(ruleList.size());
         for (CompiledRule rule : ruleList) {
@@ -1194,7 +1194,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *
      * @return The rule's outcome, with the detail its language explained the condition with, if it did
      */
-    private RuleEvaluation evaluation(CompiledRule rule, RuleSet.Copy copy, RunFacts facts,
+    private RuleEvaluation evaluation(CompiledRule rule, CopyPool.Copy copy, RunFacts facts,
                                       List<CompiledRule> matched, boolean untilFirst) {
         // Before the first-match check, so a skipped rule reads as skipped wherever it is.
         if (facts.selection().skips(rule.rule())) {
@@ -1220,7 +1220,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      * @return What the language returned: a {@link Boolean} value, and the detail it explained it with, if any
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    ConditionResult matches(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    ConditionResult matches(CompiledRule rule, CopyPool.Copy copy, RunFacts facts) {
         checkNotCancelled(rule, facts.deadline());
         return parseCondition(rule, copy, facts);
     }
@@ -1382,7 +1382,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
      *         inside a {@code def} function, where the assignment creates a variable local to the function.
      * @throws RuleExecutionException if the run was cancelled before this rule
      */
-    O executeRule(CompiledRule rule, RuleSet.Copy copy, O outputObject, RunFacts facts) {
+    O executeRule(CompiledRule rule, CopyPool.Copy copy, O outputObject, RunFacts facts) {
         checkNotCancelled(rule, facts.deadline());
         return parseAction(rule, copy, outputObject, facts);
     }
@@ -1472,7 +1472,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         Failures.throwIfPresent(Failures.fatalError(e));
     }
 
-    private ConditionResult parseCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    private ConditionResult parseCondition(CompiledRule rule, CopyPool.Copy copy, RunFacts facts) {
         RuleEvent event = FlightRecorderEvents.startRule();
         String outcome = RuleEvent.FAILED;
         facts.tally().countEvaluated();
@@ -1493,7 +1493,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         }
     }
 
-    private ConditionResult evaluateCondition(CompiledRule rule, RuleSet.Copy copy, RunFacts facts) {
+    private ConditionResult evaluateCondition(CompiledRule rule, CopyPool.Copy copy, RunFacts facts) {
         // The run's evaluation context has its own read-only view, whose messages are about conditions, so a
         // listener that writes to the facts isn't told about conditions.
         Map<String, Object> listenerFacts = facts.forListeners();
@@ -1533,7 +1533,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return condition;
     }
 
-    private O parseAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
+    private O parseAction(CompiledRule rule, CopyPool.Copy copy, O outputResult, RunFacts facts) {
         RuleEvent event = FlightRecorderEvents.startRule();
         String outcome = RuleEvent.FAILED;
         try {
@@ -1577,7 +1577,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         return ReportedFailure.isStop(notifier.recordedFatalFailure()) ? RuleEvent.STOPPED : RuleEvent.FAILED;
     }
 
-    private O executeAction(CompiledRule rule, RuleSet.Copy copy, O outputResult, RunFacts facts) {
+    private O executeAction(CompiledRule rule, CopyPool.Copy copy, O outputResult, RunFacts facts) {
         notifier.notifyBefore(facts.runs(), rule, "beforeExecute",
                 listener -> listener.beforeExecute(rule.rule(), outputResult));
 

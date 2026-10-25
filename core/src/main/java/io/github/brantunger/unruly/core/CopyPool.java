@@ -7,7 +7,6 @@ import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,9 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
- * One loaded rule list: the rules as {@code load()} compiled them and the compilers of the languages they use, in its
- * {@link LoadedRules}, and the copies of the rules that runs use. Keeping the compilers here lets a reload swap in the
- * rules and their fact-name checks with one write.
+ * The copy pool of one loaded rule list, and what a reload swaps in: the rules as {@code load()} compiled them and the
+ * compilers of the languages they use, in its {@link LoadedRules}, and the copies of the rules that runs use. Keeping
+ * the compilers here lets a reload swap in the rules and their fact-name checks with one write.
  *
  * <p>
  * Every run shares the compiled rules. What a language changes while its expressions run lives in a {@link Session},
@@ -91,7 +90,7 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  * the others being closed, nor the compilers after them: the first is returned for the caller to throw once they have.
  * </p>
  */
-final class RuleSet {
+final class CopyPool {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractRulesEngine.LOGGER_NAME);
     // The number of users once the rule set is closed.
@@ -117,8 +116,8 @@ final class RuleSet {
     // class is being initialized, which deadlocks when several threads load this class at once.
     private static final ThreadLocal<int[]> RUNS_ON_THREAD = new ThreadLocal<>();
     // Claims retire() for one caller at a time: see retiring.
-    private static final AtomicIntegerFieldUpdater<RuleSet> RETIRING =
-            AtomicIntegerFieldUpdater.newUpdater(RuleSet.class, "retiring");
+    private static final AtomicIntegerFieldUpdater<CopyPool> RETIRING =
+            AtomicIntegerFieldUpdater.newUpdater(CopyPool.class, "retiring");
 
     // The rules and what their runs check their facts against, which every copy shares.
     private final LoadedRules loadedRules;
@@ -164,7 +163,7 @@ final class RuleSet {
     // The next rule set in the engine's list of those still to retire, while this one is in it, and the load() or
     // close() that has claimed it for retiring, if one has: that call's number, or 0. The lock of the engine's
     // RuleSetLifecycle guards both.
-    RuleSet nextUnretired;
+    CopyPool nextUnretired;
     long retiringClaim;
 
     /** What {@link #release(Copy)} does with a copy when the run that borrowed it gives it back. */
@@ -188,20 +187,6 @@ final class RuleSet {
         PERMIT,
         /** A build slot, which a run holds while it runs a new copy for the first time. */
         SLOT
-    }
-
-    // Where a kept copy comes from when the run hasn't taken one already. Not private, so RunClasses can name it.
-    enum Source {
-        // An idle copy if there is one, or else a new one.
-        IDLE_OR_NEW,
-        // A new one: the run has just looked for an idle copy and found none.
-        NEW
-    }
-
-    // Whether lending a copy warns that the run made it after waiting for a kept one. Not private, as Source isn't.
-    enum Warning {
-        NONE,
-        OVERFLOW
     }
 
     /**
@@ -247,15 +232,6 @@ final class RuleSet {
         Held held() {
             return loan.held;
         }
-
-        /**
-         * Returns whether the copy is kept for a later run.
-         *
-         * @return {@code true} if it goes back into the idle stack
-         */
-        boolean kept() {
-            return kind == Kind.KEPT;
-        }
     }
 
     /**
@@ -291,7 +267,7 @@ final class RuleSet {
      * @param stallWindowMillis How long a run waits without one copy being given back before it makes an extra one
      * @param idle              The queue the idle copies wait in, which runs share, so it must be thread-safe
      */
-    RuleSet(LoadedRules loaded, CopyLimit limit, CopyPermits permits, long stallWindowMillis,
+    CopyPool(LoadedRules loaded, CopyLimit limit, CopyPermits permits, long stallWindowMillis,
             Queue<Map<String, Session>> idle) {
         this.loadedRules = loaded;
         this.copyLimit = limit;
@@ -515,7 +491,7 @@ final class RuleSet {
     }
 
     /**
-     * Gives back a copy taken with {@link #borrow(Instant)}. A kept copy is kept for a later run, unless the rule set
+     * Gives back a copy taken with {@link #borrow(Deadline)}. A kept copy is kept for a later run, unless the rule set
      * is retired and already keeps an idle copy for each run of it waiting for one, up to the limit, or the idle stack
      * can't take it; any other copy's sessions are closed. The last copy given back to a retired rule set closes the
      * copies still idle, and its compilers too, unless {@link #retire()} is still closing the copies that were idle
@@ -759,13 +735,13 @@ final class RuleSet {
             // A thread pool's size bounds the copies its runs make, and virtual threads have nothing but the build
             // slots. A nested run never waits for one: its own thread may hold the slot it would wait for.
             return copyLimit.limits() || !Thread.currentThread().isVirtual() || nested
-                    ? keptCopy(loan, Source.IDLE_OR_NEW) : slottedCopy(deadline, loan);
+                    ? keptCopy(loan, false) : slottedCopy(deadline, loan);
         }
         // A run that finds a permit free doesn't wait, so it isn't counted as waiting. The permit is recorded before
         // anything else is called, so the borrow gives it back however it fails from here on.
         if (permits.tryTake()) {
             loan.held = Held.PERMIT;
-            return keptCopy(loan, Source.IDLE_OR_NEW);
+            return keptCopy(loan, false);
         }
         // Right after a reload, the permits may all be held by runs on the rules it replaced, before any run of these
         // rules has learned whether they need copies at all. An extra copy can learn it too, and then nothing
@@ -798,7 +774,7 @@ final class RuleSet {
             }
         }
         if (loan.held == Held.PERMIT) {
-            return keptCopy(loan, Source.IDLE_OR_NEW);
+            return keptCopy(loan, false);
         }
         // Stalled: an idle copy is lent, holding no permit, before an extra one is made. The copy already existed, so
         // nothing overflowed. On a rule set in use it's lent as extra, and closed when it's given back: a run holding a
@@ -850,7 +826,7 @@ final class RuleSet {
                 }
             }
             if (loan.sessions == null) {
-                return keptCopy(loan, Source.NEW);
+                return keptCopy(loan, true);
             }
         }
         return copy(loan, Kind.KEPT);
@@ -860,16 +836,17 @@ final class RuleSet {
      * Takes an idle copy, or makes one, that the run keeps until it gives it back, unless the run has taken one
      * already.
      *
-     * @param loan   What the borrow holds: what the run took for this copy, given back if no copy can be made, and an
-     *               idle copy the run has already taken, if it has
-     * @param source Where the copy comes from when the run hasn't taken one
+     * @param loan    What the borrow holds: what the run took for this copy, given back if no copy can be made, and
+     *                an idle copy the run has already taken, if it has
+     * @param newOnly Whether the copy is always a new one when the run hasn't taken one: the run has just looked for
+     *                an idle copy and found none. Otherwise it's an idle copy if there is one, or else a new one.
      * @return The copy
      */
-    private Copy keptCopy(Loan loan, Source source) {
+    private Copy keptCopy(Loan loan, boolean newOnly) {
         if (loan.sessions == null) {
             boolean taken = false;
             try {
-                loan.sessions = source == Source.NEW ? newSessions() : take();
+                loan.sessions = newOnly ? newSessions() : take();
                 taken = true;
             } finally {
                 if (!taken) {
@@ -892,7 +869,7 @@ final class RuleSet {
      * @return The copy
      */
     private Copy copy(Loan loan, Kind kind) {
-        return copy(loan, kind, Warning.NONE);
+        return copy(loan, kind, false);
     }
 
     /**
@@ -903,13 +880,13 @@ final class RuleSet {
      * @return The copy
      */
     private Copy extraCopy(Loan loan) {
-        return copy(loan, Kind.EXTRA, Warning.OVERFLOW);
+        return copy(loan, Kind.EXTRA, true);
     }
 
     // Any Throwable: the sessions, and what the run took for them, must be given up however lending ends, as a finally
     // would, and a failure that isn't fatal is kept under a fatal Error from closing. Warning is inside the try for the
     // same reason. Sessions closed here are forgotten, so the failed borrow doesn't close them again.
-    private Copy copy(Loan loan, Kind kind, Warning warning) {
+    private Copy copy(Loan loan, Kind kind, boolean warnOnOverflow) {
         Faults.at(Faults.Step.COPY_LENT);
         Map<String, Session> sessions = loan.sessions;
         Copy copy;
@@ -917,7 +894,7 @@ final class RuleSet {
             if (statelessSessions(sessions)) {
                 copy = new Copy(sessions, Kind.SHARED, loan);
             } else {
-                if (warning == Warning.OVERFLOW) {
+                if (warnOnOverflow) {
                     warnAboutOverflow();
                 }
                 copy = new Copy(sessions, kind, loan);

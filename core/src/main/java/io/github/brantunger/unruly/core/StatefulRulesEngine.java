@@ -57,7 +57,7 @@ final class StatefulRulesEngine<O> extends AbstractRulesEngine<O> {
      * @throws RuleExecutionException {@inheritDoc}
      */
     @Override
-    RunResult<O> fire(Matches matches, RuleSet ruleSet, RuleSet.Copy copy, RunFacts facts) {
+    RunResult<O> fire(Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
         O outputObject = createOutput(facts);
 
         // Run the action of every rule on given data, saving state each time

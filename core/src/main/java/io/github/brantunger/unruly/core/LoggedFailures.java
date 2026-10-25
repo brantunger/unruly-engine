@@ -105,7 +105,7 @@ final class LoggedFailures {
 
     // The runs, loads and validations in progress on this thread, whatever engine they are on, and the fatal Errors and
     // the failures they logged. Removed when the outermost ends, so a pooled thread keeps nothing, and a failure
-    // logged by one run isn't taken for logged by a later one. A plain ThreadLocal, not withInitial(), like RuleSet's
+    // logged by one run isn't taken for logged by a later one. A plain ThreadLocal, not withInitial(), like CopyPool's
     // count of runs on a thread.
     private static final ThreadLocal<Runs> RUNS = new ThreadLocal<>();
 

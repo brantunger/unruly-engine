@@ -87,7 +87,7 @@ final class DeepFirstErrorLogScenario {
          * factNameRejection).
          */
         NAME_CHECK_FAILS,
-        /** The language returns no session for the run's copy, logged before the run fails (RuleSet's newSession). */
+        /** The language returns no session for the run's copy, logged before the run fails (CopyPool's newSession). */
         NULL_SESSION,
         /** A listener's {@code beforeRun} throws, logged at WARN as the run goes on (logListenerException). */
         LISTENER_THROWS,
@@ -114,7 +114,7 @@ final class DeepFirstErrorLogScenario {
         SESSION_CLOSE_FAILS,
         /**
          * Another thread holds the one copy the engine allows past its stall window, so the run makes an extra copy,
-         * logged at WARN (RuleSet's warnAboutOverflow).
+         * logged at WARN (CopyPool's warnAboutOverflow).
          */
         EXTRA_COPY
     }

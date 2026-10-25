@@ -28,22 +28,22 @@ final class RuleSetLifecycle {
     private final Logger log;
     // Compiles the rule lists load() is given, with the engine's languages, imports and options.
     private final RuleListCompiler compiler;
-    // Volatile so a load() call on one thread is seen by run() on others. The rule set holds the rules and the
-    // compilers of the languages they use, and is fully built before it is assigned, so one volatile write swaps in
-    // both. Assigned while holding lifecycle, so each rule set replaced is retired once, and none is assigned after
-    // close().
-    private volatile RuleSet ruleSet;
+    // Volatile so a load() call on one thread is seen by run() on others. The copy pool holds the rules and the
+    // compilers of the languages they use, in its LoadedRules, and is fully built before it is assigned, so one
+    // volatile write swaps in both. Assigned while holding lifecycle, so each rule set replaced is retired once, and
+    // none is assigned after close().
+    private volatile CopyPool ruleSet;
     // Set by close() while holding lifecycle, before it lets go of ruleSet, so a reader that finds no rule set and
     // then reads this sees the engine closed if close() took the rules (see currentOrThrow).
     private volatile boolean closed;
     private final Object lifecycle = new Object();
-    // The rule sets still to retire, linked through RuleSet.nextUnretired, so adding one allocates nothing: each one a
+    // The rule sets still to retire, linked through CopyPool.nextUnretired, so adding one allocates nothing: each one a
     // reload replaced, close() detached or a failed load() couldn't swap in, from before the engine lets go of it
     // until it's retired for good. A load() or close() claims the ones no other call has claimed
-    // (RuleSet.retiringClaim) and retires them; one whose retiring fails part way, as it can when it runs out of stack,
-    // stays for the next load() or close(). So none is only in a call's locals at any point, and none is retired by
-    // two calls at once. Guarded by lifecycle.
-    private RuleSet unretired;
+    // (CopyPool.retiringClaim) and retires them; one whose retiring fails part way, as it can when it runs out of
+    // stack, stays for the next load() or close(). So none is only in a call's locals at any point, and none is
+    // retired by two calls at once. Guarded by lifecycle.
+    private CopyPool unretired;
     // The number of the last load() or close() that claimed rule sets to retire, so each claims with its own. Guarded
     // by lifecycle.
     private long lastClaim;
@@ -54,7 +54,7 @@ final class RuleSetLifecycle {
     private final CopyPermits copyPermits;
     // How long a run waits without one copy being given back before it makes an extra one. Only a test changes it,
     // with stallWindow(long).
-    private long stallWindowMillis = RuleSet.STALL_WINDOW_MILLIS;
+    private long stallWindowMillis = CopyPool.STALL_WINDOW_MILLIS;
     // How many copies of the rules load() makes, before runs can see them.
     private final int copiesAtLoad;
 
@@ -81,7 +81,7 @@ final class RuleSetLifecycle {
      *
      * @return The rule set, or {@code null} if no rules are loaded or the engine is closed
      */
-    RuleSet current() {
+    CopyPool current() {
         return ruleSet;
     }
 
@@ -96,8 +96,8 @@ final class RuleSetLifecycle {
      * @return The rule set
      * @throws IllegalStateException if no rules are loaded, or the engine is closed
      */
-    RuleSet currentOrThrow(String notLoadedMessage) {
-        RuleSet rules = ruleSet;
+    CopyPool currentOrThrow(String notLoadedMessage) {
+        CopyPool rules = ruleSet;
         if (rules == null) {
             throw new IllegalStateException(closed ? CLOSED_MESSAGE : notLoadedMessage);
         }
@@ -112,8 +112,8 @@ final class RuleSetLifecycle {
      * @return The rule set, or {@code null} if no rules are loaded
      * @throws IllegalStateException if the engine is closed
      */
-    RuleSet currentIfOpen() {
-        RuleSet rules = ruleSet;
+    CopyPool currentIfOpen() {
+        CopyPool rules = ruleSet;
         if (rules == null && closed) {
             throw new IllegalStateException(CLOSED_MESSAGE);
         }
@@ -181,11 +181,11 @@ final class RuleSetLifecycle {
             throw LoggedFailures.loggedByLoad(first);
         }
         RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.LOAD);
-        RuleSet loaded;
+        CopyPool loaded;
         try {
             compilation.compile(ruleList);
             compilation.throwIfAnyFailed();
-            loaded = new RuleSet(compilation.loadedRules(), copyLimit, copyPermits, stallWindowMillis,
+            loaded = new CopyPool(compilation.loadedRules(), copyLimit, copyPermits, stallWindowMillis,
                     new OneStepStack<>());
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
@@ -209,7 +209,7 @@ final class RuleSetLifecycle {
             if (!closedMeanwhile) {
                 // The rules replaced join the rules still to retire before they're replaced, so they're never only
                 // in a local, and this call claims them, with any left by earlier calls that no other has claimed.
-                RuleSet replaced = ruleSet;
+                CopyPool replaced = ruleSet;
                 if (replaced != null) {
                     replaced.nextUnretired = unretired;
                     unretired = replaced;
@@ -256,7 +256,7 @@ final class RuleSetLifecycle {
     // exception thrown in its place is the engine's too, so the code around a nested load() takes its message, which
     // has a nested failure's text, for adding nothing to it (see LoggedFailures).
     @SuppressWarnings("PMD.PreserveStackTrace")
-    private void prepareCopies(RuleSet loaded) {
+    private void prepareCopies(CopyPool loaded) {
         Faults.at(Faults.Step.COPIES_PREPARED);
         try {
             loaded.prepareCopies(copiesAtLoad);
@@ -287,7 +287,7 @@ final class RuleSetLifecycle {
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next
      */
-    private void retireBefore(RuleSet loaded, Throwable failure) {
+    private void retireBefore(CopyPool loaded, Throwable failure) {
         long claim;
         synchronized (lifecycle) {
             lastClaim++;
@@ -318,7 +318,7 @@ final class RuleSetLifecycle {
     // Claims the rule sets still to retire that no other call has claimed, for the call holding the claim to retire.
     // Called holding lifecycle.
     private void claimToRetire(long claim) {
-        for (RuleSet rules = unretired; rules != null; rules = rules.nextUnretired) {
+        for (CopyPool rules = unretired; rules != null; rules = rules.nextUnretired) {
             if (rules.retiringClaim == 0) {
                 rules.retiringClaim = claim;
             }
@@ -327,7 +327,7 @@ final class RuleSetLifecycle {
 
     /**
      * Retires the rule sets still to retire that the caller claimed, the one it replaced or detached first, each even
-     * after retiring one before it threw (see {@link RuleSet#retire()}). Each stays among the rule sets still to
+     * after retiring one before it threw (see {@link CopyPool#retire()}). Each stays among the rule sets still to
      * retire until it's retired for good, and the claim on it is given up after each attempt, so one whose retiring
      * fails part way is left for the next {@code load()} or {@code close()}; the claims are given up however this
      * ends, even when calling it fails, as it can when the stack runs out, so none is claimed for good.
@@ -342,7 +342,7 @@ final class RuleSetLifecycle {
             return retireEachClaimed(claim);
         } finally {
             synchronized (lifecycle) {
-                for (RuleSet rules = unretired; rules != null; rules = rules.nextUnretired) {
+                for (CopyPool rules = unretired; rules != null; rules = rules.nextUnretired) {
                     if (rules.retiringClaim == claim) {
                         rules.retiringClaim = 0;
                     }
@@ -355,7 +355,7 @@ final class RuleSetLifecycle {
         Faults.at(Faults.Step.CLAIMED_RETIRING);
         Error fatal = null;
         Throwable failure = null;
-        for (RuleSet rules = claimed(claim); rules != null; rules = claimed(claim)) {
+        for (CopyPool rules = claimed(claim); rules != null; rules = claimed(claim)) {
             try {
                 fatal = Failures.first(fatal, rules.retire());
             } catch (Throwable t) {
@@ -376,9 +376,9 @@ final class RuleSetLifecycle {
     }
 
     // The first rule set still to retire that the claim holds, or null if it holds none any more.
-    private RuleSet claimed(long claim) {
+    private CopyPool claimed(long claim) {
         synchronized (lifecycle) {
-            RuleSet rules = unretired;
+            CopyPool rules = unretired;
             while (rules != null && rules.retiringClaim != claim) {
                 rules = rules.nextUnretired;
             }
@@ -389,14 +389,14 @@ final class RuleSetLifecycle {
     // Gives up the claim on a rule set once retiring it has been tried, and takes every rule set retired for good out
     // of the rule sets still to retire.
     @SuppressWarnings("PMD.NullAssignment")
-    private void settle(RuleSet tried) {
+    private void settle(CopyPool tried) {
         synchronized (lifecycle) {
             tried.retiringClaim = 0;
             // Unlinked in place, so the list is whole, and in order, at every step, even if one fails part way.
-            RuleSet previous = null;
-            RuleSet rules = unretired;
+            CopyPool previous = null;
+            CopyPool rules = unretired;
             while (rules != null) {
-                RuleSet next = rules.nextUnretired;
+                CopyPool next = rules.nextUnretired;
                 Faults.at(Faults.Step.SETTLING);
                 if (rules.retiredForGood()) {
                     if (previous == null) {
@@ -439,7 +439,7 @@ final class RuleSetLifecycle {
                 claim = lastClaim;
                 // The rules join the rules still to retire before the engine lets go of them, as in load(), and this
                 // call claims them, with any left by earlier calls that no other has claimed.
-                RuleSet detached = ruleSet;
+                CopyPool detached = ruleSet;
                 if (detached != null) {
                     detached.nextUnretired = unretired;
                     unretired = detached;

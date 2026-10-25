@@ -206,7 +206,7 @@ class FactCheckBeforeCopyTest {
         // with a compiler of a list that was closed before the run could borrow from it. The closed list's language
         // records every name it's asked about, and the engine's own rejects 'a'.
         List<String> askedOfClosed = new CopyOnWriteArrayList<>();
-        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of("x", StubExpressionLanguage.named("x")
+        CopyPool closedRules = TestRuleSets.ruleSet(List.of(), Map.of("x", StubExpressionLanguage.named("x")
                 .checkFactName(askedOfClosed::add).newCompiler(null))).build();
         closedRules.retire();
         IllegalArgumentException rejection = new IllegalArgumentException("'a' is not allowed");
@@ -218,7 +218,7 @@ class FactCheckBeforeCopyTest {
                 .withListeners(List.of(recording)).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
-            RuleSet currentRules() {
+            CopyPool currentRules() {
                 return reads.getAndIncrement() == 0 ? closedRules : super.currentRules();
             }
 

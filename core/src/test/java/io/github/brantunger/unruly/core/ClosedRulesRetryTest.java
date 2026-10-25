@@ -52,7 +52,7 @@ class ClosedRulesRetryTest {
     private static AbstractRulesEngine<String> engineFindingClosedRules(int closedReads, AtomicInteger reads,
                                                                        Duration runTimeout,
                                                                        List<RuleListener> listeners) {
-        RuleSet closedRules = closedRules();
+        CopyPool closedRules = closedRules();
         return engineReading(closedReads, reads, runTimeout, listeners, () -> closedRules);
     }
 
@@ -60,8 +60,8 @@ class ClosedRulesRetryTest {
      * A rule set no run holds a copy of, retired: retiring closes it there and then, which is the state a run can find
      * when a reload, or a close of the engine, retired the rules it had just read.
      */
-    private static RuleSet closedRules() {
-        RuleSet closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
+    private static CopyPool closedRules() {
+        CopyPool closedRules = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closedRules.retire();
         return closedRules;
     }
@@ -71,13 +71,13 @@ class ClosedRulesRetryTest {
      * find a closed rule set find the one {@code closed} gives each time.
      */
     private static AbstractRulesEngine<String> engineReading(int closedReads, AtomicInteger reads, Duration runTimeout,
-                                                            List<RuleListener> listeners, Supplier<RuleSet> closed) {
+                                                            List<RuleListener> listeners, Supplier<CopyPool> closed) {
         EngineConfiguration<String> configuration = TestConfigurations.engineConfiguration(
                         Map.of(ToyExpressionLanguage.LANGUAGE_NAME, new ToyExpressionLanguage()))
                 .withListeners(listeners).withRunTimeout(runTimeout).build();
         AbstractRulesEngine<String> engine = new AbstractRulesEngine<>(String::new, configuration) {
             @Override
-            RuleSet currentRules() {
+            CopyPool currentRules() {
                 return reads.getAndIncrement() < closedReads ? closed.get() : super.currentRules();
             }
 
@@ -141,8 +141,8 @@ class ClosedRulesRetryTest {
     @DisplayName("a run that finds one closed rule set many times, then another, counts each set's readings apart")
     void aRunCountsEachClosedSetInARowApart() {
         AtomicInteger reads = new AtomicInteger();
-        RuleSet first = closedRules();
-        RuleSet second = closedRules();
+        CopyPool first = closedRules();
+        CopyPool second = closedRules();
         // Forty readings of each, eighty in all: more than the bound together, but fewer than it in a row, which is
         // what the failure's message says happened.
         AbstractRulesEngine<String> engine = engineReading(80, reads, null, List.of(),

@@ -329,9 +329,9 @@ final class RunClasses {
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
                 EngineCompileContext.Warnings.class, Prepared.class, Ran.class, LoggedFailures.class,
                 Faults.Step.class, Failures.class, ExpressionKind.class,
-                InvalidExpressionException.Issue.Severity.class, RuleSet.class, OneStepStack.class,
+                InvalidExpressionException.Issue.Severity.class, CopyPool.class, OneStepStack.class,
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
-                RuleSet.Kind.class, RuleSet.Held.class, RuleSet.Source.class, RuleSet.Warning.class, Closing.class,
+                CopyPool.Kind.class, CopyPool.Held.class, Closing.class,
                 Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                 ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
                 CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
@@ -352,7 +352,7 @@ final class RunClasses {
     // OutputConverter and LanguageOutputConverter as each rule's converter is made (#1127), and LoadedRules and its
     // LanguagesRan once the rules have compiled. No test catches the two compiled kinds, as no scenario's first load
     // is the first to read them. Of the run's,
-    // RunBody, RuleSet's Copy, RunFacts and RunResult are loaded when the run links the lambda it runs its rules in,
+    // RunBody, CopyPool's Copy, RunFacts and RunResult are loaded when the run links the lambda it runs its rules in,
     // after run()'s own check of the room and before the check for a language's first run, and the rest after that;
     // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
     // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
@@ -361,15 +361,15 @@ final class RunClasses {
     // closes its values, and LoggedFailures' Ring is what the first failure a run reports, or a nested run logs,
     // makes. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
     // first retire() makes to read the copies an earlier call took, are preloaded too (#1220).
-    // Initializing a class doesn't load its nested or outer classes, so RuleSet's and RuleEvaluation.Outcome's, in the
+    // Initializing a class doesn't load its nested or outer classes, so CopyPool's and RuleEvaluation.Outcome's, in the
     // list above, don't load these.
     private static List<Class<?>> loadAndRunClasses() {
         return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
                 OutputConverter.class, LanguageOutputConverter.class, LoadedRules.class, LanguagesRan.class,
-                AbstractRulesEngine.RunBody.class, RuleSet.Copy.class,
+                AbstractRulesEngine.RunBody.class, CopyPool.Copy.class,
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
-                EngineEvaluationContext.class, RuleSet.Loan.class, EngineRunContext.class, RuleListener.class,
+                EngineEvaluationContext.class, CopyPool.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, AbstractRulesEngine.Matches.class, EngineActionContext.class, Accessors.class,
                 Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class);
     }

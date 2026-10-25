@@ -191,7 +191,7 @@ class FirstRunRoomTest {
     @DisplayName("a run that reads rules a reload then closes, and borrows from the list that replaced them, records "
             + "the languages it ran for that list")
     void reloadedListRecorded() {
-        RuleSet closed = TestRuleSets.ruleSet(List.of(), Map.of()).build();
+        CopyPool closed = TestRuleSets.ruleSet(List.of(), Map.of()).build();
         closed.retire();
         AbstractRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReloadedLanguage(),
                 new AtomicReference<>(closed));
@@ -208,7 +208,7 @@ class FirstRunRoomTest {
     @DisplayName("a run that reads rules a reload then closes, which need the room too, records the languages it ran "
             + "for the list that replaced them")
     void reloadedFirstRunListRecorded() {
-        AtomicReference<RuleSet> closed = new AtomicReference<>();
+        AtomicReference<CopyPool> closed = new AtomicReference<>();
         AbstractRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReplacedLanguage(), closed);
         engine.load(List.of(rule("replaced", "yes", "done")));
         closed.set(engine.currentRules());
@@ -269,13 +269,13 @@ class FirstRunRoomTest {
     // An engine whose second reading of its rules, the first run's after the test's own, finds the closed rule list
     // held in closed, as a run finds the rules a reload replaced, and whose other readings find the rules it loaded.
     private static AbstractRulesEngine<Map<String, Object>> reloadedEngine(ExpressionLanguage language,
-                                                                          AtomicReference<RuleSet> closed) {
+                                                                          AtomicReference<CopyPool> closed) {
         AtomicInteger reads = new AtomicInteger();
         EngineConfiguration<Map<String, Object>> configuration = TestConfigurations.engineConfiguration(
                 Map.of(language.name(), language)).build();
         return new AbstractRulesEngine<>(HashMap::new, configuration) {
             @Override
-            RuleSet currentRules() {
+            CopyPool currentRules() {
                 return reads.getAndIncrement() == 1 ? closed.get() : super.currentRules();
             }
 

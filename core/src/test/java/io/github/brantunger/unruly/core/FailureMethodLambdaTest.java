@@ -37,11 +37,11 @@ class FailureMethodLambdaTest {
         return Stream.of(
                 // A failed borrow, which may be the last user of a retired rule set and close it, and a run's wait
                 // for a copy or a build slot.
-                Arguments.of(RuleSet.class, List.of("failedBorrow", "closeTaken", "closeUnused", "partDone",
+                Arguments.of(CopyPool.class, List.of("failedBorrow", "closeTaken", "closeUnused", "partDone",
                         "closeCompilers", "lend", "slottedCopy")),
                 // Counting a run that uses the rule set, uncounting it as the last step of giving back its copy, maybe
                 // deep in the JVM's first run's stack, and marking the rule set retired in the same count (#1213).
-                Arguments.of(RuleSet.class, List.of("enter", "leave", "retire")),
+                Arguments.of(CopyPool.class, List.of("enter", "leave", "retire")),
                 // A write that no setter accepts, and what its message says of the setters there are.
                 Arguments.of(OutputWriter.beansAndMaps().getClass(), List.of("set", "written", "primitiveSetters",
                         "unreachable")),

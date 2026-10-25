@@ -130,7 +130,7 @@ class BuildSlotsTest {
     }
 
     private static RulesEngine<Map<String, Object>> unlimited(StepLanguage language) {
-        return unlimited(language, RuleSet.STALL_WINDOW_MILLIS);
+        return unlimited(language, CopyPool.STALL_WINDOW_MILLIS);
     }
 
     /** {@link #unlimited(StepLanguage)}, whose runs wait {@code stallWindow} milliseconds for a slot to come back. */
