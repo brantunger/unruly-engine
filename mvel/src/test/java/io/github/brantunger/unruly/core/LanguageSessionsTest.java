@@ -433,7 +433,7 @@ class LanguageSessionsTest {
             @Override
             RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
                 return runInScope(facts, timeout, tags, (rules, copy, runFacts) ->
-                        RunResult.of("rules: " + rules.rules().size(), List.of(), rules.checksum()));
+                        RunResult.of("rules: " + rules.loaded().rules().size(), List.of(), rules.loaded().checksum()));
             }
 
             @Override

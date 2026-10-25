@@ -51,12 +51,12 @@ final class StackHeadroom {
 
     /**
      * How many frames {@link #checkFirstRun()} recurses: room for a run whose rule list uses a language that hasn't
-     * finished a run in this JVM yet (see {@link RuleSet#firstRun()}). A rule's first call of a method makes the JDK
-     * build the method's reflective accessor, which for a signature of a shape no call has had yet generates classes,
-     * and the language may load classes of its own for it. Once the JIT's last tier has compiled the recursion every
-     * check shares, its frames are a third of the size, and {@link #check()} lets such a run through where the rule
-     * then overflows (#1066). Sized from a sweep with the check compiled, on JDK 21, 25 and 26 on x64, each depth in
-     * a new JVM, of a first run of a rule, in the language #1066 measured, that calls one method: with this check at
+     * finished a run in this JVM yet (see {@link LanguagesRan#needsRoom()}). A rule's first call of a method makes the
+     * JDK build the method's reflective accessor, which for a signature of a shape no call has had yet generates
+     * classes, and the language may load classes of its own for it. Once the JIT's last tier has compiled the recursion
+     * every check shares, its frames are a third of the size, and {@link #check()} lets such a run through where the
+     * rule then overflows (#1066). Sized from a sweep with the check compiled, on JDK 21, 25 and 26 on x64, each depth
+     * in a new JVM, of a first run of a rule, in the language #1066 measured, that calls one method: with this check at
      * {@link #FRAMES}, the argument shapes measured needed up to 104 frames more. Measured again with this check and
      * that language's {@code prepare()} also calling a method with a literal argument, 181 depths for each shape on
      * each JDK: no such run failed its rule, for a call of one method of any shape measured, one with a constructor

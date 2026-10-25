@@ -23,10 +23,13 @@ package io.github.brantunger.unruly.core;
  * extra copy.
  * </p>
  *
- * @param maxCopies          The most copies runs the limit applies to may hold at once, or {@link RuleSet#UNLIMITED}
+ * @param maxCopies          The most copies runs the limit applies to may hold at once, or {@link #UNLIMITED}
  * @param virtualThreadsOnly Whether it applies only to a run on a virtual thread
  */
 public record CopyLimit(int maxCopies, boolean virtualThreadsOnly) {
+
+    /** The limit of a rule set that makes as many copies as its runs need. */
+    static final int UNLIMITED = 0;
 
     /**
      * Returns the limit of an engine that makes as many copies as its runs need, on any thread.
@@ -34,7 +37,7 @@ public record CopyLimit(int maxCopies, boolean virtualThreadsOnly) {
      * @return The limit
      */
     public static CopyLimit none() {
-        return new CopyLimit(RuleSet.UNLIMITED, false);
+        return new CopyLimit(UNLIMITED, false);
     }
 
     /**
@@ -63,7 +66,7 @@ public record CopyLimit(int maxCopies, boolean virtualThreadsOnly) {
      * @return {@code true} unless the engine makes as many copies as its runs need
      */
     public boolean limits() {
-        return maxCopies != RuleSet.UNLIMITED;
+        return maxCopies != UNLIMITED;
     }
 
     /**

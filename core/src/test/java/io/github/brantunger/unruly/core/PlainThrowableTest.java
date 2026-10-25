@@ -629,7 +629,7 @@ class PlainThrowableTest {
             RunResult<String> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
                 return runInScope(facts, timeout, tags, (rules, copy, runFacts) -> {
                     sneakyThrow(failure);
-                    return RunResult.of("ran", List.of(), rules.checksum());
+                    return RunResult.of("ran", List.of(), rules.loaded().checksum());
                 });
             }
 

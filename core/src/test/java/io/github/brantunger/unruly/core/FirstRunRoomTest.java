@@ -60,26 +60,27 @@ class FirstRunRoomTest {
                             }
                         }).build();
         engine.load(List.of(rule("r", "yes", "done")));
-        assertTrue(engine.currentRules().firstRun(), "before the language's first run");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "before the language's first run");
         StackOverflowError overflow = new StackOverflowError();
         // The check overflowing, as it does deep in a stack: the run throws it as it is.
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, overflow);
         assertSame(overflow, assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
         assertEquals(List.of(), runsStarted, "runs a listener was told of");
-        assertTrue(engine.currentRules().firstRun(), "after a run the check refused");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "after a run the check refused");
 
         assertEquals(Map.of(), engine.run(new FactMap<>()));
 
         // The refused run took no number: the next run is the engine's first.
         assertEquals(List.of(1L), runsStarted, "runs a listener was told of");
 
-        assertFalse(engine.currentRules().firstRun(), "after it");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "after it");
         // Not reached any more: the run doesn't throw.
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertEquals(Map.of(), engine.run(new FactMap<>()));
         AbstractRulesEngine<Map<String, Object>> other = engine(new FirstLanguage());
         other.load(List.of(rule("s", "yes", "done")));
-        assertFalse(other.currentRules().firstRun(), "another engine's rule list of the language");
+        assertFalse(other.currentRules().loaded().languagesRan().needsRoom(),
+                "another engine's rule list of the language");
     }
 
     @Test
@@ -89,31 +90,36 @@ class FirstRunRoomTest {
         AbstractRulesEngine<Map<String, Object>> ran = engine(new RanLanguage());
         ran.load(List.of(rule("r", "yes", "done")));
         ran.run(new FactMap<>());
-        assertFalse(ran.currentRules().firstRun(), "after the first language's run");
+        assertFalse(ran.currentRules().loaded().languagesRan().needsRoom(), "after the first language's run");
 
         AbstractRulesEngine<Map<String, Object>> engine = twoLanguages(new RanLanguage(), new NotRunLanguage());
         engine.load(List.of(rule("other", "yes", "done").toBuilder().language(NotRunLanguage.NAME).build()));
-        assertTrue(engine.currentRules().firstRun(), "a rule list of a language that hasn't run");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of a language that hasn't run");
         // Only the first language's rule matches, so only its action runs.
         engine.load(List.of(rule("first", "yes", "done"),
                 rule("other", "no", "done").toBuilder().language(NotRunLanguage.NAME).build()));
-        assertTrue(engine.currentRules().firstRun(), "a rule list of both");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list of both");
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()), "a run of a rule list of both");
 
         engine.run(new FactMap<>());
 
-        assertTrue(engine.currentRules().firstRun(), "a rule list of both, after a run of only the first's action");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of both, after a run of only the first's action");
         engine.load(List.of(rule("other", "yes", "done").toBuilder().language(NotRunLanguage.NAME).build()));
-        assertTrue(engine.currentRules().firstRun(), "a rule list of the second language, after that run");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of the second language, after that run");
 
         engine.load(List.of(rule("first", "no", "done"),
                 rule("other", "yes", "done").toBuilder().language(NotRunLanguage.NAME).build()));
         engine.run(new FactMap<>());
 
-        assertFalse(engine.currentRules().firstRun(), "a rule list of both, after a run that ran the second's action");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of both, after a run that ran the second's action");
         engine.load(List.of(rule("other", "yes", "done").toBuilder().language(NotRunLanguage.NAME).build()));
-        assertFalse(engine.currentRules().firstRun(), "a rule list of the second language, after that run");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of the second language, after that run");
     }
 
     @Test
@@ -126,11 +132,13 @@ class FirstRunRoomTest {
 
         engine.run(new FactMap<>());
 
-        assertTrue(engine.currentRules().firstRun(), "a rule list of both");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list of both");
         engine.load(List.of(rule("fired", "yes", "done")));
-        assertFalse(engine.currentRules().firstRun(), "a rule list of the language whose action ran");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of the language whose action ran");
         engine.load(List.of(rule("unfired", "yes", "done").toBuilder().language(UnfiredLanguage.NAME).build()));
-        assertTrue(engine.currentRules().firstRun(), "a rule list of the language whose action didn't run");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of the language whose action didn't run");
     }
 
     @Test
@@ -140,15 +148,15 @@ class FirstRunRoomTest {
         engine.load(List.of(rule("fails", "yes", "throw")));
 
         assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
-        assertTrue(engine.currentRules().firstRun(), "after a run that failed");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "after a run that failed");
 
         engine.load(List.of(rule("unmatched", "no", "done")));
         assertNull(engine.run(new FactMap<>()));
-        assertTrue(engine.currentRules().firstRun(), "after a run that matched no rule");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "after a run that matched no rule");
 
         engine.load(List.of(rule("passes", "yes", "done")));
         engine.run(new FactMap<>());
-        assertFalse(engine.currentRules().firstRun(), "after a run that ran an action");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "after a run that ran an action");
     }
 
     @Test
@@ -161,7 +169,8 @@ class FirstRunRoomTest {
         RuleExecutionException thrown = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
         assertEquals("fails", thrown.getRuleName(), "the rule that failed, after the other's action ran");
-        assertTrue(engine.currentRules().firstRun(), "after a run that ran an action, then failed");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "after a run that ran an action, then failed");
     }
 
     @Test
@@ -174,7 +183,8 @@ class FirstRunRoomTest {
         OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class, () -> engine.run(new FactMap<>()));
 
         assertEquals(CLOSE_FAILED, thrown.getMessage());
-        assertTrue(engine.currentRules().firstRun(), "after a run that ran an action, then failed as it ended");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "after a run that ran an action, then failed as it ended");
     }
 
     @Test
@@ -186,11 +196,12 @@ class FirstRunRoomTest {
         AbstractRulesEngine<Map<String, Object>> engine = reloadedEngine(new ReloadedLanguage(),
                 new AtomicReference<>(closed));
         engine.load(List.of(rule("r", "yes", "done")));
-        assertTrue(engine.currentRules().firstRun(), "the list the run borrows from");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "the list the run borrows from");
 
         engine.run(new FactMap<>());
 
-        assertFalse(engine.currentRules().firstRun(), "after a run that read a closed list first");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "after a run that read a closed list first");
     }
 
     @Test
@@ -203,11 +214,12 @@ class FirstRunRoomTest {
         closed.set(engine.currentRules());
         // The reload retires and closes the rules read above, as no run uses them.
         engine.load(List.of(rule("r", "yes", "done")));
-        assertTrue(closed.get().firstRun(), "the closed list the run reads first");
+        assertTrue(closed.get().loaded().languagesRan().needsRoom(), "the closed list the run reads first");
 
         engine.run(new FactMap<>());
 
-        assertFalse(engine.currentRules().firstRun(), "after a run that read a closed list first");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "after a run that read a closed list first");
     }
 
     @Test
@@ -219,7 +231,7 @@ class FirstRunRoomTest {
         assertEquals(List.of(), engine.validate(List.of(rule("r", "yes", "done"))));
 
         engine.load(List.of(rule("r", "yes", "done")));
-        assertTrue(engine.currentRules().firstRun(), "after validate()");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "after validate()");
     }
 
     @Test
@@ -227,13 +239,14 @@ class FirstRunRoomTest {
     void emptyRuleList() {
         AbstractRulesEngine<Map<String, Object>> engine = engine(new EmptyListLanguage());
         engine.load(List.of());
-        assertFalse(engine.currentRules().firstRun(), "a rule list without rules");
+        assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list without rules");
         Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
 
         assertNull(engine.run(new FactMap<>()));
 
         engine.load(List.of(rule("r", "yes", "done")));
-        assertTrue(engine.currentRules().firstRun(), "a rule list of the default language, after runs without rules");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "a rule list of the default language, after runs without rules");
     }
 
     @Test
@@ -242,9 +255,10 @@ class FirstRunRoomTest {
         AbstractRulesEngine<Map<String, Object>> engine = engine(new IgnoredLanguage());
         engine.load(List.of(rule("r", "yes", "done")));
 
-        engine.currentRules().ran(List.of("unused"));
+        engine.currentRules().loaded().languagesRan().completed(List.of("unused"));
 
-        assertTrue(engine.currentRules().firstRun(), "after recording a language the rules don't use");
+        assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(),
+                "after recording a language the rules don't use");
     }
 
     private static AbstractRulesEngine<Map<String, Object>> engine(ExpressionLanguage language) {

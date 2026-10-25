@@ -172,7 +172,7 @@ final class RuleListCompiler {
         // The names the compile contexts reserve: the engine's for every rule list, and, once the rule list is known,
         // those of its languages that reserve their names only for the rule lists that use them.
         private Set<String> contextReservedNames = reservedFactNames;
-        // What the runs of the rule list check their facts' names against besides the compilers (see RuleSet).
+        // What the runs of the rule list check their facts' names against besides the compilers (see LoadedRules).
         private Map<String, Set<String>> readNames = Map.of();
         private Map<String, String> listReserved = Map.of();
 
@@ -333,57 +333,22 @@ final class RuleListCompiler {
         }
 
         /**
-         * Returns the rules compiled.
+         * Returns what the runs of the loaded rule list use: the rules compiled, in priority order; the compilers the
+         * declared fact names were checked with, which its runs check fact names with; the names of the facts the
+         * rules of each compiler read, for the compilers that can tell, which its runs ask only about those names;
+         * and the names its languages reserve only for the rule lists that use them, which its runs reject, and its
+         * declared facts were checked against. Also the languages the compiled rules are written in, whose first runs
+         * its runs make room for (see {@link LanguagesRan#needsRoom()}): not the default language a rule list without
+         * rules is checked against, as no action of it can run.
          *
-         * @return The rules that compiled, in priority order
+         * @return The loaded rules, with their checksum, loaded now
          */
-        List<CompiledRule> compiledRules() {
-            return compiled;
-        }
-
-        /**
-         * Returns the compilers the declared fact names were checked with, which the runs of a loaded rule list check
-         * fact names with.
-         *
-         * @return The compilers, by language name
-         */
-        Map<String, ExpressionCompiler> usedCompilers() {
-            return used;
-        }
-
-        /**
-         * Returns the languages the compiled rules are written in, whose first runs the runs of a loaded rule list
-         * make room for (see {@link RuleSet#firstRun()}): not the default language a rule list without rules is
-         * checked against, as no action of it can run.
-         *
-         * @return The languages, by name; empty for a rule list without rules
-         */
-        Map<String, ExpressionLanguage> usedLanguages() {
+        LoadedRules loadedRules() {
             Map<String, ExpressionLanguage> usedLanguages = new HashMap<>();
             for (CompiledRule rule : compiled) {
                 usedLanguages.put(rule.language(), languages.languages().get(rule.language()));
             }
-            return usedLanguages;
-        }
-
-        /**
-         * Returns the names of the facts the rules of each compiler read, for the compilers that can tell, which the
-         * runs of a loaded rule list ask only about those names.
-         *
-         * @return The names by language name; empty when no compiler can tell, or a rule failed to compile
-         */
-        Map<String, Set<String>> factNamesRead() {
-            return readNames;
-        }
-
-        /**
-         * Returns the names the rule list's languages reserve only for the rule lists that use them, which the runs of
-         * a loaded rule list reject, and its declared facts were checked against.
-         *
-         * @return The language that reserves each name, by name; empty when no language the rule list uses does
-         */
-        Map<String, String> reservedFactNames() {
-            return listReserved;
+            return new LoadedRules(compiled, used, readNames, listReserved, usedLanguages);
         }
 
         /**

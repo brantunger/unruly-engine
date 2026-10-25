@@ -241,7 +241,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     @SuppressWarnings("PMD.ReturnEmptyCollectionRatherThanNull")
     List<CompiledRule> getCompiledRules() {
         RuleSet rules = ruleSets.current();
-        return rules != null ? rules.rules() : null;
+        return rules != null ? rules.loaded().rules() : null;
     }
 
     /** The body of one run: what the engine does with the rules, its copy of them and the run's facts. */
@@ -290,9 +290,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
     RunResult<O> runRules(FactStore<?> facts, Duration timeout, Set<String> tags) {
         return runInScope(facts, timeout, tags, (ruleSet, copy, runFacts) -> {
             // Match the facts and data against the set of rules with the highest priority first.
-            Matches matches = this.match(ruleSet.rules(), copy, runFacts, untilFirst());
+            Matches matches = this.match(ruleSet.loaded().rules(), copy, runFacts, untilFirst());
             if (matches.matched().isEmpty()) {
-                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.checksum());
+                return RunResult.of(null, List.of(), matches.evaluations(), ruleSet.loaded().checksum());
             }
             return fire(matches, ruleSet, copy, runFacts);
         });
@@ -334,7 +334,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // Run the action of the selected rule on given data and return the output.
         CompiledRule resolvedRule = matches.matched().get(0);
         O output = this.executeRule(resolvedRule, copy, createOutput(facts), facts);
-        return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(), ruleSet.checksum());
+        return RunResult.of(output, List.of(resolvedRule.rule()), matches.evaluations(),
+                ruleSet.loaded().checksum());
     }
 
     /**
@@ -381,7 +382,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         // run that finds the rules it read closed, and borrows from a list a reload put in their place, isn't checked
         // again for that list, as by then it has counted itself and set its deadline: accepted, for that one run, in
         // the narrow window of a reload, which still records the languages it ran for that list.
-        boolean firstRun = rules.firstRun();
+        boolean firstRun = rules.loaded().languagesRan().needsRoom();
         if (firstRun) {
             Faults.at(Faults.Step.FIRST_RUN_ROOM_CHECKING);
             StackHeadroom.checkFirstRun();
@@ -443,7 +444,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                                 + " https://github.com/brantunger/unruly-engine/issues");
                     }
                     RuleSet again = currentRules();
-                    if (!firstRun && again.firstRun()) {
+                    if (!firstRun && again.loaded().languagesRan().needsRoom()) {
                         firstRun = true;
                         tally.recordLanguages();
                     }
@@ -475,7 +476,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             // no more room than run() checks for.
             List<String> ranLanguages = tally.firedLanguages();
             if (!ranLanguages.isEmpty()) {
-                rules.ran(ranLanguages);
+                rules.loaded().languagesRan().completed(ranLanguages);
             }
             outcome = RunEvent.COMPLETED;
             return result;
@@ -508,8 +509,8 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                             keepInterruptOfStop(tally);
                         } finally {
                             if (event != null) {
-                                event.commit(engineId, runId, parentRunId, matchPolicy(), tally, rules.checksum(),
-                                        outcome);
+                                event.commit(engineId, runId, parentRunId, matchPolicy(), tally,
+                                        rules.loaded().checksum(), outcome);
                             }
                         }
                     }
@@ -648,8 +649,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
                 // With the copy held, so no compiler of the rule list the run uses is closed while it checks a name;
                 // and with the rule list the run borrowed from, whose languages reserve their names and check them,
                 // not the one it first read, which a reload may have replaced.
-                factIntake.checkFactNames(facts.values(), rules.factChecks(), rules.factNamesRead(),
-                        rules.reservedFactNames(), facts.runs());
+                LoadedRules loaded = rules.loaded();
+                factIntake.checkFactNames(facts.values(), loaded.factChecks(), loaded.factNamesRead(),
+                        loaded.reservedFactNames(), facts.runs());
                 // Every run that returns passes here, a nested one too, so the result carries the run's tags and
                 // start before afterRun or the caller sees it.
                 result = body.run(rules, copy, facts).withRun(run);
@@ -737,7 +739,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
 
     /** Creates the context one run is reported to listeners with. */
     private EngineRunContext newRun(RuleSet rules, RunFacts facts) {
-        return new EngineRunContext(facts.runId(), facts.parent(), matchPolicy(), rules.checksum(),
+        return new EngineRunContext(facts.runId(), facts.parent(), matchPolicy(), rules.loaded().checksum(),
                 facts.forListeners(), facts.selection().tags(), facts.selection().startedAt());
     }
 
@@ -775,8 +777,9 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
         if (rules == null) {
             return RuleSetInfo.of(List.of(), Checksums.ofRules(List.of()), null);
         }
-        return RuleSetInfo.of(rules.rules().stream().map(CompiledRule::rule).toList(), rules.checksum(),
-                rules.loadedAt());
+        LoadedRules loaded = rules.loaded();
+        return RuleSetInfo.of(loaded.rules().stream().map(CompiledRule::rule).toList(), loaded.checksum(),
+                loaded.loadedAt());
     }
 
     /**
@@ -851,7 +854,7 @@ abstract class AbstractRulesEngine<O> implements RulesEngine<O> {
             String msg;
             if (interrupted) {
                 // Without a limit, the only wait is for a build slot, on a virtual thread.
-                msg = "run() was interrupted while waiting " + (rules.limit() == RuleSet.UNLIMITED
+                msg = "run() was interrupted while waiting " + (rules.limit() == CopyLimit.UNLIMITED
                         ? "to make a compiled copy of the rules: every build slot was in use"
                         : "for a compiled copy of the rules: all " + rules.limit() + " were in use");
             } else {

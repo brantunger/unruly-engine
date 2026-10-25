@@ -217,7 +217,7 @@ class SlotGivenBackTest {
         // One build slot for the whole engine, so a slot that isn't given back is gone for good: every later run that
         // needs a new copy would then wait as long as its deadline lets it and make its copy without one. The window
         // is far longer than the test, so the run that waits never gives up and makes a copy without a slot.
-        CopyPermits permits = new CopyPermits(RuleSet.UNLIMITED, 1);
+        CopyPermits permits = new CopyPermits(CopyLimit.UNLIMITED, 1);
         RuleSet rules = TestRuleSets.ruleSet(List.of(RULE), Map.of("a", compiler(new AtomicInteger())))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).withIdle(idle).build();
         VirtualRun holder = startVirtualRun(rules);
