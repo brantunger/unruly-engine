@@ -322,7 +322,7 @@ final class ExactNameClassLoader extends ClassLoader {
         if (!ClassLookup.refuses(name)) {
             return;
         }
-        long parts = RuleText.dottedParts(name);
+        int parts = RuleText.dottedParts(name);
         if (name.indexOf('$') >= 0) {
             if (parts > ClassLookup.MAX_DOLLAR_NAME_PARTS) {
                 String refusal = "Can't look up '" + MessageText.quote(name) + "': it has " + parts
@@ -467,8 +467,8 @@ final class ExactNameClassLoader extends ClassLoader {
          * @return {@code true} if the name is refused
          */
         static boolean refuses(String name) {
-            long parts = RuleText.dottedParts(name);
-            long mostParts = name.indexOf('$') >= 0 ? MAX_DOLLAR_NAME_PARTS : MAX_NAME_PARTS;
+            int parts = RuleText.dottedParts(name);
+            int mostParts = name.indexOf('$') >= 0 ? MAX_DOLLAR_NAME_PARTS : MAX_NAME_PARTS;
             return name.length() > MAX_NAME_LENGTH || parts > mostParts;
         }
 

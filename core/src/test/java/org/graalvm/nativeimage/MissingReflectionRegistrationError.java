@@ -19,4 +19,15 @@ public final class MissingReflectionRegistrationError extends Error {
         super("The program tried to reflectively access class " + name
                 + " without it being registered for runtime reflection.");
     }
+
+    /**
+     * Creates the error with a message given whole, not worded from a name; a {@link CharSequence}, so it doesn't
+     * clash with the constructor that takes the name.
+     *
+     * @param message The message
+     */
+    // Only FacadeFirstUseScenario uses it: on JDK 21, an indy + would initialize Long before the scenario's markers.
+    public MissingReflectionRegistrationError(CharSequence message) {
+        super(message.toString());
+    }
 }

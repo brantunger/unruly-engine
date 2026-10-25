@@ -148,6 +148,12 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
+`FacadeFirstUseInitializationTest`, in a new JVM, before any engine is built, calls every public method of `Throwables`,
+`ImportLimits` and `MessageText`, which a language or application may call anywhere. It
+fails if those calls initialize a class with a static initializer, other than the JDK's hidden classes and two
+measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). The scenario's text is
+Latin-1 only, as escaping a character above U+00FF first reads the JDK's table for it (#1286).
+
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
 exception, can overflow while the provider loads those classes. The engine catches that overflow in its ERROR and
