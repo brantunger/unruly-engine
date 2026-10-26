@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Whitespace;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -34,7 +35,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code internal} package holds for them, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
  * what {@code api.language} publishes of them, {@link Throwables}, {@link ImportLimits} and the {@link FatalErrors}
  * bridge, which a language's first failure may be the first to call. #1244: nor {@link RetireQueue}, which retires
- * the rule sets an engine no longer uses, as a {@code load()} or {@code close()} deep in a stack may. This reads
+ * the rule sets an engine no longer uses, as a {@code load()} or {@code close()} deep in a stack may. #1292: nor
+ * {@link Whitespace}, the blank check of a rule's, a fact's or a language's name, which runs before any engine is
+ * built. This reads
  * their class files, and those of their nested classes, from the directory or jar each was loaded from, as
  * {@code StringConcatenationTest} reads the library's, and fails if one names {@code LambdaMetafactory}, as the
  * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
@@ -49,7 +52,7 @@ class FailureCodeLambdaTest {
     @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
             Closing.class, CopyPermits.class, RuleCompilationException.class,
             Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
-            ImportLimits.class, RetireQueue.class})
+            ImportLimits.class, RetireQueue.class, Whitespace.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {

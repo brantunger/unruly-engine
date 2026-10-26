@@ -81,7 +81,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
  * builder's settings reject may still initialize classes before any check, maybe deep in a stack, though nothing a
  * builder accepts does: {@code language()} initializes {@link LanguageNames.Problem} when it rejects a language's name,
- * and {@code fact()} and {@code facts()} initialize {@link FactNames.Problem} when they reject a fact's name. The
+ * and {@code fact()} and {@code facts()} initialize {@link FactNames.Problem} when they reject a fact's name. A name
+ * that starts with a character above U+00FF reads none of the JDK's character tables, which the first build
+ * initializes below, as the blank check is the engine's own (#1292); on Linux and macOS, a name with such a character
+ * may still be the JVM's first read of a string with one, which initializes {@code java.lang.StringUTF16} (#1295). The
  * message of a setting a builder rejects isn't the JVM's first use of the JDK's string concatenation, as the engine is
  * compiled to build its strings without it (#965).
  * </p>

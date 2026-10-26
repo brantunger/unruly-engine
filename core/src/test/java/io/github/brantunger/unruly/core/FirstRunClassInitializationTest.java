@@ -18,6 +18,7 @@ import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Whitespace;
 import io.github.brantunger.unruly.internal.Widening;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -164,7 +165,7 @@ class FirstRunClassInitializationTest {
                     IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
                     InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class, Text.class,
                     Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
-                    FatalErrors.class)
+                    FatalErrors.class, Whitespace.class)
                     .map(Class::getName),
             Stream.of("io.github.brantunger.unruly.api.language.NoSession",
                     EngineCompileContext.class.getName() + "$Warnings", Failures.class.getName() + "$Log",

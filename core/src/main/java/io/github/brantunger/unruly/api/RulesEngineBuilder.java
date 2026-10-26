@@ -202,10 +202,13 @@ public final class RulesEngineBuilder<O> {
      * </p>
      *
      * <p>
-     * Adding a language initializes no class of the engine's, as {@link #build()} first makes room on the stack for
-     * that. A language this rejects is the exception: rejecting it initializes the engine's small class that names
-     * the problem, before any room is made, so a rejected language added deep in a stack can still leave that class
-     * unusable for the life of the JVM.
+     * Adding a language initializes no class of the engine's, nor, whatever its name's characters, one of the JDK's
+     * character tables, as {@link #build()} first makes room on the stack for that (#1292). A language this rejects
+     * is the exception: rejecting it initializes the engine's small class that names the problem, before any room is
+     * made, so a rejected language added deep in a stack can still leave that class unusable for the life of the JVM.
+     * On Linux and macOS, so can the JVM's first read of a string with a character above U+00FF, which initializes
+     * {@code java.lang.StringUTF16}: a name with such a character may be that read, if the JVM hasn't read such a
+     * string already (#1295).
      * </p>
      *
      * @param language The language
@@ -218,8 +221,10 @@ public final class RulesEngineBuilder<O> {
         Objects.requireNonNull(language, NULL_LANGUAGE);
         String name = language.name();
         LanguageNames.Problem problem = LanguageNames.check(name, languageMap);
-        // Problem is compared only once there is one, so adding a language initializes no class: this may be called
-        // deep in a stack, before the engine has made room for that (see Engines).
+        // Problem is compared only once there is one, and the check reads no JDK character table for a name above
+        // U+00FF (#1292), so adding a language initializes no class: this may be called deep in a stack, before the
+        // engine has made room for that (see Engines). Except, on Linux and macOS, java.lang.StringUTF16, if a name
+        // with a character above U+00FF is the JVM's first read of such a string (#1295).
         if (problem != null) {
             if (problem == LanguageNames.Problem.NULL_OR_BLANK) {
                 throw new IllegalArgumentException("An expression language's name must not be null or blank: "
@@ -470,10 +475,13 @@ public final class RulesEngineBuilder<O> {
      * </p>
      *
      * <p>
-     * Declaring a fact initializes no class of the engine's, as {@link #build()} first makes room on the stack for
-     * that. A name this rejects is the exception: rejecting it initializes the engine's small class that names the
-     * problem, before any room is made, so a rejected name declared deep in a stack can still leave that class
-     * unusable for the life of the JVM.
+     * Declaring a fact initializes no class of the engine's, nor, whatever the name's characters, one of the JDK's
+     * character tables, as {@link #build()} first makes room on the stack for that (#1292). A name this rejects is
+     * the exception: rejecting it initializes the engine's small class that names the problem, before any room is
+     * made, so a rejected name declared deep in a stack can still leave that class unusable for the life of the JVM.
+     * On Linux and macOS, so can the JVM's first read of a string with a character above U+00FF, which initializes
+     * {@code java.lang.StringUTF16}: a name with such a character may be that read, if the JVM hasn't read such a
+     * string already (#1295).
      * </p>
      *
      * @param name The fact's name, as rules refer to it

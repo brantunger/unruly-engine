@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
@@ -491,7 +492,9 @@ public final class Rule {
          */
         public Rule build() {
             String name = required(ruleName, "ruleName");
-            if (name.isBlank()) {
+            // Not String.isBlank(), which reads a JDK table the JVM builds on its first use for a name that starts
+            // with a character above U+00FF; a rule is often built before any engine (#1292).
+            if (Whitespace.isBlank(name)) {
                 throw new IllegalStateException("ruleName must not be blank");
             }
             String checkedCondition = required(condition, "condition");
@@ -510,7 +513,7 @@ public final class Rule {
                 if (tag == null) {
                     throw new IllegalStateException("tags must not contain null, but were " + Names.quoteAll(tags));
                 }
-                if (tag.isBlank()) {
+                if (Whitespace.isBlank(tag)) {
                     throw new IllegalStateException("tags must not contain a blank tag, but were "
                             + Names.quoteAll(tags));
                 }
