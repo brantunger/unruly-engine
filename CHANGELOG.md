@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.4](https://github.com/brantunger/unruly-engine/compare/v2.33.3...v2.33.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* escaping text above U+00FF no longer reads a JDK character table on its first use, so a deep first MessageText.escape or quote on non-Latin-1 text can't break java.lang.CharacterData00 for the life of the JVM; Text decides from a table fixed to Unicode 15.0 to 17.0, and the first engine build initializes the character table of every Unicode plane ([#1294](https://github.com/brantunger/unruly-engine/issues/1294)) ([52353f5](https://github.com/brantunger/unruly-engine/commit/52353f5e4e55c27eb50ebfac29f7e533b9d3897a))
+
 ## [2.33.3](https://github.com/brantunger/unruly-engine/compare/v2.33.2...v2.33.3) (2026-10-26)
 
 
