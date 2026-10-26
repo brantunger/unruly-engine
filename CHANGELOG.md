@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.3](https://github.com/brantunger/unruly-engine/compare/v2.33.2...v2.33.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* outputNumbersConverted now feeds the int setter -3.0E9 and the BigDecimals 1.5 and 3E9, and the long setter 1.5, NaN, -Infinity, -(2^53 + 2) and the BigDecimals 1.5 and 1E19, so a converter that saturates, rounds or narrows them fails the check ([#1290](https://github.com/brantunger/unruly-engine/issues/1290)) ([5ff53bb](https://github.com/brantunger/unruly-engine/commit/5ff53bbd7df978fdd43d5b227f66d502d9a2fb59))
+
 ## [2.33.2](https://github.com/brantunger/unruly-engine/compare/v2.33.1...v2.33.2) (2026-10-25)
 
 
