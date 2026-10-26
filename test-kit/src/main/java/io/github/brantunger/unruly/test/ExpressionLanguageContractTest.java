@@ -105,8 +105,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * fire for all three and not for a {@code 2L} one. A language that compares whole numbers by type opts out of that
  * one check with {@link #comparesWholeNumbersByValue()}. A language that converts the numbers its actions return for
  * the output's setters, so that a whole double sets an {@code int} or a {@code long} property, and a fraction, an
- * infinity, NaN or a whole number the setter's type doesn't hold exactly fails the rule, opts into one more check with
- * {@link #convertsOutputNumbers()}.
+ * infinity, NaN or a whole number the setter's type doesn't hold exactly, as a {@code Double} or a {@code BigDecimal},
+ * fails the rule, opts into one more check with {@link #convertsOutputNumbers()}.
  * </p>
  *
  * @see <a href=
@@ -344,12 +344,19 @@ public abstract class ExpressionLanguageContractTest {
      * {@link Double} 1.0, which must set the credit score to 1, and then the {@link Double} 1.5, which must fail the
      * rule and leave the score, with a writer that sets each property on a {@link WritableApplicant} through the
      * default writer, as an application whose output is a bean has it set. Then 3.0E9, {@code Infinity},
-     * {@code -Infinity} and {@code NaN}, which must each fail the rule and leave the score too: a language that
-     * narrows a double it has only checked is whole sets {@code Integer.MAX_VALUE} for the first two. Then
-     * {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes a {@code long}: 3.0E9 must
-     * set the balance to 3000000000, and {@code Infinity} and 2<sup>53</sup>&nbsp;+&nbsp;2, the first whole double
-     * past where a double counts by ones, must each fail the rule and leave it. Its engines are built as every other
-     * check's is, so {@link #configure} applies.
+     * {@code -Infinity}, {@code NaN} and -3.0E9, which must each fail the rule and leave the score too: a language
+     * that narrows a double it has only checked is whole sets {@code Integer.MAX_VALUE} for the first two, and one
+     * that casts a whole double it has bounded above only sets {@code Integer.MIN_VALUE} for the last. Then the
+     * {@link BigDecimal}s 1.5 and 3E9, which must each fail the rule and leave the score as well: a language whose
+     * decimals are {@code BigDecimal}s, as Groovy's are, and narrows one with {@code intValue()} sets 1 and the low
+     * 32 bits. Then {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes a {@code long}:
+     * 3.0E9 must set the balance to 3000000000, and {@code Infinity}, 2<sup>53</sup>&nbsp;+&nbsp;2, the first whole
+     * double past where a double counts by ones, 1.5, {@code NaN}, {@code -Infinity} and
+     * -(2<sup>53</sup>&nbsp;+&nbsp;2) must each fail the rule and leave it: a language that rounds with
+     * {@code Math.round()} sets 2 for 1.5, 0 for {@code NaN} and {@code Long.MIN_VALUE} for {@code -Infinity}. Then
+     * the {@code BigDecimal}s 1.5 and 1E19, which must each fail the rule and leave the balance: a language that
+     * narrows one with {@code longValue()} sets 1 and the low 64 bits. Its engines are built as every other check's
+     * is, so {@link #configure} applies.
      * </p>
      *
      * @return Whether the language converts the numbers its actions return for a setter
@@ -1128,7 +1135,8 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("a whole Double an action returns reaches a setter taking an int or a long, and a fraction, an"
-            + " infinity, NaN or a whole number the setter's type doesn't hold exactly fails the rule")
+            + " infinity, NaN or a whole number the setter's type doesn't hold exactly, as a Double or a BigDecimal,"
+            + " fails the rule")
     void outputNumbersConverted() throws Exception {
         assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
         // The writer is set after configure(), so configure() can't replace it: the applicant, not the map, is written.
@@ -1147,9 +1155,21 @@ public abstract class ExpressionLanguageContractTest {
             // A language that checks only that the double is whole, by Math.rint() or Math.floor(), which an infinity
             // passes and NaN doesn't, and then narrows it with intValue() sets Integer.MAX_VALUE for 3.0E9 and
             // Infinity and Integer.MIN_VALUE for -Infinity, and fails nothing but NaN. After the fraction, so that a
-            // language that rounds is reported for that.
-            for (double x : new double[] {3.0E9, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN}) {
+            // language that rounds is reported for that. A language that refuses both infinities and NaN, and casts a
+            // finite whole double it has checked only against Integer.MAX_VALUE, sets Integer.MIN_VALUE for -3.0E9
+            // and nothing else wrong, so it comes last.
+            for (double x : new double[] {3.0E9, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN,
+                    -3.0E9}) {
                 assertRefused(engine, x, "the Double " + x, "setCreditScore(int)", applicant::getCreditScore, 1);
+            }
+            // A language whose decimals are BigDecimals, as Groovy's are, and narrows one with intValue() sets 1 for
+            // 1.5, and one that first checks the BigDecimal is whole sets the low 32 bits of 3E9, and fails nothing:
+            // each must fail the rule as the Double would. Refusals only, since a language that returns a BigDecimal
+            // unchanged for a setter it doesn't fit, as one whose numbers are doubles may, also fails the rule. The
+            // failure names the BigDecimal as written here, not as toString() does (3E+9).
+            for (String x : new String[] {"1.5", "3E9"}) {
+                assertRefused(engine, new BigDecimal(x), "the BigDecimal " + x, "setCreditScore(int)",
+                        applicant::getCreditScore, 1);
             }
         });
 
@@ -1167,23 +1187,40 @@ public abstract class ExpressionLanguageContractTest {
                     account::getBalance, 3_000_000_000L);
             assertRefused(engine, 0x1p53 + 2, "the Double " + (0x1p53 + 2) + ", which is 2^53 + 2 and so beyond where"
                     + " a double counts by ones,", "setBalance(long)", account::getBalance, 3_000_000_000L);
+            // After those two, so that a language that converts one of them wrongly is reported for it. A language
+            // that rounds with Math.round(), which refuses nothing, sets 2 for 1.5, 0 for NaN and Long.MIN_VALUE for
+            // -Infinity, as a cast does for the last two; and one that bounds a whole double at 2^53 above only sets
+            // a long the action may not have meant for -(2^53 + 2), which is named as 2^53 + 2 is. Then the
+            // BigDecimals, as for the int setter: a language that narrows one with longValue() sets 1 for 1.5, and one
+            // that first checks the BigDecimal is whole sets the low 64 bits of 1E19, the first power of ten past
+            // Long.MAX_VALUE. No whole BigDecimal a long holds is fed: converting one is exact, so a language may
+            // set it.
+            Number[] values = {1.5, Double.NaN, Double.NEGATIVE_INFINITY, -(0x1p53 + 2), new BigDecimal("1.5"),
+                    new BigDecimal("1E19")};
+            String[] names = {"the Double 1.5", "the Double NaN", "the Double -Infinity", "the Double " + -(0x1p53 + 2)
+                    + ", which is -(2^53 + 2) and so beyond where a double counts by ones,", "the BigDecimal 1.5",
+                    "the BigDecimal 1E19"};
+            for (int i = 0; i < values.length; i++) {
+                assertRefused(engine, values[i], names[i], "setBalance(long)", account::getBalance, 3_000_000_000L);
+            }
         });
     }
 
     /**
      * Runs rule {@code r} of {@code engine}, whose action puts the fact {@code x} on the property {@code setter} sets,
-     * with {@code x} the {@link Double} {@code value}, which {@code setter}'s type doesn't hold exactly, and requires
-     * the run to fail in {@code r} and the property, read by {@code read}, to still be {@code before}: a language that
-     * narrows the double, as {@code Number.intValue()} or {@code longValue()} does, sets the type's extreme instead.
+     * with {@code x} the {@link Double} or {@link BigDecimal} {@code value}, which {@code setter}'s type doesn't hold
+     * exactly, and requires the run to fail in {@code r} and the property, read by {@code read}, to still be
+     * {@code before}: a language that narrows the number, as {@code Number.intValue()} or {@code longValue()} does,
+     * sets the type's extreme, a rounded number or the low bits instead.
      *
      * @param engine The engine, with rule {@code r} loaded
-     * @param value  The double the setter's type doesn't hold
-     * @param what   What the double is, as the failure's message names it
-     * @param setter The setter the double was put on, as the failure's message names it
+     * @param value  The number the setter's type doesn't hold
+     * @param what   What the number is, as the failure's message names it
+     * @param setter The setter the number was put on, as the failure's message names it
      * @param read   Reads the property the setter sets
      * @param before What the property held before the run, and must hold after it
      */
-    private static void assertRefused(RulesEngine<Map<String, Object>> engine, double value, String what,
+    private static void assertRefused(RulesEngine<Map<String, Object>> engine, Number value, String what,
             String setter, Supplier<Number> read, long before) {
         RuleExecutionException ex = assertThrows(RuleExecutionException.class,
                 () -> engine.run(new FactMap<>(new Fact<>("x", value))), what + " was set on " + setter);

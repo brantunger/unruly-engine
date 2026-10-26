@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 import org.opentest4j.TestAbortedException;
 
+import java.math.BigDecimal;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -17,11 +18,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * The contract test kit's {@code outputNumbersConverted}, which a language opts into with
  * {@code convertsOutputNumbers()}, must fail a language whose doubles never reach an {@code int} setter, one that
  * rounds a fraction to set one (#1127), one that narrows a double beyond the setter's type, or an infinity, to the
- * type's extreme, and one that sets a {@code long} from a whole double past 2<sup>53</sup>, where a double no longer
- * counts by ones. Each of the int setter's refusals is pinned on its own: a language that mishandles one infinity, or
- * NaN, and nothing else fails naming it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing
- * anything. Apart from {@link ContractKitChecksTest}, which has to compile without
- * {@link ExpressionCompiler#convertOutput}.
+ * type's extreme, one that sets a {@code long} from a whole double past 2<sup>53</sup>, where a double no longer
+ * counts by ones, either side of zero, one that rounds a double for a {@code long} setter, and one that rounds a
+ * {@link BigDecimal}, or keeps a long one's low bits, to set an {@code int} or a {@code long} (#1264). Each of the int
+ * setter's refusals, each {@code BigDecimal}, and NaN and -Infinity on the long setter, is pinned on its own: a
+ * language that mishandles one infinity, NaN, or a finite whole double below an int, and nothing else fails naming
+ * it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing anything. Apart from
+ * {@link ContractKitChecksTest}, which has to compile without {@link ExpressionCompiler#convertOutput}.
  */
 @DisplayName("the contract test kit fails a language that opts into converting its numbers and doesn't")
 class OutputNumbersCheckTest {
@@ -249,6 +252,71 @@ class OutputNumbersCheckTest {
     }
 
     @Test
+    @DisplayName("a language that converts every double exactly but a finite whole one below Integer.MIN_VALUE, which"
+            + " a cast with no lower bound saturates to it on an int setter, fails, naming the double and the setter")
+    void belowIntAloneFails() {
+        // An upper bound without a lower one, on a language that refuses both infinities and NaN: the cast saturates
+        // -3.0E9, and every other number the check feeds is converted exactly, so that is the only failure.
+        ExpressionLanguage noLowerBound = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> value instanceof Double number && target == int.class && !number.isInfinite()
+                        && number == Math.rint(number) && number < Integer.MIN_VALUE
+                        ? Integer.MIN_VALUE : DoubleNumbers.convert(value, target));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(noLowerBound), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double -3.0E9 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose doubles are converted exactly, and whose BigDecimals are narrowed with intValue(),"
+            + " which rounds, fails, naming the BigDecimal and the setter")
+    void roundingBigDecimalsFails() {
+        ExpressionLanguage roundingDecimals = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> value instanceof BigDecimal number && target == int.class
+                        ? number.intValue() : DoubleNumbers.convert(value, target));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(roundingDecimals), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the BigDecimal 1.5 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a BigDecimal with a fraction and narrows the rest with intValue(), which"
+            + " keeps the low 32 bits of one beyond an int, fails, naming the BigDecimal and the setter")
+    void wholeBigDecimalsNarrowedFails() {
+        ExpressionLanguage wholeDecimals = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> value instanceof BigDecimal number && target == int.class
+                        ? whole(number).intValue() : DoubleNumbers.convert(value, target));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(wholeDecimals), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the BigDecimal 3E9 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    /** Returns {@code number} if it is whole, and refuses it otherwise: the check a language makes before narrowing. */
+    private static BigDecimal whole(BigDecimal number) {
+        if (number.stripTrailingZeros().scale() > 0) {
+            throw new IllegalArgumentException(number + " isn't whole");
+        }
+        return number;
+    }
+
+    /** Narrows a whole {@code number} within an int's range to an int, and refuses any other: a faithful conversion. */
+    private static int exactInt(BigDecimal number) {
+        if (whole(number).compareTo(BigDecimal.valueOf(Integer.MIN_VALUE)) < 0
+                || number.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) > 0) {
+            throw new IllegalArgumentException(number + " is out of an int's range");
+        }
+        return number.intValue();
+    }
+
+    @Test
     @DisplayName("a language whose ints are converted exactly, and whose longs are whole doubles cast, so an infinity"
             + " sets Long.MAX_VALUE, fails, naming the double and the setter")
     void infinityOnALongFails() {
@@ -284,6 +352,121 @@ class OutputNumbersCheckTest {
 
         assertTrue(failure.getMessage().startsWith("the Double 9.007199254740994E15, which is 2^53 + 2 and so beyond"
                 + " where a double counts by ones, was set on setBalance(long)"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose ints are converted exactly, and whose longs are doubles rounded with Math.round()"
+            + " once below 2^53, so a fraction sets the nearest long, fails, naming the double and the setter")
+    void roundingLongsFails() {
+        // Math.round() refuses nothing: it rounds 1.5 to 2, NaN to 0 and -Infinity to Long.MIN_VALUE, and 1.5 is the
+        // first of them the check feeds.
+        ExpressionLanguage roundingLongs = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> {
+                    if (number == Double.POSITIVE_INFINITY || number > DoubleNumbers.EXACT) {
+                        throw new IllegalArgumentException(number + " is beyond where a double counts by ones");
+                    }
+                    return Math.round(number);
+                }));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(roundingLongs), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double 1.5 was set on setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every double exactly but NaN, which sets 0 on a long setter, as a cast or"
+            + " Math.round() does, fails, naming the double and the setter")
+    void nanOnALongFails() {
+        ExpressionLanguage nanIsZero = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> number.isNaN() ? 0L : DoubleNumbers.convert(number, long.class)));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(nanIsZero), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double NaN was set on setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every double exactly but -Infinity, which sets Long.MIN_VALUE on a long"
+            + " setter, as a cast does, fails, naming the double and the setter")
+    void negativeInfinityOnALongFails() {
+        ExpressionLanguage noFloor = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> number == Double.NEGATIVE_INFINITY
+                        ? Long.MIN_VALUE : DoubleNumbers.convert(number, long.class)));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(noFloor), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double -Infinity was set on setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that converts every finite whole double up to 2^53 for a long setter, with no bound below"
+            + " zero, so a whole double past -2^53 sets a long, fails, naming the double and the setter")
+    void beyondExactNegativeLongFails() {
+        ExpressionLanguage noLowerBound = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                exceptForLongs(number -> {
+                    if (number.isNaN() || number.isInfinite() || number != Math.rint(number)
+                            || number > DoubleNumbers.EXACT) {
+                        throw new IllegalArgumentException(number + " isn't a finite whole number up to 2^53");
+                    }
+                    return number.longValue();
+                }));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(noLowerBound), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Double -9.007199254740994E15, which is -(2^53 + 2) and so"
+                + " beyond where a double counts by ones, was set on setBalance(long)"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose BigDecimals are narrowed exactly for an int setter and with longValue() for a long"
+            + " setter, which rounds, fails, naming the BigDecimal and the setter")
+    void roundingBigDecimalLongsFails() {
+        ExpressionLanguage roundingLongs = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> {
+                    if (!(value instanceof BigDecimal number)) {
+                        return DoubleNumbers.convert(value, target);
+                    }
+                    if (target == int.class) {
+                        return exactInt(number);
+                    }
+                    return target == long.class ? number.longValue() : number;
+                });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(roundingLongs), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the BigDecimal 1.5 was set on setBalance(long)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a BigDecimal with a fraction, narrows the rest exactly for an int setter and"
+            + " with longValue() for a long setter, which keeps the low 64 bits of one beyond a long, fails, naming the"
+            + " BigDecimal and the setter")
+    void wholeBigDecimalLongsNarrowedFails() {
+        ExpressionLanguage wholeLongs = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> {
+                    if (!(value instanceof BigDecimal number)) {
+                        return DoubleNumbers.convert(value, target);
+                    }
+                    if (target == int.class) {
+                        return exactInt(number);
+                    }
+                    return target == long.class ? whole(number).longValue() : number;
+                });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(wholeLongs), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the BigDecimal 1E19 was set on setBalance(long)"),
+                failure.getMessage());
     }
 
     @Test

@@ -81,9 +81,20 @@ With `setCount(long)` beside `setCount(int)`, the writer asks for `int.class` fi
 counts when nothing is written.
 
 Once `convertsOutputNumbers()` returns `true`, the [contract kit](contract-kit.md)'s `outputNumbersConverted` feeds an
-`int` setter 1.0, which it must set, then 1.5, 3.0E9, both infinities and `NaN`, which must each fail the rule, and a
-`long` setter 3.0E9, which it must set, then `Infinity` and 2^53 + 2, which must fail it. A conversion that checks
-only that the value is whole and then narrows it with `intValue()` or `longValue()` fails the check.
+`int` setter 1.0, which it must set, then the `Double`s 1.5, 3.0E9, both infinities, `NaN` and -3.0E9 and the
+`BigDecimal`s 1.5 and 3E9, which must each fail the rule; and a `long` setter 3.0E9, which it must set, then
+`Infinity`, 2^53 + 2, 1.5, `NaN`, `-Infinity` and -(2^53 + 2) and the `BigDecimal`s 1.5 and 1E19, which must each
+fail it.
+
+So a conversion that checks only that the value is whole and then narrows it with `intValue()` or `longValue()` fails
+the check. So do a cast with no lower bound, which sets `Integer.MIN_VALUE` from -3.0E9 and a `long` the action may not
+have meant from -(2^53 + 2); `Math.round` for a `long`, which sets 2 from 1.5, 0 from `NaN` and `Long.MIN_VALUE` from
+`-Infinity`; and `BigDecimal.intValue()` or `longValue()`, which round 1.5 to 1 and keep only the low bits of 3E9 or
+1E19.
+
+In the check, a `BigDecimal` reaches you only when the action returns the fact's value as it is. A language that turns
+its facts into doubles hands over a `Double`, which is refused like the others, and returning the `BigDecimal` unchanged
+passes, because neither setter takes it, so the write fails the rule.
 
 ## 📋 What to convert
 
