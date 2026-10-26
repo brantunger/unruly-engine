@@ -52,9 +52,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * too (#1066, #1093), and those that the JVM's first load and first run would otherwise read from the engine's jar or
  * class directory (#1210). So are the JDK's classes that a first read of a generic type or of a method's annotations,
  * or a first reflective call of a native method, initializes, in a language's load or run or a write through a generic
- * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). In a native
- * image, the classes it can only name are left to the image, which can't look a name up that it has no metadata for,
- * and no method is read. A language's own classes are its to initialize, in {@link ExpressionLanguage#prepare()}, which
+ * setter, which it reaches by doing each on the JDK's own methods (see {@link #readMembers}) (#1115). So are the JDK's
+ * tables of the Unicode characters above U+00FF, one class a plane, which the first {@code Character} method called on
+ * such a character builds, in a check of an import's name, a read of a fact's property or a rule's own code, and which
+ * it reaches by reading the type of one character of each plane (#1286). In a native image, the classes it can only
+ * name are left to the image, which can't look a name up that it has no metadata for, and no method is read. A
+ * language's own classes are its to initialize, in {@link ExpressionLanguage#prepare()}, which
  * {@link #prepare(Collection)} calls with room made for it in the same way.
  *
  * <p>
@@ -127,6 +130,23 @@ final class RunClasses {
             Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
             RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                     rule.toBuilder().ruleName("b").priority(1).build())));
+            // What a Character method does for a character above U+00FF, such as the engine's check of an import's
+            // name, a converter's or a language's read of a name, or Character.getType itself in a rule: it reads
+            // the JDK's table for the character's plane, one class for each, which the JVM builds on its first use;
+            // only the Latin-1 one is built at startup. So each is read here, by the type of one character of its
+            // plane: the Basic Multilingual Plane (CharacterData00), planes 1 to 3 (01, 02, 03), the unassigned
+            // planes 4 to 13 (Undefined), plane 14 (0E), and the private-use planes 15 and 16 (PrivateUse) (#1286).
+            // The first reads the character from a string, as the JDK's code for a string with such a character,
+            // StringUTF16, is initialized by the first read of a character of one, and nothing at startup does that
+            // on Linux or macOS; a JVM on Windows, and the read of the JDK's security settings above, initialize it
+            // before this, so this reads one in case.
+            Character.getType("\u03c0".codePointAt(0));
+            Character.getType(0x10000);
+            Character.getType(0x20000);
+            Character.getType(0x30000);
+            Character.getType(0x40000);
+            Character.getType(0xE0001);
+            Character.getType(0xF0000);
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
             initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's

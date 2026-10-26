@@ -27,7 +27,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code Initializing '...'} lines {@code -Xlog:class+init} prints between its markers: no class with a static
  * initializer may be initialized there, the JVM's hidden classes aside, but those {@link #MEASURED_SAFE} names. A
  * class without one, which the JVM logs with {@code (no method)}, runs no code of its own. Then the scenario builds and
- * runs an engine, which shows the calls left nothing broken.
+ * runs an engine, which shows the calls left nothing broken. #1286: escaping a character above U+00FF read the JDK's
+ * table for its plane, {@code java.lang.CharacterData00} or a sibling, which the JVM builds on its first use, so the
+ * scenario escapes such characters too, and the test checks that no such table is initialized by the calls. The test
+ * assumes the JVM has read a string with a character above U+00FF already, as a JVM on Windows has at startup: the
+ * scenario reads one before its first marker, as the first read of one initializes {@code java.lang.StringUTF16},
+ * the JDK's code for such strings, which nothing at startup does on Linux or macOS. A deep first read there breaks
+ * StringUTF16 for the life of the JVM, which the library can't avoid for a call with no engine built; a separate
+ * issue covers it.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -41,7 +48,7 @@ class FacadeFirstUseInitializationTest {
     private static final Set<String> MEASURED_SAFE = Set.of(
             // A cause chain's set of the exceptions read is backed by one.
             "java.util.IdentityHashMap",
-            // Holds the table of the default-ignorable characters it escapes, an array of twenty ints.
+            // Holds the tables of the characters above U+00FF it escapes, two arrays of ints (#1286).
             "io.github.brantunger.unruly.internal.Text");
 
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
@@ -52,6 +59,10 @@ class FacadeFirstUseInitializationTest {
             ImportSize.class.getName(), Causes.class.getName());
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
+    // The JDK's tables of the Unicode characters above U+00FF, one class a plane, such as CharacterData00, which the
+    // JVM builds on their first use: escaping such a character read one until the engine's own table decided it, and
+    // the engine's first build initializes all of them, after the calls (#1286).
+    private static final String CHARACTER_DATA = "java.lang.CharacterData";
 
     @Test
     @DisplayName("between the first calls' markers, only classes without a static initializer, or measured safe, are"
@@ -90,6 +101,8 @@ class FacadeFirstUseInitializationTest {
 
         assertEquals(List.of(), reached, "classes with a static initializer the first calls initialized (hidden "
                 + "classes left out: " + hidden + "):\n" + output);
+        assertEquals(List.of(), initialized.stream().filter(name -> name.startsWith(CHARACTER_DATA)).toList(),
+                "the JDK's tables of the characters above U+00FF read by the first calls (#1286):\n" + output);
         for (String type : FIRST_USED) {
             assertTrue(initialized.contains(type), type + " not initialized by the first calls:\n" + output);
         }
@@ -105,7 +118,7 @@ class FacadeFirstUseInitializationTest {
                 "it has 65 dot-separated parts, and an import may have at most 64",
                 "it has 1001 characters, and an import may have at most 1000"), answers.subList(0, 39), output);
         // MessageText's answers, which MessageTextTest pins, are only counted.
-        assertEquals(49, answers.size(), output);
+        assertEquals(54, answers.size(), output);
         assertTrue(lines.contains(FacadeFirstUseScenario.ENGINE + "{hit=true}"), "the engine didn't run:\n" + output);
     }
 

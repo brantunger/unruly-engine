@@ -163,7 +163,8 @@ class MessageTextTest {
     @Test
     @DisplayName("every code point on its own is kept, or, if it is a control, line or paragraph separator, space "
             + "separator other than U+0020, format, surrogate or default-ignorable one, escaped as String.format "
-            + "writes each of its UTF-16 units")
+            + "writes each of its UTF-16 units; the types are the running JDK's, so a newer Unicode version fails "
+            + "until Text's table is updated (#1286)")
     void everyCodePointAlone() {
         BitSet ignorable = defaultIgnorable();
         for (int point = 0; point <= Character.MAX_CODE_POINT; point++) {
@@ -187,7 +188,9 @@ class MessageTextTest {
             if (!expected.equals(quoted) || !expected.equals(written) || !expected.equals(fitted)
                     || !expected.equals(quotedWithin)) {
                 fail(String.format("quoted U+%04X as %s, escaped it as %s, within a room as %s and quoted it within "
-                        + "a room as %s, not %s", point, quoted, written, fitted, quotedWithin, expected));
+                        + "a room as %s, not %s (if this JDK's Unicode version is newer than 17.0, Text's table of the"
+                        + " format and separator characters above U+00FF needs updating, #1286)", point, quoted,
+                        written, fitted, quotedWithin, expected));
             }
         }
     }

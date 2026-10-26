@@ -37,18 +37,18 @@ engine.load(rules);                // MVEL's first load of each feature your rul
 ## 🧭 What the first build prepares
 
 **The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest, streams and locks, that an engine's calls use. A `build()` on another
-thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it touches any of them or
-checks any setting, even a wrong one. The next `build()` checks again.
+the JDK's, such as the clock, the SHA-256 digest, streams, locks and the character tables of every Unicode plane. A
+`build()` on another thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it
+touches any of them or checks any setting, even a wrong one. The next `build()` checks again.
 
-It also loads the engine's classes a load or run uses, so a first load or run reads none of them from a file; a
-language's own are its `prepare()`'s to load.
+It also loads the engine's classes a load or run uses, so a first load or run reads none from a file; a language's
+own are its `prepare()`'s to load.
 
 > [!NOTE]
-> In 2.30.15 and 2.30.16 the first `build()` also ran a `ConcurrentLinkedQueue` of its own, a stopgap so the JVM linked
-> the call sites that change the JDK queue a rule set then kept its idle copies in. A rule set now keeps its idle
-> copies and open compilers in a stack of the engine's own whose every change is one compare-and-set, the last step of
-> the call, so a deep first run can't leave a copy lost or open (#1220), and `build()` runs no queue.
+> In 2.30.15 and 2.30.16 the first `build()` also ran a `ConcurrentLinkedQueue`, a stopgap so the JVM linked the call
+> sites that change the JDK queue a rule set then kept its idle copies in. A rule set now keeps its idle copies and
+> open compilers in a stack of the engine's own whose every change is one compare-and-set, the last step of the call,
+> so a deep first run can't leave a copy lost or open (#1220).
 
 **On JDK 21 and 22, outside a native image, it also initializes the JDK's
 `jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep
@@ -64,10 +64,9 @@ types, the annotations, and the class or method that declares each type variable
 `Object.hashCode` reflectively.
 
 So a deep first read of a generic type, as in MVEL's analysis of a method a rule calls or the default output writer's
-first write through a generic setter, finds the JDK's `sun.reflect.generics` classes for the shapes those methods have
+first write through a generic setter, finds the JDK's `sun.reflect.generics` classes for those methods' shapes
 initialized already. Nor can a deep first reflective call of a JDK method leave the proxy class of an annotation those
-methods carry, such as `@IntrinsicCandidate`, unusable. A shape or an annotation type they lack is still left to its
-first use; see [What isn't covered](#-what-isnt-covered).
+methods carry, such as `@IntrinsicCandidate`, unusable.
 
 ## 🧩 What a language prepares
 
@@ -88,11 +87,10 @@ such as `1.5B`, can't leave them unusable, nor, on JDK 25 and 26, `ForkJoinTask`
 that creating a compiler, compiling a rule and a first run of an assignment would otherwise read from a file; a form's
 own are left to its first use, [below](#an-mvel-forms-first-compile-or-run).
 
-**On JDK 25 and later, that initializes `ForkJoinPool` too,** as `BigDecimal`'s static initializer uses it. On JDK 21
-and 22, the JVM's first `build()` does, with `Blocker$ForkJoinPools`. The common pool reads its system properties,
-`java.util.concurrent.ForkJoinPool.common.*`, then: one set later is ignored. Set them on the command line, or before
-MVEL is prepared, at the `build()`, or first `load()` or `validate()`, the table above names; on JDK 21 and 22, before
-the JVM's first `build()`.
+**On JDK 25 and later, that initializes `ForkJoinPool` too,** as `BigDecimal`'s static initializer uses it. The common
+pool reads its system properties, `java.util.concurrent.ForkJoinPool.common.*`, then: one set later is ignored. Set
+them on the command line, or before MVEL is prepared, at the `build()`, or first `load()` or `validate()`, the table
+above names; on JDK 21 and 22, before the JVM's first `build()`.
 
 > [!TIP]
 > To check the room at `build()`, not at a deep first `load()`, name the language
@@ -104,7 +102,7 @@ the JVM's first `build()`.
 
 ## 🚧 What isn't covered
 
-The warm-up narrows the risk of a deep first use; it doesn't close it. Not covered:
+The warm-up narrows the risk of a deep first use without closing it. Not covered:
 
 - A name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the problem before
   any check.
@@ -148,11 +146,12 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
-`FacadeFirstUseInitializationTest`, in a new JVM, before any engine is built, calls every public method of `Throwables`,
-`ImportLimits` and `MessageText`, which a language or application may call anywhere. It
-fails if those calls initialize a class with a static initializer, other than the JDK's hidden classes and two
-measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). The scenario's text is
-Latin-1 only, as escaping a character above U+00FF first reads the JDK's table for it (#1286).
+`FacadeFirstUseInitializationTest`, in a new JVM with no engine built and one UTF-16 string read, calls every public
+method of `Throwables`, `ImportLimits` and `MessageText`, callable anywhere, `MessageText`'s with text from several
+Unicode planes. It fails if those calls initialize a class with a static initializer, other than the JDK's hidden
+classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). Above U+00FF,
+`MessageText` escapes by a table fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, not by the JDK's character
+tables (#1286).
 
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
@@ -163,7 +162,7 @@ already being handled.
 The call then ends as it would have near the top: `load()` throws its `RuleCompilationException`, or succeeds
 past a language's warning; a run fails the rule, throws its failure or what stopped it, or goes on past a warning or
 a listener's exception; a rejected fact throws its `IllegalArgumentException`; and a fatal error is still thrown.
-The lost line is gone: nothing logs it later, not even a `load()` or `run()` around a nested one.
+Nothing logs the lost line later, not even a `load()` or `run()` around a nested one.
 
 Measured with `slf4j-simple` 2.0.20 and Logback 1.5.38, on JDK 21 and 25, none of those overflows left a class
 unusable: each struck while loading a class, not in its static initializer. Other paths and providers aren't
@@ -176,18 +175,17 @@ measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing ov
 ### The JDK classes a rule names or calls
 
 **Beyond what the sections above prepare, the engine leaves the JDK classes a rule names or calls to their first
-load or run.** It can't know them in advance: they're whatever JDK API the rules use. If the JVM's first use of one
-is deep in a stack, its static initializer can overflow, leaving the class unusable as
-[above](#-build-the-first-engine-near-the-top).
+load or run:** they're whatever JDK API the rules use. If the JVM's first use of one is deep in a stack, its static
+initializer can overflow, as [above](#-build-the-first-engine-near-the-top).
 
-There are two ways in:
+Two ways in:
 
 - **A load or `validate()`.** MVEL's analysis looks up a class a rule names by its full name, such as
-  `java.time.LocalDate`, with `Class.forName`, which initializes it. So a rule only has to name the class.
+  `java.time.LocalDate`, with `Class.forName`, which initializes it.
 - **A run.** A run's first use of a JDK feature initializes the classes behind it, which the rule doesn't name:
   `LocalDate.now()` reaches `java.time.zone.ZoneRulesProvider`.
 
-Some examples, measured on JDK 25, where a deep first load or run left a class unusable:
+Examples, measured on JDK 25, of a deep first load or run leaving a class unusable:
 
 | Rule | Deep first | Class left unusable |
 | --- | --- | --- |
@@ -196,12 +194,10 @@ Some examples, measured on JDK 25, where a deep first load or run left a class u
 | `java.time.LocalDate.now().getYear() > 2000` | `run()` | `java.time.zone.ZoneRulesProvider` |
 | `java.text.NumberFormat.getInstance() != null` | `run()` | `sun.util.locale.provider.LocaleProviderAdapter` |
 
-**The class then stays unusable for the JVM's life,** at any depth and from any engine: every later load or run of a
-rule that needs it fails with `Could not initialize class ...`, and so does your code's use of it. `String.format` of
-a number needs `LocaleProviderAdapter` too.
+**The class then stays unusable for the JVM's life,** at any depth and from any engine, for every later load or run
+of a rule that needs it and for your code: `String.format` of a number needs `LocaleProviderAdapter` too.
 
-Only the JVM's first use of that JDK feature can do this. An application that has already called `LocalDate.now()`,
-or formatted a number, isn't exposed for those classes.
+An application that has already called `LocalDate.now()`, or formatted a number, isn't exposed for those classes.
 
 **Use those JDK APIs once at startup, near the top of a stack,** before any load or run can be nested deep:
 
@@ -220,8 +216,7 @@ can't know which APIs they'll call: give their deep loads and runs [more room](e
 ### An MVEL form's first compile or run
 
 **The first time MVEL compiles or runs a form, it does work a later use skips,** such as loading, verifying and
-linking classes. A form is a kind of expression: a `def` function, a projection or filter, `foreach`, a `for` loop, a
-unary minus, a ternary, a regex match or a method call.
+linking classes. A form is a kind of expression, such as those in the table below.
 [MVEL's warm-up](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) runs only a few. A form whose first
 use initializes an MVEL class, such as an inline list or map, `new` or `soundslike`, can instead leave that class
 unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
@@ -255,4 +250,3 @@ other rule list's first run gets only the 8 KB check. No load gets that larger c
 **Load and run your rules, or rules of the same forms, near the top first.** Measured on JDK 21, a form's deep use
 then needed about none, even when the rule used near the top was a different one. Trivial rules aren't enough: a form
 warms another only when they share classes, as a projection and a filter do; a unary minus doesn't warm a `for` loop.
-For rules from your users, give deep loads and runs [more room](exceptions-by-method.md).

@@ -25,6 +25,9 @@ public final class Text {
      */
     public static final int MAX_DESCRIPTION_LENGTH = 1_000;
 
+    // The last code point of Latin-1, up to which the JDK's table of the characters is built at startup (#1286).
+    private static final int LAST_LATIN_1 = 0xFF;
+
     /**
      * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
      * Unicode 15.0 to 17.0) that aren't format characters, as the first and last code point of each range, in order:
@@ -34,6 +37,27 @@ public final class Text {
     private static final int[] OTHER_DEFAULT_IGNORABLE = {
         0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
         0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
+    };
+
+    /**
+     * The characters above U+00FF of Unicode's categories Cf (format), Zs (space separator), Zl (line separator) and
+     * Zp (paragraph separator), which {@link #escape} escapes, as {@code Character.getType} gives them on JDK 21, 25
+     * and 26 (the same in Unicode 15.0 to 17.0; 186 code points), as the first and last code point of each range, in
+     * order, with ranges of different categories joined where they touch: U+2000..U+200A are space separators and
+     * U+200B..U+200F format characters; U+2028 is the line separator, U+2029 the paragraph separator, U+202A..U+202E
+     * format characters and U+202F a space separator; and U+205F is a space separator and U+2060..U+2064 format
+     * characters. A table, rather than {@code Character.getType}, which above U+00FF reads a table of the JDK's that
+     * the JVM builds on its first use, which a use deep in a stack can leave unusable for the life of the JVM (#1286).
+     * So which characters are escaped is fixed to Unicode 15.0 to 17.0, whatever the running JDK's version;
+     * {@code MessageTextTest.everyCodePointAlone} compares the table to the running JDK's and fails when it has to be
+     * updated. Below U+0100, where the JDK's table is built at startup, the type still comes from
+     * {@code Character.getType}.
+     */
+    private static final int[] FORMAT_OR_SEPARATOR = {
+        0x0600, 0x0605, 0x061C, 0x061C, 0x06DD, 0x06DD, 0x070F, 0x070F, 0x0890, 0x0891, 0x08E2, 0x08E2,
+        0x1680, 0x1680, 0x180E, 0x180E, 0x2000, 0x200F, 0x2028, 0x202F, 0x205F, 0x2064, 0x2066, 0x206F,
+        0x3000, 0x3000, 0xFEFF, 0xFEFF, 0xFFF9, 0xFFFB, 0x110BD, 0x110BD, 0x110CD, 0x110CD, 0x13430, 0x1343F,
+        0x1BCA0, 0x1BCA3, 0x1D173, 0x1D17A, 0xE0001, 0xE0001, 0xE0020, 0xE007F
     };
 
     private Text() {
@@ -324,6 +348,15 @@ public final class Text {
      * {@code u} and four hex digits.
      *
      * <p>
+     * Which characters are escaped is fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, whatever the running
+     * JDK's version: above U+00FF, the format and separator characters come from {@link #FORMAT_OR_SEPARATOR} and
+     * the other default-ignorable ones from {@link #OTHER_DEFAULT_IGNORABLE}, not from {@code Character.getType},
+     * whose tables for those characters the JVM builds on their first use, which deep in a stack can leave one
+     * unusable for the life of the JVM (#1286). Below U+0100, the JDK's table is built at startup, so the type comes
+     * from {@code Character.getType} as before.
+     * </p>
+     *
+     * <p>
      * Escaping text that has already been escaped changes nothing, because a backslash isn't a control, format,
      * space-separator or default-ignorable character, so a caller that can't tell whether a message has been through
      * here may escape it again.
@@ -349,12 +382,7 @@ public final class Text {
                 case '\r' -> escaped.append("\\r");
                 case '\t' -> escaped.append("\\t");
                 default -> {
-                    int type = Character.getType(c);
-                    // The loop reads code points, so only a lone surrogate has the type SURROGATE.
-                    if (Character.isISOControl(c) || type == Character.LINE_SEPARATOR
-                            || type == Character.PARAGRAPH_SEPARATOR || type == Character.FORMAT
-                            || type == Character.SURROGATE || isOtherDefaultIgnorable(c)
-                            || (type == Character.SPACE_SEPARATOR && c != ' ')) {
+                    if (isEscaped(c)) {
                         for (char unit : Character.toChars(c)) {
                             appendEscape(escaped, unit);
                         }
@@ -368,19 +396,42 @@ public final class Text {
     }
 
     /**
-     * Tells whether a code point is one of Unicode's {@code Default_Ignorable_Code_Point} characters that isn't a
-     * format character, which {@code Character} has no test for: the ranges of {@link #OTHER_DEFAULT_IGNORABLE}.
+     * Tells whether {@link #escape} escapes a code point other than {@code \n}, {@code \r} and {@code \t}: a control,
+     * line or paragraph separator, format, other default-ignorable or space-separator character other than U+0020,
+     * or a lone surrogate. Above U+00FF, it reads {@link #FORMAT_OR_SEPARATOR} rather than asking
+     * {@code Character.getType}, whose table for those characters the JVM builds on its first use (#1286).
      *
      * @param c The code point
-     * @return {@code true} if a viewer shows it as nothing
+     * @return {@code true} if it is escaped
      */
-    private static boolean isOtherDefaultIgnorable(int c) {
+    private static boolean isEscaped(int c) {
+        if (c > LAST_LATIN_1) {
+            // The loop reads code points, so only a lone surrogate is one; the test is arithmetic, on the code
+            // point's own value, as a supplementary one cast to a char could read as a surrogate.
+            return (c <= Character.MAX_VALUE && Character.isSurrogate((char) c)) || inRanges(c, FORMAT_OR_SEPARATOR)
+                    || inRanges(c, OTHER_DEFAULT_IGNORABLE);
+        }
+        // Latin-1 has no line or paragraph separator, surrogate or other default-ignorable character, so of the kinds
+        // above only the controls, the format character U+00AD and the space separator U+00A0 are to be found here.
+        int type = Character.getType(c);
+        return Character.isISOControl(c) || type == Character.FORMAT || (type == Character.SPACE_SEPARATOR && c != ' ');
+    }
+
+    /**
+     * Tells whether a code point is in one of a table's ranges, as {@link #OTHER_DEFAULT_IGNORABLE} and
+     * {@link #FORMAT_OR_SEPARATOR} hold them: the first and last code point of each, in order.
+     *
+     * @param c      The code point
+     * @param ranges The table
+     * @return {@code true} if it is in one of the ranges
+     */
+    private static boolean inRanges(int c, int... ranges) {
         // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
-        for (int i = 0; i < OTHER_DEFAULT_IGNORABLE.length; i += 2) {
-            if (c < OTHER_DEFAULT_IGNORABLE[i]) {
+        for (int i = 0; i < ranges.length; i += 2) {
+            if (c < ranges[i]) {
                 return false;
             }
-            if (c <= OTHER_DEFAULT_IGNORABLE[i + 1]) {
+            if (c <= ranges[i + 1]) {
                 return true;
             }
         }
