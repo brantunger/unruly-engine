@@ -29,7 +29,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * class without one, which the JVM logs with {@code (no method)}, runs no code of its own. Then the scenario builds and
  * runs an engine, which shows the calls left nothing broken. #1286: escaping a character above U+00FF read the JDK's
  * table for its plane, {@code java.lang.CharacterData00} or a sibling, which the JVM builds on its first use, so the
- * scenario escapes such characters too, and the test checks that no such table is initialized by the calls.
+ * scenario escapes such characters too, and the test checks that no such table is initialized by the calls. The test
+ * assumes the JVM has read a string with a character above U+00FF already, as a JVM on Windows has at startup: the
+ * scenario reads one before its first marker, as the first read of one initializes {@code java.lang.StringUTF16},
+ * the JDK's code for such strings, which nothing at startup does on Linux or macOS. A deep first read there breaks
+ * StringUTF16 for the life of the JVM, which the library can't avoid for a call with no engine built; a separate
+ * issue covers it.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {

@@ -136,7 +136,11 @@ final class RunClasses {
             // only the Latin-1 one is built at startup. So each is read here, by the type of one character of its
             // plane: the Basic Multilingual Plane (CharacterData00), planes 1 to 3 (01, 02, 03), the unassigned
             // planes 4 to 13 (Undefined), plane 14 (0E), and the private-use planes 15 and 16 (PrivateUse) (#1286).
-            Character.getType(0x03C0);
+            // The first reads the character from a string, as the JDK's code for a string with such a character,
+            // StringUTF16, is initialized by the first read of a character of one, and nothing at startup does that
+            // on Linux or macOS; a JVM on Windows, and the read of the JDK's security settings above, initialize it
+            // before this, so this reads one in case.
+            Character.getType("\u03c0".codePointAt(0));
             Character.getType(0x10000);
             Character.getType(0x20000);
             Character.getType(0x30000);

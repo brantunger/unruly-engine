@@ -188,8 +188,11 @@ class FirstRunClassInitializationTest {
     // scenario initializes but the first build (#1210). The seven CharacterData classes are the JDK's tables of the
     // Unicode characters above U+00FF, one a plane, which the first build reads so that no Character method called
     // on such a character deep in a stack is the first to build one (#1286); the JVM builds only the Latin-1 one as it
-    // starts, and the scenario's text is Latin-1, so nothing in it initializes them but the first build.
-    private static final List<String> JDK_CLASSES = List.of("java.lang.CharacterData00",
+    // starts, and the scenario's text is Latin-1, so nothing in it initializes them but the first build. StringUTF16
+    // is the JDK's code for a string with such a character, which the first read of one of its characters
+    // initializes: the first build reads one, though a JVM on Windows initializes it at startup, and the build's read
+    // of the JDK's security settings does on Linux, before the build's own read.
+    private static final List<String> JDK_CLASSES = List.of("java.lang.StringUTF16", "java.lang.CharacterData00",
             "java.lang.CharacterData01", "java.lang.CharacterData02", "java.lang.CharacterData03",
             "java.lang.CharacterData0E", "java.lang.CharacterDataPrivateUse", "java.lang.CharacterDataUndefined",
             "java.util.stream.MatchOps$MatchKind",

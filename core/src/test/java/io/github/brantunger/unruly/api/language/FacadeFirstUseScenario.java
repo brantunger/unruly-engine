@@ -21,7 +21,9 @@ import java.util.Map;
  * prints each answer after {@link #ANSWER}, builds an engine and runs it, and prints {@link #ENGINE} and what the run
  * returned. Its text has characters above U+00FF, of each plane the escaping decides a character of: escaping one
  * read the JDK's table for it, a class the JVM builds on its first use, before the engine decided them from a table
- * of its own (#1286).
+ * of its own (#1286). Before {@link #BEFORE} it reads one character of that text, so the JVM's code for such strings,
+ * {@code java.lang.StringUTF16}, is initialized before the calls, as it is at startup on Windows but not on Linux or
+ * macOS: the test assumes the JVM has read such a string already.
  */
 final class FacadeFirstUseScenario {
 
@@ -90,6 +92,13 @@ final class FacadeFirstUseScenario {
         String longName = "n".repeat(MessageText.MAX_NAME_LENGTH + 10);
         Object[] answers = new Object[54];
         int i = 0;
+        // The test's precondition: the JVM has read a string with a character above U+00FF already, as a JVM on
+        // Windows has at startup, so the calls aren't the first to initialize java.lang.StringUTF16, the JDK's code
+        // for such strings, which a literal's creation doesn't and the first read of one of its characters does. On
+        // Linux and macOS nothing at startup reads one, and a deep first read breaks StringUTF16 for the life of the
+        // JVM, which the library can't avoid for a call with no engine built; a separate issue covers it. Read with
+        // a plain call, printed without concatenation, as a concat call site initializes java.lang.Long (#1286).
+        System.out.println(wide.codePointAt(1));
 
         System.out.println(BEFORE);
         answers[i++] = Throwables.isOverflow(null);

@@ -146,12 +146,12 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
-`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, calls every public method of `Throwables`,
-`ImportLimits` and `MessageText`, which a language or application may call anywhere, `MessageText`'s with text from
-several Unicode planes. It fails if those calls initialize a class with a static initializer, other than the JDK's
-hidden classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). Above
-U+00FF, `MessageText` escapes by a table fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, not by the JDK's
-character tables (#1286).
+`FacadeFirstUseInitializationTest`, in a new JVM with no engine built and one UTF-16 string read, calls every public
+method of `Throwables`, `ImportLimits` and `MessageText`, callable anywhere, `MessageText`'s with text from several
+Unicode planes. It fails if those calls initialize a class with a static initializer, other than the JDK's hidden
+classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). Above U+00FF,
+`MessageText` escapes by a table fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, not by the JDK's character
+tables (#1286).
 
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's

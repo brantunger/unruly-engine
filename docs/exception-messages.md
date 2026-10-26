@@ -26,6 +26,12 @@ engine's own, whatever the running JDK's Unicode version, so a later JDK escapes
 release updates the table; below U+0100 the running JDK decides, the same way on JDK 21 to 26. A later 2.x release may
 also escape more kinds of character.
 
+On Linux and macOS, a first escape of text above U+00FF made deep in a stack, with no engine built and before the JVM
+has read any such text, can still break `java.lang.StringUTF16` for the life of the JVM: reading such a string is the
+JDK's first use of that class there, where Windows initializes it at startup. Building an engine first, or reading
+such text near the top of a stack, prevents it; see
+[Build the first engine near the top](deep-stacks.md#-build-the-first-engine-near-the-top).
+
 Neither a name nor a fact value an exception quotes can start a log line, change how it reads or pass for another
 name through an invisible or look-alike character, and escaping twice changes nothing. Legitimate text shows escapes
 too: an emoji's U+FE0F, CJK text's U+3000, and the U+202F that the JDK puts between a French number's digit groups
