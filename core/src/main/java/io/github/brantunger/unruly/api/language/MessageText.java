@@ -37,9 +37,10 @@ import java.util.Objects;
  * <p>
  * The escapes, the note {@code ... (N more characters)} and the limits, {@link #MAX_NAME_LENGTH} (200 characters,
  * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 2.x. javac inlines the
- * two constants into the classes that read them. Which characters are escaped follows Unicode: format characters and
- * space separators are read from the running JDK's Unicode version, so a later JDK may escape more characters as
- * Unicode marks them, and a later 2.x release may escape more kinds of character.
+ * two constants into the classes that read them. Which characters above U+00FF are escaped follows Unicode 15.0 to
+ * 17.0, as JDK 21 to 26 have it, from a table of the engine's own, whatever the running JDK's Unicode version, so a
+ * later JDK escapes the same characters until a later 2.x release updates the table; below U+0100 the running JDK
+ * decides, the same way on JDK 21 to 26. A later 2.x release may also escape more kinds of character.
  * </p>
  */
 public final class MessageText {
@@ -83,10 +84,12 @@ public final class MessageText {
      * backslash isn't escaped, so escaping text twice gives the same text.
      *
      * <p>
-     * Space separators and format characters are those of the running JDK's Unicode version
-     * ({@link Character#getType(int)}): the space separators are U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F and
-     * U+3000 besides U+0020. The other default-ignorable characters are U+034F, U+115F to U+1160, U+17B4 to U+17B5,
-     * U+180B to U+180F, U+2065, U+3164, U+FE00 to U+FE0F, U+FFA0, U+FFF0 to U+FFF8 and U+E0000 to U+E0FFF.
+     * Space separators and format characters above U+00FF are those of Unicode 15.0 to 17.0, as JDK 21 to 26 have
+     * them, from a table of the engine's own rather than from the running JDK's {@link Character#getType(int)}, which
+     * above U+00FF reads a table the JVM builds on its first use (#1286); below U+0100 the running JDK decides, the
+     * same way on JDK 21 to 26. The space separators are U+00A0, U+1680, U+2000 to U+200A, U+202F, U+205F and U+3000
+     * besides U+0020. The other default-ignorable characters are U+034F, U+115F to U+1160, U+17B4 to U+17B5, U+180B
+     * to U+180F, U+2065, U+3164, U+FE00 to U+FE0F, U+FFA0, U+FFF0 to U+FFF8 and U+E0000 to U+E0FFF.
      * </p>
      *
      * <p>

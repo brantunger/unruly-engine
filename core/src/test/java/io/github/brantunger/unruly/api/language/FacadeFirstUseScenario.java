@@ -19,8 +19,9 @@ import java.util.Map;
  * paths, and prints {@link #AFTER}. Between the two it concatenates no string and links no lambda, as the test's own
  * code does both through a call site the JVM links on its first use, and it keeps the answers in an array. Then it
  * prints each answer after {@link #ANSWER}, builds an engine and runs it, and prints {@link #ENGINE} and what the run
- * returned. Its text is Latin-1 only: escaping a character above U+00FF reads the JDK's table for it, which no engine
- * initializes either (#1286).
+ * returned. Its text has characters above U+00FF, of each plane the escaping decides a character of: escaping one
+ * read the JDK's table for it, a class the JVM builds on its first use, before the engine decided them from a table
+ * of its own (#1286).
  */
 final class FacadeFirstUseScenario {
 
@@ -81,9 +82,13 @@ final class FacadeFirstUseScenario {
         String manyParts = "a.".repeat(ImportLimits.MAX_IMPORT_PARTS).concat("B");
         String tooLong = "a".repeat(ImportLimits.MAX_IMPORT_LENGTH + 1);
         String text = "a\nb\rc\td\u0001e\u007ff\u0085g\u00a0h\u00adi 'j' \\k \u00e9";
+        // Text above U+00FF, one character of each plane's kind the escaping decides: a Greek letter, a format
+        // character of plane 1 (U+1BCA0, as its surrogate pair), a tag character of plane 14 (U+E0001), an
+        // ideographic space, the line separator and a CJK letter of plane 2 (U+20000) (#1286).
+        String wide = "a\u03c0b\ud82f\udca0c\udb40\udc01d\u3000e\u2028f\ud840\udc00g";
         String longText = "x".repeat(MessageText.MAX_TEXT_LENGTH + 100);
         String longName = "n".repeat(MessageText.MAX_NAME_LENGTH + 10);
-        Object[] answers = new Object[49];
+        Object[] answers = new Object[54];
         int i = 0;
 
         System.out.println(BEFORE);
@@ -136,6 +141,11 @@ final class FacadeFirstUseScenario {
         answers[i++] = MessageText.escapeWithin(longText, 20, 40);
         answers[i++] = MessageText.quoteWithin(text, 12);
         answers[i++] = MessageText.quoteWithin("short", 40);
+        answers[i++] = MessageText.escape(wide);
+        answers[i++] = MessageText.quote(wide);
+        answers[i++] = MessageText.escapeWithin(wide, 40);
+        answers[i++] = MessageText.escapeWithin(wide, 6, 40);
+        answers[i++] = MessageText.quoteWithin(wide, 40);
         System.out.println(AFTER);
 
         for (Object answer : answers) {

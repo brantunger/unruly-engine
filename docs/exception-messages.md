@@ -21,6 +21,11 @@ characters Unicode marks default-ignorable, which show as nothing (U+3164 HANGUL
 unassigned ones), are escaped as `\n`, `\r`, `\t` or `\u` and four lowercase hex digits (`\u202e`), one per UTF-16
 unit, so two for a character outside the BMP.
 
+Which characters above U+00FF are escaped follows Unicode 15.0 to 17.0, as JDK 21 to 26 have it, from a table of the
+engine's own, whatever the running JDK's Unicode version, so a later JDK escapes the same characters until a later 2.x
+release updates the table; below U+0100 the running JDK decides, the same way on JDK 21 to 26. A later 2.x release may
+also escape more kinds of character.
+
 Neither a name nor a fact value an exception quotes can start a log line, change how it reads or pass for another
 name through an invisible or look-alike character, and escaping twice changes nothing. Legitimate text shows escapes
 too: an emoji's U+FE0F, CJK text's U+3000, and the U+202F that the JDK puts between a French number's digit groups
