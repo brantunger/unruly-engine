@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.5](https://github.com/brantunger/unruly-engine/compare/v2.33.4...v2.33.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* the blank check of a rule's name and tags, a run's tags, a fact's name and a language's name no longer reads a JDK character table on its first use, so a deep first Rule.build(), fact(), facts(), language() or withTags() with a name that starts above U+00FF can't break java.lang.CharacterData00 for the life of the JVM; the engine decides blankness itself, identical to String.isBlank() on JDK 21 to 26 ([#1299](https://github.com/brantunger/unruly-engine/issues/1299)) ([46d506c](https://github.com/brantunger/unruly-engine/commit/46d506c35d27ba3639d70b46d89863a5bee256e4))
+
 ## [2.33.4](https://github.com/brantunger/unruly-engine/compare/v2.33.3...v2.33.4) (2026-10-26)
 
 
