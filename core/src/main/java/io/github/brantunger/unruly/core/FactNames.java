@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
@@ -28,7 +29,8 @@ final class FactNames {
         /**
          * The name is blank, as {@link String#isBlank()} says: empty, or only characters
          * {@link Character#isWhitespace(int)} accepts. So a name of a no-break space ({@code U+00A0}) or a zero-width
-         * space ({@code U+200B}) isn't blank, and is each language's to check.
+         * space ({@code U+200B}) isn't blank, and is each language's to check. {@link Whitespace} decides it, without
+         * the JDK's tables of the characters above U+00FF (#1292).
          */
         BLANK,
         /**
@@ -64,7 +66,10 @@ final class FactNames {
         if (name == null) {
             return Problem.NULL;
         }
-        if (name.isBlank()) {
+        // Not String.isBlank(), which reads a JDK table the JVM builds on its first use for a name that starts with a
+        // character above U+00FF; the builder and the test kit's contexts check a name before any engine is built
+        // (#1292).
+        if (Whitespace.isBlank(name)) {
             return Problem.BLANK;
         }
         // Only now: an unmodifiable set throws NullPointerException when asked whether it holds null.

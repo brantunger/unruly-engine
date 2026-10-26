@@ -46,6 +46,16 @@ public final class Accessors {
      * keeps the least of two {@code isX}, and prefers a {@code boolean} {@code isX} to a {@code getX}.
      * </p>
      *
+     * <p>
+     * A getter whose {@code X} has a character above U+00FF first or second, such as {@code get\u0130sim()} or
+     * {@code get\u03a0x()}, still reads the JDK's case tables here, through {@link Character#isUpperCase(char)} and
+     * {@link Character#toLowerCase(char)}: the JDK's table of the first plane, {@code java.lang.CharacterData00}, the
+     * plane every {@code char} is in, which the JVM builds on its first use. A fact class's getters are read on the
+     * first read of one of its properties, which may be deep in a stack with no engine built, and a first use that
+     * overflows there leaves the table unusable for the life of the JVM, the application's own code included (#1297).
+     * The engine's first build initializes every such table, so only a read before any build is exposed.
+     * </p>
+     *
      * @param method A public method of the object's class
      * @return The property's name, or {@code null}
      */
@@ -71,6 +81,9 @@ public final class Accessors {
         return null;
     }
 
+    // Asks the JDK's case tables, which for a first or second character above U+00FF the JVM builds on their first
+    // use, as property()'s Javadoc says (#1297). Not decided by a table of the engine's own, as a blank check is
+    // (Whitespace): the case of every letter is a far larger table, and it changes with the JDK's Unicode version.
     private static String decapitalize(String name) {
         if (name.length() > 1 && Character.isUpperCase(name.charAt(1))) {
             // As java.beans does: URL stays URL, so getURL() is the property URL.
@@ -97,7 +110,10 @@ public final class Accessors {
      * so both {@code xValue} and {@code XValue} are written with {@code setXValue}. It isn't the inverse of
      * {@link #property}, which reads {@code getXValue()} as {@code XValue}, as {@code java.beans} does. Nor where
      * upper-casing a letter doesn't give back the one {@link #property} lower-cased: {@code get\u0130sim()} reads
-     * {@code isim}, but {@code isim} is written with {@code setIsim}, not {@code set\u0130sim}.
+     * {@code isim}, but {@code isim} is written with {@code setIsim}, not {@code set\u0130sim}. A property whose
+     * first character is above U+00FF reads the JDK's table of the first plane, {@code java.lang.CharacterData00},
+     * here, through {@link Character#toUpperCase(char)}; the JVM builds it on its first use, as {@link #property}
+     * says (#1297), and the default {@code api.OutputWriter} writes a bean's property this way with no engine built.
      *
      * @param property The property's name, not empty
      * @return The setter's name

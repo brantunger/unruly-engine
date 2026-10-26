@@ -5,25 +5,38 @@ import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
+import io.github.brantunger.unruly.api.RunOptions;
 import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Supplier;
 
 /**
  * Run by {@link FacadeFirstUseInitializationTest} in a JVM that logs every class it initializes, and builds no engine
  * before it prints {@link #AFTER}. It makes what it reads first, then prints {@link #BEFORE}, calls every public
  * method of {@link Throwables}, {@link ImportLimits} and {@link MessageText} once or more, so each takes each of its
- * paths, and prints {@link #AFTER}. Between the two it concatenates no string and links no lambda, as the test's own
- * code does both through a call site the JVM links on its first use, and it keeps the answers in an array. Then it
- * prints each answer after {@link #ANSWER}, builds an engine and runs it, and prints {@link #ENGINE} and what the run
- * returned. Its text has characters above U+00FF, of each plane the escaping decides a character of: escaping one
- * read the JDK's table for it, a class the JVM builds on its first use, before the engine decided them from a table
- * of its own (#1286). Before {@link #BEFORE} it reads one character of that text, so the JVM's code for such strings,
+ * paths, then builds a rule whose name and tag start with a Greek letter, declares facts, adds a language and makes
+ * run options with such names (#1292), and prints {@link #AFTER}. Between the two it concatenates no string and links
+ * no lambda, as the test's own code does both through a call site the JVM links on its first use, and it keeps the
+ * answers in an array. Then it prints each answer after {@link #ANSWER}, builds an engine and runs it, and prints
+ * {@link #ENGINE} and what the run returned. Its text has characters above U+00FF, of each plane the escaping decides
+ * a character of: escaping one read the JDK's table for it, a class the JVM builds on its first use, before the engine
+ * decided them from a table of its own (#1286); and a name that starts with one read the same table in the blank
+ * check, {@code String.isBlank()}, before the engine decided that from comparisons of its own (#1292). Before
+ * {@link #BEFORE} it reads one character of that text, so the JVM's code for such strings,
  * {@code java.lang.StringUTF16}, is initialized before the calls, as it is at startup on Windows but not on Linux or
- * macOS: the test assumes the JVM has read such a string already.
+ * macOS: the test assumes the JVM has read such a string already. Before it too, it creates the engine builder the
+ * names are given to, and it touches
+ * {@link RunOptions}, whose static initializer makes the default options, the language and collections the calls are
+ * given, whose classes have static initializers of their own, and the {@link TreeSet} a rule and run options sort
+ * their tags in, whose class has one too: the calls' blank checks are what is measured, not what they are given or
+ * keep.
  */
 final class FacadeFirstUseScenario {
 
@@ -90,7 +103,30 @@ final class FacadeFirstUseScenario {
         String wide = "a\u03c0b\ud82f\udca0c\udb40\udc01d\u3000e\u2028f\ud840\udc00g";
         String longText = "x".repeat(MessageText.MAX_TEXT_LENGTH + 100);
         String longName = "n".repeat(MessageText.MAX_NAME_LENGTH + 10);
-        Object[] answers = new Object[54];
+        // Names that start with a character above U+00FF, whose blank check read the JDK's table for it, as escaping
+        // did, before the engine decided that from comparisons of its own (#1292): a rule's name and tag, two facts',
+        // a language's and a run's tag. What the calls are given is made here: the builder, with a factory that isn't
+        // a method reference, as linking one initializes java.lang.Long on JDK 21, which the calls must be the first
+        // that could; the default run options, as RunOptions has a static initializer; the language, as its class has
+        // one; and the collections, whose classes have one each.
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.firstMatch(new Supplier<>() {
+            @Override
+            public Map<String, Object> get() {
+                return new HashMap<>();
+            }
+        });
+        RunOptions options = RunOptions.defaults();
+        ToyExpressionLanguage piLanguage = new ToyExpressionLanguage("\u03c0lang");
+        List<String> piTag = new ArrayList<>();
+        piTag.add("\u03c0tag");
+        Map<String, Class<?>> piFacts = new HashMap<>();
+        piFacts.put("\u03c0facts", String.class);
+        Set<String> piRunTag = new HashSet<>();
+        piRunTag.add("\u03c0run");
+        // A rule and run options keep their tags sorted, in a TreeSet, whose class and TreeMap's have static
+        // initializers JDK 21 doesn't run at startup, whatever the tags' characters: not what this measures.
+        new TreeSet<>().add("sorted");
+        Object[] answers = new Object[59];
         int i = 0;
         // The test's precondition: the JVM has read a string with a character above U+00FF already, as a JVM on
         // Windows has at startup, so the calls aren't the first to initialize java.lang.StringUTF16, the JDK's code
@@ -155,6 +191,13 @@ final class FacadeFirstUseScenario {
         answers[i++] = MessageText.escapeWithin(wide, 40);
         answers[i++] = MessageText.escapeWithin(wide, 6, 40);
         answers[i++] = MessageText.quoteWithin(wide, 40);
+        // The builder's calls answer the builder itself, so each is kept as whether it did.
+        answers[i++] = Rule.builder().ruleName("\u03c0rule").condition("x == 1").action("put hit true").tags(piTag)
+                .build();
+        answers[i++] = builder.fact("\u03c0fact", String.class) == builder;
+        answers[i++] = builder.facts(piFacts) == builder;
+        answers[i++] = builder.language(piLanguage) == builder;
+        answers[i++] = options.withTags(piRunTag);
         System.out.println(AFTER);
 
         for (Object answer : answers) {

@@ -94,7 +94,11 @@ public final class FactProperties {
      *     greatest in {@link String#compareTo} order wins, so {@code get\u0130sim()} beats {@code getIsim()}. Only
      *     the tie between two {@code getProperty()} is broken as {@code java.beans} breaks it; the other two rules
      *     are this class's own. The choice never depends on the order reflection reports methods in. Public fields
-     *     aren't read.</li>
+     *     aren't read. A getter whose first or second letter after {@code get} or {@code is} is above U+00FF, such
+     *     as {@code get\u0130sim()}, is lower-cased with the JDK's table of the first plane,
+     *     {@code java.lang.CharacterData00}, which the JVM builds on its first use: the first read of any property of
+     *     a class reads all its getters, and a first read deep in a stack with no engine built can leave that table
+     *     unusable for the life of the JVM (#1297). The engine's first build initializes every such table.</li>
      * </ul>
      *
      * <p>

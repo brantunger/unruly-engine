@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
@@ -105,7 +106,9 @@ public final class RunOptions {
             if (tag == null) {
                 throw new IllegalArgumentException("tags must not contain null, but were " + Names.quoteAll(tags));
             }
-            if (tag.isBlank()) {
+            // Not String.isBlank(), which reads a JDK table the JVM builds on its first use for a tag that starts
+            // with a character above U+00FF; options may be made before any engine is built (#1292).
+            if (Whitespace.isBlank(tag)) {
                 throw new IllegalArgumentException("tags must not contain a blank tag, but were "
                         + Names.quoteAll(tags));
             }

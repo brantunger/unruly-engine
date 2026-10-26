@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.ChildJvm;
+import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Lookups;
@@ -34,7 +35,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * scenario reads one before its first marker, as the first read of one initializes {@code java.lang.StringUTF16},
  * the JDK's code for such strings, which nothing at startup does on Linux or macOS. A deep first read there breaks
  * StringUTF16 for the life of the JVM, which the library can't avoid for a call with no engine built; a separate
- * issue covers it.
+ * issue covers it. #1292: the blank check of a rule's name and tags, a run's tags, a language's name and a fact's
+ * name, {@code String.isBlank()}, read the same table for a name that starts with such a character, with no engine
+ * built, until the engine's own {@code internal.Whitespace} decided that; so the scenario builds a rule, declares
+ * facts, adds a language and makes run options with such names too, between the markers.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -53,15 +57,19 @@ class FacadeFirstUseInitializationTest {
 
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
-    // initialized them already. Failures isn't public, so it is named by its name.
+    // initialized them already. Failures, FactNames and LanguageNames aren't public, or aren't reachable from here,
+    // and Whitespace isn't on a release before the fix, so they are named by their names (#1292).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
             MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
-            ImportSize.class.getName(), Causes.class.getName());
+            ImportSize.class.getName(), Causes.class.getName(), Rule.class.getName(), Rule.RuleBuilder.class.getName(),
+            "io.github.brantunger.unruly.core.EngineCompileContext", "io.github.brantunger.unruly.core.FactNames",
+            "io.github.brantunger.unruly.core.LanguageNames", "io.github.brantunger.unruly.internal.Whitespace");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
     // The JDK's tables of the Unicode characters above U+00FF, one class a plane, such as CharacterData00, which the
-    // JVM builds on their first use: escaping such a character read one until the engine's own table decided it, and
-    // the engine's first build initializes all of them, after the calls (#1286).
+    // JVM builds on their first use: escaping such a character read one until the engine's own table decided it, as
+    // did the blank check of a name that starts with one (#1292), and the engine's first build initializes all of
+    // them, after the calls (#1286).
     private static final String CHARACTER_DATA = "java.lang.CharacterData";
 
     @Test
@@ -118,7 +126,13 @@ class FacadeFirstUseInitializationTest {
                 "it has 65 dot-separated parts, and an import may have at most 64",
                 "it has 1001 characters, and an import may have at most 1000"), answers.subList(0, 39), output);
         // MessageText's answers, which MessageTextTest pins, are only counted.
-        assertEquals(54, answers.size(), output);
+        assertEquals(59, answers.size(), output);
+        // The names that start with a Greek letter were accepted: the rule and the run options, as each describes
+        // itself, and the builder's three calls, each true for having answered the builder (#1292).
+        assertEquals(List.of("Rule(ruleName=\u03c0rule, condition=x == 1, action=put hit true, priority=null,"
+                + " description=null, language=null, enabled=true, validFrom=null, validTo=null, tags=[\u03c0tag])",
+                "true", "true", "true", "RunOptions(timeout=the engine's, tags=[\u03c0run])"),
+                answers.subList(54, 59), output);
         assertTrue(lines.contains(FacadeFirstUseScenario.ENGINE + "{hit=true}"), "the engine didn't run:\n" + output);
     }
 

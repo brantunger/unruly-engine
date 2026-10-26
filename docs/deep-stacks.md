@@ -1,7 +1,6 @@
 # 🪜 A first build or load deep in a stack
 
-This page says what the engine prepares before a first build, load or run that may start deep in a stack, and what it
-leaves to first use.
+What the engine prepares before a first build, load or run deep in a stack, and what it leaves to first use.
 
 **Who it's for:** application developers whose engines may be built, or rules loaded or run, deep in a stack, such as
 from a [nested run](nested-runs.md), and language authors.
@@ -102,7 +101,7 @@ above names; on JDK 21 and 22, before the JVM's first `build()`.
 
 ## 🚧 What isn't covered
 
-The warm-up narrows the risk of a deep first use without closing it. Not covered:
+Not covered:
 
 - A name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the problem before
   any check.
@@ -112,6 +111,10 @@ The warm-up narrows the risk of a deep first use without closing it. Not covered
   several values, fails for good if linked too deep.
 - The JDK's reflection beyond what the warm-up reaches, listed below.
 - [The JDK classes rules use](#the-jdk-classes-a-rule-names-or-calls).
+
+Nor, with no engine built, are the JDK's case tables: `FactProperties`' first read of a fact class reads them for a
+getter with a character above U+00FF first or second after `get`/`is`, as does `OutputWriter.beansAndMaps()` for a
+bean property starting with one (#1297).
 
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
@@ -146,12 +149,15 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
-`FacadeFirstUseInitializationTest`, in a new JVM with no engine built and one UTF-16 string read, calls every public
-method of `Throwables`, `ImportLimits` and `MessageText`, callable anywhere, `MessageText`'s with text from several
-Unicode planes. It fails if those calls initialize a class with a static initializer, other than the JDK's hidden
-classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260). Above U+00FF,
-`MessageText` escapes by a table fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, not by the JDK's character
-tables (#1286).
+`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, one UTF-16 string read, its arguments made and
+`TreeSet` initialized (#1298), calls every public method of `Throwables`, `ImportLimits` and `MessageText`,
+`MessageText`'s with text from several Unicode planes, and builds a tagged rule, declares a fact, facts and language,
+and sets run tags, all starting above U+00FF (#1292). It fails if those calls initialize a class with a static
+initializer, other than the JDK's hidden classes and two measured safe: `java.util.IdentityHashMap` and the engine's
+internal `Text` (#1260).
+
+Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping), not the
+JDK's (#1286).
 
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
@@ -175,14 +181,14 @@ measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing ov
 ### The JDK classes a rule names or calls
 
 **Beyond what the sections above prepare, the engine leaves the JDK classes a rule names or calls to their first
-load or run:** they're whatever JDK API the rules use. If the JVM's first use of one is deep in a stack, its static
-initializer can overflow, as [above](#-build-the-first-engine-near-the-top).
+load or run.** If the JVM's first use of one is deep in a stack, its static initializer can overflow, as
+[above](#-build-the-first-engine-near-the-top).
 
 Two ways in:
 
 - **A load or `validate()`.** MVEL's analysis looks up a class a rule names by its full name, such as
   `java.time.LocalDate`, with `Class.forName`, which initializes it.
-- **A run.** A run's first use of a JDK feature initializes the classes behind it, which the rule doesn't name:
+- **A run.** Its first use of a JDK feature initializes the classes behind it, which the rule doesn't name:
   `LocalDate.now()` reaches `java.time.zone.ZoneRulesProvider`.
 
 Examples, measured on JDK 25, of a deep first load or run leaving a class unusable:
@@ -194,8 +200,8 @@ Examples, measured on JDK 25, of a deep first load or run leaving a class unusab
 | `java.time.LocalDate.now().getYear() > 2000` | `run()` | `java.time.zone.ZoneRulesProvider` |
 | `java.text.NumberFormat.getInstance() != null` | `run()` | `sun.util.locale.provider.LocaleProviderAdapter` |
 
-**The class then stays unusable for the JVM's life,** at any depth and from any engine, for every later load or run
-of a rule that needs it and for your code: `String.format` of a number needs `LocaleProviderAdapter` too.
+**The class then stays unusable for the JVM's life,** for your code too: `String.format` of a number needs
+`LocaleProviderAdapter`.
 
 An application that has already called `LocalDate.now()`, or formatted a number, isn't exposed for those classes.
 
@@ -216,7 +222,7 @@ can't know which APIs they'll call: give their deep loads and runs [more room](e
 ### An MVEL form's first compile or run
 
 **The first time MVEL compiles or runs a form, it does work a later use skips,** such as loading, verifying and
-linking classes. A form is a kind of expression, such as those in the table below.
+linking classes. A form is a kind of expression, as in the table below.
 [MVEL's warm-up](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) runs only a few. A form whose first
 use initializes an MVEL class, such as an inline list or map, `new` or `soundslike`, can instead leave that class
 unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
@@ -243,8 +249,8 @@ use needed about none: at most about 1 KB, for a load.
 | A property write, an instance method call or `if`/`else` | `run()` | 0.5-6 KB |
 
 **A language's first-run check doesn't close the gap.** A run checks about 13 KB while a language class its rules use
-hasn't [finished a run](exceptions-by-method.md) in the JVM. That's JVM-wide: once it has, in any engine, every
-other rule list's first run gets only the 8 KB check. No load gets that larger check. Even while it applies, a first
+hasn't [finished a run](exceptions-by-method.md) in the JVM. Once it has, in any engine, every other rule list's
+first run gets only the 8 KB check. No load gets that larger check. Even while it applies, a first
 `def`, projection, filter or `foreach` still failed past it, needing at least about 2-5 KB more.
 
 **Load and run your rules, or rules of the same forms, near the top first.** Measured on JDK 21, a form's deep use
