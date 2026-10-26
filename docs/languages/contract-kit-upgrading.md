@@ -10,9 +10,17 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.33.2
+
+In 2.33.3 `outputNumbersConverted` got stricter and no check was added. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `outputNumbersConverted` | Returns `true` from `convertsOutputNumbers()`, and sets `setCreditScore(int)`, or fails nothing, from the `Double` -3.0E9 or the `BigDecimal` 1.5 or 3E9; or sets `setBalance(long)`, or fails nothing, from the `Double` 1.5, `NaN`, `-Infinity` or -(2^53 + 2), or the `BigDecimal` 1.5 or 1E19 | `convertOutput` casts a whole `Double` unbounded below, setting `Integer.MIN_VALUE`; converts a `Double` below -2^53, where it no longer counts by ones; rounds with `Math.round`, setting 2 from 1.5, 0 from `NaN` and `Long.MIN_VALUE` from `-Infinity`; or narrows a `BigDecimal` with `intValue()` or `longValue()`, which set 1 from 1.5 and wrap 3E9 or 1E19 |
+
 ## 🔼 Upgrading from 2.33.0
 
-In the release after 2.33.0 no check was added and none got stricter. The kit now finds a
+In 2.33.1 no check was added and none got stricter. The kit now finds a
 [fatal error](../glossary.md#fatal-error), and the interrupt that stopped a run, with the engine's own search,
 `Throwables` in `io.github.brantunger.unruly.api.language`. So, like the engine, it skips the suppressed exceptions
 the engine added itself to a failure it reported. Earlier kits read them: from 2.20.3 for a fatal error, and from
@@ -24,7 +32,7 @@ no `Error`, and an interrupt among them is already the stop's cause. A fatal err
 the run rethrows, or a second one beside it.
 
 So the kit sees a difference only when a listener or the language keeps a reported failure and throws it again: a
-fatal error the engine kept there, beside the one it rethrew, is no longer rethrown by the kit.
+fatal error the engine kept there, beside the one it rethrew, the kit no longer rethrows.
 
 The kit and `unruly-engine` now call API added in core 2.33.0, so they need a core at least that new. Keep every
 module at one version, as [Testing with the contract kit](contract-kit.md#-testing-with-the-contract-kit) says.
@@ -40,9 +48,8 @@ now fail. Each new failure is a real defect:
 
 The 2.32.0 kit fed the `int` setter 1.0 and 1.5 only, so a conversion that checked only `d == Math.rint(d)` or
 `d == Math.floor(d)` before `intValue()` passed it, and set 2147483647 from 3.0E9. The `long` setter is new: the kit
-writes `ExpressionLanguageContractTest.Account`, a new public JavaBean with `getBalance()` and `setBalance(long)`,
-through the same default writer. [Converting values for the output](output-conversion.md) says what to convert and what
-to refuse.
+writes `ExpressionLanguageContractTest.Account`, a public JavaBean with `getBalance()` and `setBalance(long)`, through
+the same default writer.
 
 ## 🔼 Upgrading from 2.31
 
@@ -76,9 +83,9 @@ In 2.27.0 `factNamesReadHoldsTheFactsRead` was added and no check got stricter.
 | --- | --- | --- |
 | `factNamesReadHoldsTheFactsRead` | Returns a set from `ExpressionCompiler.factNamesRead()` that leaves out a fact the check's rules read | The engine asks your `checkFactName` only about the names in that set, so a fact it leaves out is never checked |
 
-`factNamesRead()` returns `null` by default, which skips the check, so a language written for 2.26 passes as it is.
-A skipped check counts as aborted, so a launcher that expects every check found to succeed sees one more aborted
-check: return the names your rules read from `factNamesRead()`, or count aborted checks as passing.
+`factNamesRead()` returns `null` by default, which skips the check, so a language written for 2.26 passes as it is,
+with one more aborted check, since a skipped check counts as aborted: return the names your rules read from
+`factNamesRead()`, or count aborted checks as passing.
 
 ## 🔼 Upgrading from 2.25
 
@@ -134,8 +141,7 @@ name it reserves, as `build()` does. The other overloads still reject `output`, 
 
 In 2.21.0 four checks got stricter and none was added. Each loads a valid rule `ok` before rule `r`, so every
 run evaluates `ok` first, on the same copy. `ok`'s condition is `alwaysTrue()` and its action
-`putFact("ok", fact)`. Both are hooks every language already implements, so there is nothing new to supply. A
-failure in `ok` fails the check.
+`putFact("ok", fact)`. Both are hooks every language already implements. A failure in `ok` fails the check.
 
 | Check | Now fails a language that | The defect |
 | --- | --- | --- |
