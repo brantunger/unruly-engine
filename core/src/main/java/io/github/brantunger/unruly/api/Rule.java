@@ -1,17 +1,16 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.internal.IsoInstant;
+import io.github.brantunger.unruly.internal.Sorting;
 import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * A rule: a condition that decides whether it fires, and an action that runs when it does, with a name, a priority
@@ -511,7 +510,6 @@ public final class Rule {
 
         /** Returns the tags as the rule keeps them, in {@link String} order, after checking each one. */
         private Set<String> checkedTags() {
-            Set<String> sorted = new TreeSet<>();
             for (String tag : tags) {
                 if (tag == null) {
                     throw new IllegalStateException("tags must not contain null, but were " + Names.quoteAll(tags));
@@ -520,9 +518,10 @@ public final class Rule {
                     throw new IllegalStateException("tags must not contain a blank tag, but were "
                             + Names.quoteAll(tags));
                 }
-                sorted.add(tag);
             }
-            return Collections.unmodifiableSet(sorted);
+            // Not a TreeSet, whose static initializer the JVM's first use runs, which a rule built before any engine,
+            // deep in a stack, could be, leaving the class unusable for the life of the JVM (#1298).
+            return Sorting.set(tags);
         }
 
         private static String required(@Nullable String value, String field) {

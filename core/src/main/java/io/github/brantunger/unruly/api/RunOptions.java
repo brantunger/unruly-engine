@@ -1,14 +1,13 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.Sorting;
 import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * Settings for one run, given to {@link RulesEngine#runWithResult(FactStore, RunOptions)}. Anything left unset uses
@@ -101,7 +100,6 @@ public final class RunOptions {
         if (tags.isEmpty()) {
             throw new IllegalArgumentException("tags must not be empty; leave them unset to use every rule");
         }
-        Set<String> sorted = new TreeSet<>();
         for (String tag : tags) {
             if (tag == null) {
                 throw new IllegalArgumentException("tags must not contain null, but were " + Names.quoteAll(tags));
@@ -112,9 +110,10 @@ public final class RunOptions {
                 throw new IllegalArgumentException("tags must not contain a blank tag, but were "
                         + Names.quoteAll(tags));
             }
-            sorted.add(tag);
         }
-        return new RunOptions(runTimeout, Collections.unmodifiableSet(sorted));
+        // Not a TreeSet, whose static initializer the JVM's first use runs, which options made before any engine,
+        // deep in a stack, could be, leaving the class unusable for the life of the JVM (#1298).
+        return new RunOptions(runTimeout, Sorting.set(tags));
     }
 
     /**

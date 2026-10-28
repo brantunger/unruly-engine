@@ -38,7 +38,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * issue covers it. #1292: the blank check of a rule's name and tags, a run's tags, a language's name and a fact's
  * name, {@code String.isBlank()}, read the same table for a name that starts with such a character, with no engine
  * built, until the engine's own {@code internal.Whitespace} decided that; so the scenario builds a rule, declares
- * facts, adds a language and makes run options with such names too, between the markers.
+ * facts, adds a language and makes run options with such names too, between the markers. #1298: a rule's build and
+ * run options sorted their tags in a {@code TreeSet}, whose static initializer, and {@code TreeMap}'s, the JVM runs
+ * on its first use, with no engine built, until the engine's own {@code internal.Sorting} sorted them; the scenario
+ * used to initialize {@code TreeSet} before its first marker, and now the build and the options between the markers
+ * must initialize neither.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -58,14 +62,20 @@ class FacadeFirstUseInitializationTest {
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
     // initialized them already. Failures, FactNames and LanguageNames aren't public, or aren't reachable from here,
-    // and Whitespace isn't on a release before the fix, so they are named by their names (#1292).
+    // and Whitespace and Sorting aren't on a release before their fixes, so they are named by their names (#1292,
+    // #1298).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
             MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
             ImportSize.class.getName(), Causes.class.getName(), Rule.class.getName(), Rule.RuleBuilder.class.getName(),
             "io.github.brantunger.unruly.core.EngineCompileContext", "io.github.brantunger.unruly.core.FactNames",
-            "io.github.brantunger.unruly.core.LanguageNames", "io.github.brantunger.unruly.internal.Whitespace");
+            "io.github.brantunger.unruly.core.LanguageNames", "io.github.brantunger.unruly.internal.Whitespace",
+            "io.github.brantunger.unruly.internal.Sorting");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
+    // No JDK initializes TreeSet or TreeMap at startup, unless a multi-release jar is opened before the main class, so
+    // the calls are the first that could, and the test checks that nothing before them did (#1298).
+    private static final List<String> SORTED = List.of(INITIALIZING + "java/util/TreeSet'",
+            INITIALIZING + "java/util/TreeMap'");
     // The JDK's tables of the Unicode characters above U+00FF, one class a plane, such as CharacterData00, which the
     // JVM builds on their first use: escaping such a character read one until the engine's own table decided it, as
     // did the blank check of a name that starts with one (#1292), and the engine's first build initializes all of
@@ -81,9 +91,13 @@ class FacadeFirstUseInitializationTest {
         int before = lines.indexOf(FacadeFirstUseScenario.BEFORE);
         int after = lines.indexOf(FacadeFirstUseScenario.AFTER);
         assertTrue(before >= 0 && after > before, "markers missing:\n" + output);
-        if (Runtime.version().feature() == 21) {
-            for (String line : lines.subList(0, before)) {
+        for (String line : lines.subList(0, before)) {
+            if (Runtime.version().feature() == 21) {
                 assertFalse(line.contains(LONG), "Long initialized before the first calls:\n" + output);
+            }
+            for (String sorted : SORTED) {
+                assertFalse(line.contains(sorted), "TreeSet or TreeMap initialized before the first calls, so they "
+                        + "couldn't have been the first to:\n" + output);
             }
         }
 
