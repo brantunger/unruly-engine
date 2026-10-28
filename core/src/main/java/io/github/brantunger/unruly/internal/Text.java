@@ -9,7 +9,8 @@ import java.util.Collection;
  * application's class wrote, and a list of names. The limits and the escapes are what {@code api.language.MessageText}
  * publishes, and {@code api.Names} and {@code api.LoggingRuleListener} show names with, rather than keeping a copy that
  * could drift. <b>Internal:</b> this class may change in any release, and isn't part of the API: its package isn't
- * exported, and the {@code api} and {@code core} packages share it.
+ * exported, and the {@code api} and {@code core} packages share it. It has no static initializer of its own, so its own
+ * first use deep in a stack can't break it.
  */
 public final class Text {
 
@@ -27,38 +28,6 @@ public final class Text {
 
     // The last code point of Latin-1, up to which the JDK's table of the characters is built at startup (#1286).
     private static final int LAST_LATIN_1 = 0xFF;
-
-    /**
-     * The {@code Default_Ignorable_Code_Point} characters of Unicode's {@code DerivedCoreProperties.txt} (the same in
-     * Unicode 15.0 to 17.0) that aren't format characters, as the first and last code point of each range, in order:
-     * fillers, marks such as the variation selectors, and the unassigned code points kept for more of them. U+180E and
-     * the tag characters in U+E0000..U+E0FFF are format characters, which are escaped anyway; see {@link #escape}.
-     */
-    private static final int[] OTHER_DEFAULT_IGNORABLE = {
-        0x034F, 0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x180B, 0x180F, 0x2065, 0x2065, 0x3164, 0x3164,
-        0xFE00, 0xFE0F, 0xFFA0, 0xFFA0, 0xFFF0, 0xFFF8, 0xE0000, 0xE0FFF
-    };
-
-    /**
-     * The characters above U+00FF of Unicode's categories Cf (format), Zs (space separator), Zl (line separator) and
-     * Zp (paragraph separator), which {@link #escape} escapes, as {@code Character.getType} gives them on JDK 21, 25
-     * and 26 (the same in Unicode 15.0 to 17.0; 186 code points), as the first and last code point of each range, in
-     * order, with ranges of different categories joined where they touch: U+2000..U+200A are space separators and
-     * U+200B..U+200F format characters; U+2028 is the line separator, U+2029 the paragraph separator, U+202A..U+202E
-     * format characters and U+202F a space separator; and U+205F is a space separator and U+2060..U+2064 format
-     * characters. A table, rather than {@code Character.getType}, which above U+00FF reads a table of the JDK's that
-     * the JVM builds on its first use, which a use deep in a stack can leave unusable for the life of the JVM (#1286).
-     * So which characters are escaped is fixed to Unicode 15.0 to 17.0, whatever the running JDK's version;
-     * {@code MessageTextTest.everyCodePointAlone} compares the table to the running JDK's and fails when it has to be
-     * updated. Below U+0100, where the JDK's table is built at startup, the type still comes from
-     * {@code Character.getType}.
-     */
-    private static final int[] FORMAT_OR_SEPARATOR = {
-        0x0600, 0x0605, 0x061C, 0x061C, 0x06DD, 0x06DD, 0x070F, 0x070F, 0x0890, 0x0891, 0x08E2, 0x08E2,
-        0x1680, 0x1680, 0x180E, 0x180E, 0x2000, 0x200F, 0x2028, 0x202F, 0x205F, 0x2064, 0x2066, 0x206F,
-        0x3000, 0x3000, 0xFEFF, 0xFEFF, 0xFFF9, 0xFFFB, 0x110BD, 0x110BD, 0x110CD, 0x110CD, 0x13430, 0x1343F,
-        0x1BCA0, 0x1BCA3, 0x1D173, 0x1D17A, 0xE0001, 0xE0001, 0xE0020, 0xE007F
-    };
 
     private Text() {
     }
@@ -349,8 +318,8 @@ public final class Text {
      *
      * <p>
      * Which characters are escaped is fixed to Unicode 15.0 to 17.0, as JDK 21 to 26 have it, whatever the running
-     * JDK's version: above U+00FF, the format and separator characters come from {@link #FORMAT_OR_SEPARATOR} and
-     * the other default-ignorable ones from {@link #OTHER_DEFAULT_IGNORABLE}, not from {@code Character.getType},
+     * JDK's version: above U+00FF, the format and separator characters come from {@link #isFormatOrSeparator} and
+     * the other default-ignorable ones from {@link #isOtherDefaultIgnorable}, not from {@code Character.getType},
      * whose tables for those characters the JVM builds on their first use, which deep in a stack can leave one
      * unusable for the life of the JVM (#1286). Below U+0100, the JDK's table is built at startup, so the type comes
      * from {@code Character.getType} as before.
@@ -398,8 +367,8 @@ public final class Text {
     /**
      * Tells whether {@link #escape} escapes a code point other than {@code \n}, {@code \r} and {@code \t}: a control,
      * line or paragraph separator, format, other default-ignorable or space-separator character other than U+0020,
-     * or a lone surrogate. Above U+00FF, it reads {@link #FORMAT_OR_SEPARATOR} rather than asking
-     * {@code Character.getType}, whose table for those characters the JVM builds on its first use (#1286).
+     * or a lone surrogate. Above U+00FF, it asks {@link #isFormatOrSeparator} and {@link #isOtherDefaultIgnorable}
+     * rather than {@code Character.getType}, whose table for those characters the JVM builds on its first use (#1286).
      *
      * @param c The code point
      * @return {@code true} if it is escaped
@@ -408,8 +377,8 @@ public final class Text {
         if (c > LAST_LATIN_1) {
             // The loop reads code points, so only a lone surrogate is one; the test is arithmetic, on the code
             // point's own value, as a supplementary one cast to a char could read as a surrogate.
-            return (c <= Character.MAX_VALUE && Character.isSurrogate((char) c)) || inRanges(c, FORMAT_OR_SEPARATOR)
-                    || inRanges(c, OTHER_DEFAULT_IGNORABLE);
+            return (c <= Character.MAX_VALUE && Character.isSurrogate((char) c)) || isFormatOrSeparator(c)
+                    || isOtherDefaultIgnorable(c);
         }
         // Latin-1 has no line or paragraph separator, surrogate or other default-ignorable character, so of the kinds
         // above only the controls, the format character U+00AD and the space separator U+00A0 are to be found here.
@@ -418,24 +387,47 @@ public final class Text {
     }
 
     /**
-     * Tells whether a code point is in one of a table's ranges, as {@link #OTHER_DEFAULT_IGNORABLE} and
-     * {@link #FORMAT_OR_SEPARATOR} hold them: the first and last code point of each, in order.
+     * Tells whether a code point above U+00FF is of Unicode's categories Cf (format), Zs (space separator), Zl (line
+     * separator) or Zp (paragraph separator), which {@link #escape} escapes, as {@code Character.getType} gives them on
+     * JDK 21, 25 and 26 (the same in Unicode 15.0 to 17.0; 186 code points). Ranges of different categories are joined
+     * where they touch: U+2000..U+200A are space separators and U+200B..U+200F format characters; U+2028 is the line
+     * separator, U+2029 the paragraph separator, U+202A..U+202E format characters and U+202F a space separator; and
+     * U+205F is a space separator and U+2060..U+2064 format characters. Comparisons,
+     * rather than {@code Character.getType}, which above U+00FF reads a table of the JDK's that the JVM builds on its
+     * first use, which a use deep in a stack can leave unusable for the life of the JVM (#1286); and comparisons rather
+     * than a table of this class's own, so this class has no static initializer. So which characters are escaped is
+     * fixed to Unicode 15.0 to 17.0, whatever the running JDK's version; {@code MessageTextTest.everyCodePointAlone}
+     * compares the comparisons with the running JDK's and fails when they have to be updated. Below U+0100, where the
+     * JDK's table is built at startup, the type still comes from {@code Character.getType}.
      *
-     * @param c      The code point
-     * @param ranges The table
-     * @return {@code true} if it is in one of the ranges
+     * @param c A code point above U+00FF
+     * @return {@code true} if it is a format, space-separator, line-separator or paragraph-separator character
      */
-    private static boolean inRanges(int c, int... ranges) {
-        // The ranges are in order, so a code point below the next one, as ASCII is below the first, is none of them.
-        for (int i = 0; i < ranges.length; i += 2) {
-            if (c < ranges[i]) {
-                return false;
-            }
-            if (c <= ranges[i + 1]) {
-                return true;
-            }
-        }
-        return false;
+    private static boolean isFormatOrSeparator(int c) {
+        return (c >= 0x0600 && c <= 0x0605) || c == 0x061C || c == 0x06DD || c == 0x070F
+                || (c >= 0x0890 && c <= 0x0891) || c == 0x08E2 || c == 0x1680 || c == 0x180E
+                || (c >= 0x2000 && c <= 0x200F) || (c >= 0x2028 && c <= 0x202F) || (c >= 0x205F && c <= 0x2064)
+                || (c >= 0x2066 && c <= 0x206F) || c == 0x3000 || c == 0xFEFF || (c >= 0xFFF9 && c <= 0xFFFB)
+                || c == 0x110BD || c == 0x110CD || (c >= 0x13430 && c <= 0x1343F) || (c >= 0x1BCA0 && c <= 0x1BCA3)
+                || (c >= 0x1D173 && c <= 0x1D17A) || c == 0xE0001 || (c >= 0xE0020 && c <= 0xE007F);
+    }
+
+    /**
+     * Tells whether a code point above U+00FF is one of the {@code Default_Ignorable_Code_Point} characters of
+     * Unicode's {@code DerivedCoreProperties.txt} (the same in Unicode 15.0 to 17.0) that aren't format characters:
+     * fillers, marks such as the variation selectors, and the unassigned code points kept for more of them. Two of the
+     * ranges hold format characters too, which {@link #isFormatOrSeparator} answers for anyway: U+180E in
+     * U+180B..U+180F, and the tag characters U+E0001 and U+E0020..U+E007F in U+E0000..U+E0FFF, which holds the
+     * variation selectors U+E0100..U+E01EF and, for the rest, unassigned code points. Comparisons, as
+     * {@link #isFormatOrSeparator} makes, so this class has no static initializer.
+     *
+     * @param c A code point above U+00FF
+     * @return {@code true} if it is a default-ignorable character that isn't a format character
+     */
+    private static boolean isOtherDefaultIgnorable(int c) {
+        return c == 0x034F || (c >= 0x115F && c <= 0x1160) || (c >= 0x17B4 && c <= 0x17B5)
+                || (c >= 0x180B && c <= 0x180F) || c == 0x2065 || c == 0x3164 || (c >= 0xFE00 && c <= 0xFE0F)
+                || c == 0xFFA0 || (c >= 0xFFF0 && c <= 0xFFF8) || (c >= 0xE0000 && c <= 0xE0FFF);
     }
 
     /**

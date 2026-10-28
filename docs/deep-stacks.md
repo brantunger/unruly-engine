@@ -153,7 +153,7 @@ Logback, some of its own and the `java.time` classes it formats dates with.
 calls every public method of `Throwables`, `ImportLimits` and `MessageText`, `MessageText`'s with text from several
 Unicode planes, and builds a tagged rule, declares a fact, facts and language, and sets run tags, all starting above
 U+00FF (#1292). It fails if those calls initialize a class with a static initializer, other than the JDK's hidden
-classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260).
+classes and one measured safe, `java.util.IdentityHashMap` (#1260).
 
 Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping), not the
 JDK's (#1286).
