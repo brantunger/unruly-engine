@@ -40,12 +40,20 @@ import java.util.function.Supplier;
  * {@code Instant.toString()}, {@link #STREAM} and a stream pipeline's result, {@link #ERROR} and the message of a new
  * {@link ExceptionInInitializerError}, and {@link #ENGINE} and what an engine built, loaded and run after the call
  * returned. The test keeps the recursion that finds the end from being compiled, so its frames are the same size each
- * time.
+ * time. With the system property {@value #PRELINK} set to {@code true}, it first loads and links the engine's
+ * {@code internal.Text} and {@code api.Names} without initializing them, as a class-data archive or the JDK's AOT
+ * cache leaves an application's classes (#1313): on a plain class path the deep call must load and verify them before
+ * it can initialize them, which needs more room than their initialization, so a depth that gets through the load has
+ * room to spare, and the pre-link takes that shield away.
  */
 final class DeepFirstToStringScenario {
 
     /** The system property that chooses what the scenario calls. */
     static final String MODE = "deep.toString";
+    /** The system property that, set to {@code true}, has the scenario pre-link {@link #PRELINKED} first. */
+    static final String PRELINK = "deep.prelink";
+    /** The name of the thread the deep call runs on. */
+    static final String DEEP_THREAD = "deep";
     static final String OVERFLOWED = "SCENARIO overflowed: ";
     static final String DEEP = "SCENARIO deep: ";
     static final String TEXT = "SCENARIO text: ";
@@ -64,6 +72,9 @@ final class DeepFirstToStringScenario {
     private static final long STACK_BYTES = 512 * 1024;
     /** How many depths it calls at, at most. */
     private static final int MAX_CALLS = 100_000;
+    /** The classes it pre-links, named by their names, as a class literal would load them. */
+    private static final List<String> PRELINKED = List.of("io.github.brantunger.unruly.internal.Text",
+            "io.github.brantunger.unruly.api.Names");
 
     // Made here, at the top of the stack, as the scenario's own lambdas are linked: a deep call that left a class of
     // the JDK's method handles broken, as linking a method reference deep can, would otherwise break the checks too.
@@ -93,7 +104,10 @@ final class DeepFirstToStringScenario {
     private DeepFirstToStringScenario() {
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, ClassNotFoundException {
+        if (Boolean.getBoolean(PRELINK)) {
+            prelink();
+        }
         String mode = System.getProperty(MODE);
         if ("rule".equals(mode)) {
             PLAIN.toString();
@@ -142,7 +156,7 @@ final class DeepFirstToStringScenario {
                 }
                 overflowed[0]++;
             }
-        }, "deep", STACK_BYTES);
+        }, DEEP_THREAD, STACK_BYTES);
         deep.start();
         deep.join();
         print(OVERFLOWED, overflowed[0]);
@@ -152,6 +166,13 @@ final class DeepFirstToStringScenario {
         check(STREAM, STREAMS);
         check(ERROR, ERRORS);
         check(ENGINE, ENGINES);
+    }
+
+    // Loads each class and links it, as reading its methods verifies it, without initializing it (#1313).
+    private static void prelink() throws ClassNotFoundException {
+        for (String name : PRELINKED) {
+            Class.forName(name, false, DeepFirstToStringScenario.class.getClassLoader()).getDeclaredMethods();
+        }
     }
 
     /** What a check at the top of the stack does, after the deep call. */

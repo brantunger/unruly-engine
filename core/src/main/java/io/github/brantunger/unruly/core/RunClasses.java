@@ -354,11 +354,11 @@ final class RunClasses {
     // a rule's or a run's first failure would otherwise be the first to load, which can overflow deep in a stack as
     // initializing a class can (#1066, #1093), so they are loaded here. So are the next five, which the JVM's first
     // wait for a copy and its first failed load, in any language, would otherwise be the first to load or initialize
-    // (#1097). The last seven are what the api and core packages share and what api.language publishes of it: Text has
-    // the table of the characters it escapes, and a failure's description is the first to read it; the rest have no
-    // static initializer, and a language's or the kit's first failure, read through Throwables, ImportLimits or
-    // FatalErrors, would otherwise be the first to load them (#1241). MatchPolicy, after the engine, makes the three
-    // match policies, which Engines names only once this has run.
+    // (#1097). The last seven are what the api and core packages share and what api.language publishes of it, none with
+    // a static initializer since Text's table of the characters it escapes became comparisons (#1313): a failure's
+    // description, or a language's or the kit's first failure, read through Throwables, ImportLimits or FatalErrors,
+    // would otherwise be the first to load them (#1241). MatchPolicy, after the engine, makes the three match policies,
+    // which Engines names only once this has run.
     private static List<Class<?>> engineClasses() {
         return List.of(CoreRulesEngine.class, MatchPolicy.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,

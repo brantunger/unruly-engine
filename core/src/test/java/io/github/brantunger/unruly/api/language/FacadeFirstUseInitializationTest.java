@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.internal.Text;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * the JVM's "wrong name" error with, when it didn't match. Overflowing at every depth finds that only on some JDKs and
  * stacks, so this runs {@link FacadeFirstUseScenario} in a new JVM, before any engine is built, and reads the
  * {@code Initializing '...'} lines {@code -Xlog:class+init} prints between its markers: no class with a static
- * initializer may be initialized there, the JVM's hidden classes aside, but those {@link #MEASURED_SAFE} names. A
+ * initializer may be initialized there, the JVM's hidden classes aside, but what {@link #MEASURED_SAFE} names. A
  * class without one, which the JVM logs with {@code (no method)}, runs no code of its own. Then the scenario builds and
  * runs an engine, which shows the calls left nothing broken. #1286: escaping a character above U+00FF read the JDK's
  * table for its plane, {@code java.lang.CharacterData00} or a sibling, which the JVM builds on its first use, so the
@@ -42,7 +43,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * run options sorted their tags in a {@code TreeSet}, whose static initializer, and {@code TreeMap}'s, the JVM runs
  * on its first use, with no engine built, until the engine's own {@code internal.Sorting} sorted them; the scenario
  * used to initialize {@code TreeSet} before its first marker, and now the build and the options between the markers
- * must initialize neither.
+ * must initialize neither. #1313: the engine's own {@code internal.Text}, which the escaping calls reach, held the
+ * characters above U+00FF it escapes in two arrays, built by a static initializer, so it was measured safe; it now
+ * decides them with comparisons, has no static initializer, and the calls must initialize it.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -55,9 +58,7 @@ class FacadeFirstUseInitializationTest {
     // Each may or may not appear, as a JDK may initialize it at startup.
     private static final Set<String> MEASURED_SAFE = Set.of(
             // A cause chain's set of the exceptions read is backed by one.
-            "java.util.IdentityHashMap",
-            // Holds the tables of the characters above U+00FF it escapes, two arrays of ints (#1286).
-            "io.github.brantunger.unruly.internal.Text");
+            "java.util.IdentityHashMap");
 
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
@@ -66,10 +67,10 @@ class FacadeFirstUseInitializationTest {
     // #1298).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
             MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
-            ImportSize.class.getName(), Causes.class.getName(), Rule.class.getName(), Rule.RuleBuilder.class.getName(),
-            "io.github.brantunger.unruly.core.EngineCompileContext", "io.github.brantunger.unruly.core.FactNames",
-            "io.github.brantunger.unruly.core.LanguageNames", "io.github.brantunger.unruly.internal.Whitespace",
-            "io.github.brantunger.unruly.internal.Sorting");
+            ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
+            Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
+            "io.github.brantunger.unruly.core.FactNames", "io.github.brantunger.unruly.core.LanguageNames",
+            "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
     // No JDK initializes TreeSet or TreeMap at startup, unless a multi-release jar is opened before the main class, so
