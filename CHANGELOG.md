@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.6](https://github.com/brantunger/unruly-engine/compare/v2.33.5...v2.33.6) (2026-10-28)
+
+
+### Bug Fixes
+
+* the toString() of a rule, a run's result, a rule set and run options no longer formats an instant or runs a stream pipeline on the JVM's first use, so a deep first toString(), with no engine built or right after a run, can't break java.time.format.DateTimeFormatter or java.util.stream.StreamOpFlag for the life of the JVM; the engine writes its instants itself, and the first build formats one so the application's own Instant.toString() is safe after it ([#1311](https://github.com/brantunger/unruly-engine/issues/1311)) ([88416ad](https://github.com/brantunger/unruly-engine/commit/88416ad2c20c7360afee53d1852f13e076c5ccf3))
+
 ## [2.33.5](https://github.com/brantunger/unruly-engine/compare/v2.33.4...v2.33.5) (2026-10-26)
 
 
