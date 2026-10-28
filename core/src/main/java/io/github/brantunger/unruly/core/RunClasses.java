@@ -24,6 +24,7 @@ import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.IsoInstant;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.internal.Widening;
@@ -33,6 +34,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
@@ -109,6 +111,8 @@ final class RunClasses {
      *
      * @throws StackOverflowError if the thread has too little stack left to initialize them, before any is touched
      */
+    // The format of one instant below is for what it initializes; its text is thrown away.
+    @SuppressWarnings("PMD.UnusedReturnValue")
     static void initialize() {
         if (initialized) {
             return;
@@ -121,10 +125,15 @@ final class RunClasses {
             // The session of a language that keeps no state, and the builder's default output writer: no lookup here
             // can reach either, as its package keeps it to itself, and naming one fails in a native image, so each is
             // initialized by getting it. So is the builder's default clock, the JDK's, which the builder reads only
-            // now, with the instant a load records as its time.
+            // now, with the instant a load records as its time. The engine writes its own instants without the JDK's
+            // formatter (see IsoInstant), but an application writes a run's start or a load's time with
+            // Instant.toString(), maybe deep in a stack right after a run, and the JVM's first formats with
+            // DateTimeFormatter.ISO_INSTANT, whose classes, some 25 with a static initializer, that first format
+            // initializes; so one instant is formatted here (#1302).
             Session.none();
             OutputWriter.beansAndMaps();
             Clock.systemUTC().instant();
+            Instant.EPOCH.toString();
             // What a load and validate() do with the JDK's classes, which differ between JDK releases, so those are
             // initialized by doing the same: computing a checksum, which finds the digest in the JDK's security
             // settings, and sorting and filtering a rule list with streams, here two rules, one without a priority, and

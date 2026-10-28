@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.internal.IsoInstant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -13,14 +14,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #911: a run that passes its deadline shows it without {@link Instant#toString()}, whose formatter's classes it would
- * be the first to initialize, and shows the same text.
+ * be the first to initialize, and shows the same text. #1302: so do the {@code toString()}s of a rule, a run's result
+ * and a loaded rule set, whose instant may be null, shown as string concatenation shows it.
  */
-@DisplayName("an instant is written as Instant.toString() writes it (#911)")
+@DisplayName("an instant is written as Instant.toString() writes it (#911, #1302)")
 class IsoInstantTest {
 
     // A fraction of a second of each length toString() writes, and none.
     private static final int[] NANOS = {0, 1, 999_999_999, 100_000_000, 120_000_000, 123_000_000, 1_000, 123_456_000,
             1_000_000, 123_456_789, 500};
+
+    @Test
+    @DisplayName("a null instant is written as string concatenation writes it (#1302)")
+    void nullInstant() {
+        assertEquals("null", IsoInstant.text(null));
+    }
 
     @Test
     @DisplayName("the earliest and latest instants, the epoch, and the edges of four-digit years and of leap days")

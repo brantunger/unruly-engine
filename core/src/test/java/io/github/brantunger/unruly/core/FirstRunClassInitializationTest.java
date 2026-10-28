@@ -16,6 +16,7 @@ import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.IsoInstant;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.internal.Whitespace;
@@ -104,6 +105,13 @@ import static org.junit.jupiter.api.Assertions.*;
  * So the scenario's first loads and its first run, which writes to a bean output, may load no class from a file,
  * whoever's it is, the JDK's and a library's included, but the application's and its languages': the scenario's own
  * and the test fixtures', which stand for a language of the application's.
+ * </p>
+ *
+ * <p>
+ * #1302: the first build formats one instant, so an application's first {@code Instant.toString()} after a build,
+ * maybe deep in a stack right after a run, isn't the JVM's first to initialize the formatter's classes, which the
+ * engine's own text no longer uses; the test checks those classes by name. On the base, measured on JDK 21, 25 and
+ * 26, the first build initialized none of them.
  * </p>
  */
 @DisplayName("building an engine initializes the classes with static initializers engines use, before anything else "
@@ -215,7 +223,23 @@ class FirstRunClassInitializationTest {
             "sun.reflect.generics.repository.ClassRepository", "sun.reflect.generics.repository.GenericDeclRepository",
             "sun.reflect.generics.parser.SignatureParser", "sun.reflect.generics.factory.CoreReflectionFactory",
             "sun.reflect.generics.visitor.Reifier", "sun.reflect.annotation.AnnotationParser",
-            "sun.reflect.annotation.AnnotationType");
+            "sun.reflect.annotation.AnnotationType",
+            // The instant formatter's, which the first build's format of one instant initializes (#1302): those of
+            // the classes with a static initializer the JVM's first Instant.toString() initializes on JDK 21, 25 and
+            // 26 on Windows and Linux, and on 24 on Windows, that the first build didn't initialize before, measured
+            // on 21, 25 and 26 on Windows. Not JulianFields and JulianFields$Field, which the format initializes on
+            // JDK 21, 24 and 25 and not on 26, though 26 has them, nor Locale, which some JDKs initialize at startup.
+            "java.time.format.DateTimeFormatter", "java.time.format.DateTimeFormatterBuilder",
+            "java.time.format.DateTimeFormatterBuilder$NumberPrinterParser",
+            "java.time.format.DateTimeFormatterBuilder$SettingsParser",
+            "java.time.format.DateTimeFormatterBuilder$OffsetIdPrinterParser",
+            "java.time.format.DateTimeFormatterBuilder$NanosPrinterParser", "java.time.format.SignStyle",
+            "java.time.format.ResolverStyle", "java.time.format.TextStyle", "java.time.format.DecimalStyle",
+            "java.time.format.DateTimeTextProvider", "java.time.temporal.ChronoField",
+            "java.time.temporal.ChronoUnit", "java.time.temporal.IsoFields", "java.time.temporal.IsoFields$Field",
+            "java.time.temporal.IsoFields$Unit", "java.time.chrono.AbstractChronology",
+            "java.time.chrono.IsoChronology", "java.time.Instant$1", "java.time.LocalDateTime", "java.time.LocalDate",
+            "java.time.LocalTime", "java.util.Locale$Category", "java.util.regex.Pattern$BitClass");
 
     // #1154: the names of JDK_CLASSES each JDK release lacks, in JDK_CLASSES' order, by the release's feature number,
     // measured on JDK 21, 24, 25 and 26. The JDK's internal class names differ between releases, so a name one release

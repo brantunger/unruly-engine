@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.RunContext;
+import io.github.brantunger.unruly.internal.IsoInstant;
 import io.github.brantunger.unruly.internal.Text;
 
 import java.time.Instant;
@@ -97,6 +98,6 @@ public final class EngineRunContext implements RunContext {
     public String toString() {
         return "RunContext(runId=" + id + ", parent=" + (enclosingRun == null ? "none" : enclosingRun.runId())
                 + ", matchPolicy=" + policy + ", ruleSetChecksum=" + checksum + ", tags="
-                + runTags.stream().map(Text::quote).toList() + ", startedAt=" + start + ")";
+                + runTags.stream().map(Text::quote).toList() + ", startedAt=" + IsoInstant.text(start) + ")";
     }
 }

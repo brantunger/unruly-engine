@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.IsoInstant;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
@@ -132,7 +133,7 @@ public final class RuleSetInfo {
      */
     @Override
     public String toString() {
-        return "RuleSetInfo(rules=" + Names.quoteEach(loaded.stream().map(Rule::getRuleName).toList())
-                + ", checksum=" + ruleChecksum + ", loadedAt=" + loadTime + ")";
+        return "RuleSetInfo(rules=" + Names.quoteEach(Names.ruleNames(loaded))
+                + ", checksum=" + ruleChecksum + ", loadedAt=" + IsoInstant.text(loadTime) + ")";
     }
 }
