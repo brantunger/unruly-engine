@@ -36,9 +36,9 @@ engine.load(rules);                // MVEL's first load of each feature your rul
 ## 🧭 What the first build prepares
 
 **The JVM's first `build()` checks the room, then initializes the classes engines use:** the engine's, SLF4J's and
-the JDK's, such as the clock, the SHA-256 digest, streams, locks and the character tables of every Unicode plane. A
-`build()` on another thread meanwhile waits for it. Without room, `build()` throws `StackOverflowError` before it
-touches any of them or checks any setting, even a wrong one. The next `build()` checks again.
+the JDK's, such as the clock, the instant formatter, the SHA-256 digest, streams, locks and the character tables of
+every Unicode plane. Another thread's `build()` waits for it. Without room, `build()` throws `StackOverflowError`
+before it touches any of them or checks any setting, even a wrong one. The next `build()` checks again.
 
 It also loads the engine's classes a load or run uses, so a first load or run reads none from a file; a language's
 own are its `prepare()`'s to load.

@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.IsoInstant;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
@@ -220,8 +221,8 @@ public final class RunResult<O> {
     @Override
     public String toString() {
         return "RunResult(output=" + outputValue + ", firedRules="
-                + Names.quoteEach(fired.stream().map(Rule::getRuleName).toList()) + ", evaluations=" + evaluated
-                + ", ruleSetChecksum=" + checksum + ", tags=" + Names.quoteEach(runTags) + ", startedAt=" + start
-                + ")";
+                + Names.quoteEach(Names.ruleNames(fired)) + ", evaluations=" + evaluated
+                + ", ruleSetChecksum=" + checksum + ", tags=" + Names.quoteEach(runTags) + ", startedAt="
+                + IsoInstant.text(start) + ")";
     }
 }

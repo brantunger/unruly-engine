@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api;
 
+import io.github.brantunger.unruly.internal.IsoInstant;
 import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
@@ -328,8 +329,8 @@ public final class Rule {
     public String toString() {
         return "Rule(ruleName=" + ruleName + ", condition=" + condition + ", action=" + action
                 + ", priority=" + priority + ", description=" + description + ", language=" + language
-                + ", enabled=" + enabled + ", validFrom=" + validFrom + ", validTo=" + validTo + ", tags=" + tags
-                + ")";
+                + ", enabled=" + enabled + ", validFrom=" + IsoInstant.text(validFrom) + ", validTo="
+                + IsoInstant.text(validTo) + ", tags=" + tags + ")";
     }
 
     /**
@@ -500,8 +501,10 @@ public final class Rule {
             String checkedCondition = required(condition, "condition");
             String checkedAction = required(action, "action");
             if (validFrom != null && validTo != null && !validTo.isAfter(validFrom)) {
-                throw new IllegalStateException("validTo must be after validFrom, but validFrom is " + validFrom
-                        + " and validTo is " + validTo);
+                // Written by the engine, not Instant.toString(), whose formatter's classes a rule built with no
+                // engine, deep in a stack, could be the first to initialize (#1302); so are the toString()s.
+                throw new IllegalStateException("validTo must be after validFrom, but validFrom is "
+                        + IsoInstant.text(validFrom) + " and validTo is " + IsoInstant.text(validTo));
             }
             return new Rule(this, name, checkedCondition, checkedAction, checkedTags());
         }
@@ -539,8 +542,8 @@ public final class Rule {
         public String toString() {
             return "Rule.RuleBuilder(ruleName=" + ruleName + ", condition=" + condition + ", action=" + action
                     + ", priority=" + priority + ", description=" + description + ", language=" + language
-                    + ", enabled=" + enabled + ", validFrom=" + validFrom + ", validTo=" + validTo + ", tags=" + tags
-                    + ")";
+                    + ", enabled=" + enabled + ", validFrom=" + IsoInstant.text(validFrom) + ", validTo="
+                    + IsoInstant.text(validTo) + ", tags=" + tags + ")";
         }
     }
 }

@@ -1,11 +1,20 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.internal;
+
+import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 
 /**
  * Writes an instant as {@link Instant#toString()} does, ISO-8601 in UTC, without it. {@code toString()} formats with
- * {@link java.time.format.DateTimeFormatter#ISO_INSTANT}, whose classes, some 25 with a static initializer, a run
- * that passes its deadline would be the first to initialize, and its message shows the deadline (see RunClasses).
+ * {@link java.time.format.DateTimeFormatter#ISO_INSTANT}, whose classes, some 25 with a static initializer, the JVM's
+ * first use of it would initialize, deep in a stack maybe: a run that passes its deadline, whose message shows the
+ * deadline; the {@code toString()} of a rule, its builder and the message of a validity window that ends before it
+ * starts, with no engine built; the {@code toString()} of a run's result or a rule set, the engine's or one the
+ * application made with {@code RunResult.of} or {@code RuleSetInfo.of}, with or without an engine; and a run
+ * context's (#1302). The first build formats one instant, so after it the application's own
+ * {@code Instant.toString()} is safe too (see core.RunClasses). <b>Internal:</b> this class may change in any
+ * release, and isn't part of the API: its package isn't exported, and the {@code api} and {@code core} packages share
+ * it. It has no static initializer of its own, so its own first use deep in a stack can't break it.
  *
  * <p>
  * The text is the same: the date and the time to the second, always; a fraction of a second in groups of three
@@ -13,7 +22,7 @@ import java.time.Instant;
  * before it when it has more than four, and a {@code -} before it when it is before year zero.
  * </p>
  */
-final class IsoInstant {
+public final class IsoInstant {
 
     private static final int SECONDS_PER_DAY = 86_400;
     // The days from 0000-03-01, where the count of days in each 400-year era starts, to 1970-01-01.
@@ -25,12 +34,16 @@ final class IsoInstant {
     }
 
     /**
-     * Writes an instant as {@link Instant#toString()} does.
+     * Writes an instant as {@link Instant#toString()} does, or {@code null} as string concatenation shows it, so a
+     * {@code toString()} can show a field that may be null.
      *
-     * @param instant The instant
-     * @return The text
+     * @param instant The instant, or {@code null}
+     * @return The text, or {@code "null"} for a null instant
      */
-    static String text(Instant instant) {
+    public static String text(@Nullable Instant instant) {
+        if (instant == null) {
+            return "null";
+        }
         long seconds = instant.getEpochSecond();
         long days = Math.floorDiv(seconds, SECONDS_PER_DAY);
         int secondOfDay = Math.floorMod(seconds, SECONDS_PER_DAY);

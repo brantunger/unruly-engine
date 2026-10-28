@@ -2,7 +2,9 @@ package io.github.brantunger.unruly.api;
 
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import io.github.brantunger.unruly.internal.Text;
 import java.util.List;
 
@@ -35,7 +37,29 @@ final class Names {
      * @return Each name, shortened to 200 characters, then escaped, in the same order
      */
     static List<String> quoteEach(Collection<? extends @Nullable String> names) {
-        return names.stream().map(Names::quote).toList();
+        // A loop, as Text.quoteAll: RunOptions.toString() runs with no engine built, and the JVM's first stream
+        // pipeline deep in a stack could overflow inside java.util.stream.StreamOpFlag's static initializer, which
+        // leaves every later stream, and every engine build, failing (#1302).
+        List<String> quoted = new ArrayList<>(names.size());
+        for (String name : names) {
+            quoted.add(quote(name));
+        }
+        return Collections.unmodifiableList(quoted);
+    }
+
+    /**
+     * The names of rules, in the same order, for a {@code toString()} that shows them through {@link #quoteEach}. A
+     * loop, as {@link #quoteEach}: a result or a rule set of the application's own is made with no engine built.
+     *
+     * @param rules The rules
+     * @return Each rule's name, in the same order
+     */
+    static List<String> ruleNames(Collection<Rule> rules) {
+        List<String> names = new ArrayList<>(rules.size());
+        for (Rule rule : rules) {
+            names.add(rule.getRuleName());
+        }
+        return names;
     }
 
     /**

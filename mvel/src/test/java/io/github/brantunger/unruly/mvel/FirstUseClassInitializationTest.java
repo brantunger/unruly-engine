@@ -148,13 +148,13 @@ class FirstUseClassInitializationTest {
     // what MVEL's own import of the class's fields initializes before the engine reads them: the class, which MVEL's
     // Class.forName initializes, and the JDK's accessor for a static field, which MVEL's first read of one, of the
     // field before the null one, makes; the same on JDK 21 and 25. Each only in its own step, so no other step may
-    // initialize them.
+    // initialize them. Not Locale$Category, which the Formatter read until the first build's format of one instant
+    // initialized it (#1302).
     private static final List<String> BY_FAILED_IMPORTS = List.of(
             FirstUseScenario.IMPORT_TOO_LARGE + ": org/mvel2/ast/ImportNode",
             FirstUseScenario.NULL_FIELD_IMPORT + ": probe/NullFieldHolder",
             FirstUseScenario.NULL_FIELD_IMPORT + ": java/lang/invoke/DirectMethodHandle$StaticAccessor",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter",
-            FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Locale$Category",
             FirstUseScenario.PACKAGE_IMPORT_UNREAD + ": java/util/Formatter$FormatSpecifier");
     // What the first message logged initializes, with slf4j-simple, which building an engine leaves to it.
     private static final List<String> BY_LOGGING = List.of(
