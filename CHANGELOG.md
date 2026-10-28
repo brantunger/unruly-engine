@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.7](https://github.com/brantunger/unruly-engine/compare/v2.33.6...v2.33.7) (2026-10-28)
+
+
+### Bug Fixes
+
+* a rule's build, a run's withTags() and a fact class's first property read no longer sort in a TreeSet, a TreeMap or a JDK sort, so a deep first Rule.build() or withTags(), with no engine built and TreeSet loaded but never initialized, can't break java.util.TreeSet for the life of the JVM; the engine sorts its handful of strings itself, into a LinkedHashSet or LinkedHashMap, whose classes have no static initializer ([#1314](https://github.com/brantunger/unruly-engine/issues/1314)) ([2352645](https://github.com/brantunger/unruly-engine/commit/2352645a7c55d4a0fb8a0bd80f81b2ab264b1f46))
+
 ## [2.33.6](https://github.com/brantunger/unruly-engine/compare/v2.33.5...v2.33.6) (2026-10-28)
 
 
