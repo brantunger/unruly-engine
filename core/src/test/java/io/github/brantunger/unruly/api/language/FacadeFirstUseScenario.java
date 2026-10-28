@@ -14,7 +14,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.Supplier;
 
 /**
@@ -34,9 +33,10 @@ import java.util.function.Supplier;
  * macOS: the test assumes the JVM has read such a string already. Before it too, it creates the engine builder the
  * names are given to, and it touches
  * {@link RunOptions}, whose static initializer makes the default options, the language and collections the calls are
- * given, whose classes have static initializers of their own, and the {@link TreeSet} a rule and run options sort
- * their tags in, whose class has one too: the calls' blank checks are what is measured, not what they are given or
- * keep.
+ * given, whose classes, {@code HashMap} aside, have static initializers of their own: the calls' blank checks are what
+ * is measured, not what they are given. Not the {@code TreeSet} a rule and run options used to sort their tags in,
+ * whose class has one too: the engine sorts them itself now, and the test checks that nothing before the calls
+ * initialized it or {@code TreeMap}, and that the calls initialize neither (#1298).
  */
 final class FacadeFirstUseScenario {
 
@@ -123,9 +123,6 @@ final class FacadeFirstUseScenario {
         piFacts.put("\u03c0facts", String.class);
         Set<String> piRunTag = new HashSet<>();
         piRunTag.add("\u03c0run");
-        // A rule and run options keep their tags sorted, in a TreeSet, whose class and TreeMap's have static
-        // initializers JDK 21 doesn't run at startup, whatever the tags' characters: not what this measures.
-        new TreeSet<>().add("sorted");
         Object[] answers = new Object[59];
         int i = 0;
         // The test's precondition: the JVM has read a string with a character above U+00FF already, as a JVM on

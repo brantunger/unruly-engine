@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.core.Accessors;
+import io.github.brantunger.unruly.internal.Sorting;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Array;
@@ -14,7 +15,6 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 
 /**
  * Reads a property of a fact the way rules expect: a record component, a JavaBean getter or a {@link Map} key.
@@ -576,22 +575,40 @@ public final class FactProperties {
         }
         // Sorted, because Class.getMethods() promises no order, and a conversion whose keys moved between runs of
         // the same program would be a poor thing to hand a language. A record's components keep their declared
-        // order, and its other getters follow: a record may compute a property its components don't hold.
-        Map<String, Method> getters = new TreeMap<>();
+        // order, and its other getters follow: a record may compute a property its components don't hold. Sorted by
+        // the engine's own sort, not a TreeMap or List.sort, whose classes' static initializers the JVM's first use
+        // runs, which a fact's first read before any engine, deep in a stack, could be (#1298).
+        Map<String, Method> getters = new LinkedHashMap<>();
         // Two getters can read one property: isActive() and getActive(), or getIsim() and get\u0130sim(), whose first
         // letters both lower-case to i. Which one wins is decided by their names, never by the order reflection
         // listed them in, which would let the same rule read a different value on another JVM. Only two methods of
         // one name, such as a bridge and the method it calls, keep that order, and both read the same value. Two
         // ASCII getters can tie as well: of getFoo() and getfoo(), both read as foo, getfoo() wins.
-        List<Method> methods = new ArrayList<>(List.of(type.getMethods()));
-        methods.sort(Comparator.comparing(Method::getName));
+        Method[] methods = type.getMethods();
+        String[] names = new String[methods.length];
+        for (int i = 0; i < methods.length; i++) {
+            names[i] = methods[i].getName();
+        }
+        Sorting.sort(names, methods);
         for (Method method : methods) {
             String property = Accessors.property(method);
             if (property != null) {
-                getters.merge(property, method, FactProperties::preferred);
+                // Not Map.merge with a method reference, which the JVM links on its first use, with the classes of
+                // its method handles: a fact's first read before any engine may be deep in a stack (#1298).
+                Method kept = getters.get(property);
+                getters.put(property, kept == null ? method : preferred(kept, method));
             }
         }
-        getters.forEach((property, method) -> accessors.putIfAbsent(property, Accessors.callable(type, method)));
+        String[] properties = new String[getters.size()];
+        int at = 0;
+        for (String property : getters.keySet()) {
+            properties[at] = property;
+            at++;
+        }
+        Sorting.sort(properties);
+        for (String property : properties) {
+            accessors.putIfAbsent(property, Accessors.callable(type, getters.get(property)));
+        }
         return Collections.unmodifiableMap(accessors);
     }
 

@@ -149,12 +149,11 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
-`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, one UTF-16 string read, its arguments made and
-`TreeSet` initialized (#1298), calls every public method of `Throwables`, `ImportLimits` and `MessageText`,
-`MessageText`'s with text from several Unicode planes, and builds a tagged rule, declares a fact, facts and language,
-and sets run tags, all starting above U+00FF (#1292). It fails if those calls initialize a class with a static
-initializer, other than the JDK's hidden classes and two measured safe: `java.util.IdentityHashMap` and the engine's
-internal `Text` (#1260).
+`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, one UTF-16 string read and its arguments made,
+calls every public method of `Throwables`, `ImportLimits` and `MessageText`, `MessageText`'s with text from several
+Unicode planes, and builds a tagged rule, declares a fact, facts and language, and sets run tags, all starting above
+U+00FF (#1292). It fails if those calls initialize a class with a static initializer, other than the JDK's hidden
+classes and two measured safe: `java.util.IdentityHashMap` and the engine's internal `Text` (#1260).
 
 Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping), not the
 JDK's (#1286).
