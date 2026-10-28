@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.8](https://github.com/brantunger/unruly-engine/compare/v2.33.7...v2.33.8) (2026-10-28)
+
+
+### Bug Fixes
+
+* a deep first toString() of run options, a run result or a rule set, with no engine built and the engine's internal Text loaded but never initialized, can no longer break Text and every later engine build for the life of the JVM; Text now decides which characters it escapes with comparisons, so it has no static initializer ([#1318](https://github.com/brantunger/unruly-engine/issues/1318)) ([d37bd6d](https://github.com/brantunger/unruly-engine/commit/d37bd6d6831b362dc3dcf4bda4797a674be4c57f))
+
 ## [2.33.7](https://github.com/brantunger/unruly-engine/compare/v2.33.6...v2.33.7) (2026-10-28)
 
 
