@@ -160,12 +160,12 @@ and `native-image`. A release PR, a new `version=` in `gradle.properties` plus d
 `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest` leg, coverage gate included, and skips
 `native-image`. `changes` decides; if it fails, everything runs, as on a push.
 
-A new push to a pull request cancels the run it supersedes. A run on `main` is never cancelled once it has started:
-the next push to `main` waits for it, so a run isn't cut off before its cache save. GitHub keeps one waiting run per
-branch, so a later push to `main` replaces a waiting one, whose commit gets a cancelled run and no build.
+A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started: the next push
+waits, so a run isn't cut off before its cache save. GitHub keeps one waiting run per branch, so a later push cancels
+a waiting one, whose commit has no build.
 
-A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: a page
-written before the style guide may have findings in lines you didn't touch. Steps after a failed one still run.
+A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
+may have findings in lines you didn't touch. Steps after a failed one still run.
 `check_style.py` also enforces the 2,500-word cap, with the exceptions `docs/scripts/long-pages.txt` lists. Run the
 checks before you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
 
@@ -185,8 +185,8 @@ CI downloads a pinned actionlint release, which Dependabot doesn't update: to bu
 `ci.yml`, and take `ACTIONLINT_SHA256` from the `linux_amd64` line of the release's checksums file.
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
-becomes the release commit. It runs on pull requests only. On one labelled `dependencies`, which Dependabot opens
-with a capitalised subject, it skips the format check, but it still rejects a `!` on any type but `feat` and `fix`.
+becomes the release commit. On one labelled `dependencies`, which Dependabot opens with a capitalised subject, it
+skips the format check, but still rejects a `!` on any type but `feat` and `fix`.
 
 What the jobs leave behind:
 
@@ -196,6 +196,9 @@ What the jobs leave behind:
   gate itself is `jacocoTestCoverageVerification`, which `build` runs; no outside service checks coverage.
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release
   workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
+
+The Windows job stops its Gradle daemon before setup-gradle saves the cache: Windows file locks are mandatory, so
+`tar` can't read the daemon's lock files.
 
 The `main-require-green-ci` ruleset, with no bypass, requires `ci-result` and `pr-title`; a PR needn't be up to date
 with `main`.
