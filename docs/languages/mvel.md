@@ -114,16 +114,11 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.
 - Imported names, inline ones too, can't be [fact names](mvel-fact-names.md) a rule's text holds.
-- `build()` loads a single-class import with its thread's context class loader, and imports a valid name it can't
-  load as a package.
-- `load()` looks up classes in imported packages with its thread's, and `run()` checks fact names against it, on
-  any thread. A thread without one uses this library's loader.
+- `build()` and `load()` look up imported classes with their threads' context class loaders; see
+  [Class loaders](../thread-safety.md#-class-loaders), also for the lock objects some loaders keep per name.
 
-Your facts' and output object's classes must be reachable from that loader too; see
-[Class loaders](../thread-safety.md#-class-loaders). Looking up a name's class file leaves a soft cache entry in the
-JDK's loaders, freed under memory pressure: not a leak. A loader asked without a class file check, such as Spring
-Boot's (see [Class loaders](../thread-safety.md#-class-loaders)), may keep a lock object per name, as may its parents,
-the JDK's application loader included.
+Your facts' and output object's classes must be reachable from the `load()` thread's too. Looking up a name's class
+file leaves a soft cache entry in the JDK's loaders, freed under memory pressure: not a leak.
 
 An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
 lookup even if unused. It fails at the name: `Can't import '...': it has 65 dot-separated parts, and an import may
@@ -135,9 +130,10 @@ have at most 64`. One whose `.*` starts past the text's first 32,768 characters 
 
 In a class directory on a case-insensitive file system, `applicant` in `applicant.creditScore` finds
 `Applicant.class`; `NoClassDefFoundError: applicant (wrong name: Applicant)` counts as no class, so `applicant`
-stays the fact. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming the
-rule; so does this one for a name over about 1,000 bytes
-([#1001](https://github.com/brantunger/unruly-engine/issues/1001)).
+stays the fact, for a name under about 1,000 bytes ([#1001](https://github.com/brantunger/unruly-engine/issues/1001)).
+A class in an imported package that can't be loaded isn't read as a class name either, as in MVEL's own lookup: the
+rule acts as if missing its import. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming
+the rule.
 
 ## 📁 Facts in MVEL
 
