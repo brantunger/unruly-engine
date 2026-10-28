@@ -341,6 +341,25 @@ jobs:
             test-kit/hs_err_pid*.log
             **/replay_pid*.log
 
+      # Stops the daemon Build & Test started, before setup-gradle's post-job step saves the cache. That save tars
+      # .gradle/caches, and Windows file locks are mandatory: tar can't read a lock file the daemon still holds, so
+      # every save on main failed and each run downloaded everything again. setup-gradle v6's basic provider doesn't
+      # stop daemons itself (its docs describe that for enhanced caching only). --stop finds the build's daemons
+      # through the GRADLE_USER_HOME setup-gradle exports, and builds nothing, so warning.mode=fail can't trip it.
+      #
+      # After the uploads, so a daemon that won't answer can't delay the hang dumps Upload Coverage Report saves, and
+      # the timeout bounds the wait. !cancelled(), as setup-gradle's post-job step: a failed build still saves, a
+      # cancelled job doesn't. Not in Build & Test's finally: the runner's pwsh wrapper ends the step with
+      # `exit $LASTEXITCODE`, so a --stop after a failed build would replace the build's exit code with its own 0.
+      # continue-on-error, because a stop that fails or times out only costs this run's cache save: it must never
+      # turn a green build red.
+      - name: Stop the Gradle daemon
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 2
+        run: ./gradlew --stop
+
   # Builds the native-smoke application into a GraalVM native image and runs it (docs/native-image.md), with only the
   # reflection metadata the mvel jar ships and the application's own, and without Flight Recorder support, which is
   # native-image's default. The engine makes MVEL's reflective optimizer the default, so MVEL generates no classes at
