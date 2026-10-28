@@ -131,14 +131,13 @@ a rule that uses a class from it fails at `run()` as if the import were missing;
 `load()` throws one `RuleCompilationException` for the whole list. `failures()` has one entry per broken rule; a
 language that can't create its compiler or tell which facts its rules read, and a rejected
 [declared fact](glossary.md#declared-fact) name, are listed with them. The previous rules stay loaded.
-`validate(rules)` returns the same problems without loading anything, except a language that fails while `load()`
-makes the copies of `copiesAtLoad(n)`; see
+`validate(rules)` returns the same problems without loading anything, with one exception; see
 [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
 | Message contains | Fix |
 | --- | --- |
 | `ruleName must not be null`, `must not be blank` | An `IllegalStateException` from `Rule.builder().build()`, not from `load()`: give the rule a name, condition and action. See [Exceptions by method](exceptions-by-method.md) |
-| `Duplicate rule name '` | Two rules share a name. Thrown before anything compiles; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
+| `Duplicate rule name '` | Two rules share a name; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `has a blank condition expression`, `has a blank action expression` | Fill in the expression; see [Errors when rules load](languages/custom.md#-errors-when-rules-load) |
 | `is written in '...', which isn't one of the engine's expression languages` | The rule's `language` names one the engine doesn't have; see [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language) |
 | `failed to compile` | A syntax error. In MVEL, `unknown class or illegal statement` is usually a missing import; see [Errors when rules load](languages/mvel.md#-errors-when-rules-load). For `too deeply nested to compile` or `the stack ran out`, see [Compile time](languages/mvel-gotchas.md#-compile-time) |
@@ -154,10 +153,11 @@ makes the copies of `copiesAtLoad(n)`; see
 
 ### NoClassDefFoundError: applicant (wrong name: Applicant)
 
-In a class directory on a case-insensitive file system, `applicant.class` finds `Applicant.class`. In MVEL, such a
-class file counts as no class, for a name under about 1,000 bytes, so `applicant` stays the fact and the rule runs;
-see [Classes and imports](languages/mvel.md#-classes-and-imports). Any other `NoClassDefFoundError` while a rule
-compiles fails `load()` with a `RuleCompilationException` naming the rule; see the
+In a class directory on a case-insensitive file system, `applicant.class` finding `Applicant.class` counts as no
+class in MVEL, for a name under about 1,000 bytes, so `applicant` stays the fact. So does an imported package's class
+that can't be loaded: `run()` usually fails with `could not resolve class` or
+`unresolvable property or identifier`. Any other `NoClassDefFoundError` while a rule compiles fails `load()`, naming
+the rule. See [Classes and imports](languages/mvel.md#-classes-and-imports) and the
 [migration guide](migrating-to-2.md#-a-missing-class-is-reported-like-any-other-failure).
 
 ## 🏃 An exception from run()

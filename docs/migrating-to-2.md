@@ -387,17 +387,23 @@ covers every `LinkageError`: `NoClassDefFoundError`, `IllegalAccessError`, `Inco
 `ExceptionInInitializerError`, `VerifyError`. A missing or unreadable class means one rule is misconfigured, not that
 the JVM is failing — for example a fact class exported only to `mvel2` on the module path.
 
+MVEL's own lookup of a name in an imported package is the exception. It reads a class there that can't be loaded as
+no class, as for a missing import, so the rule usually passes `load()` and fails at `run()` with no `LinkageError`
+in the chain. A class there whose static initializer throws passes `load()` too, and `run()` fails with the
+`ExceptionInInitializerError` as its cause. See
+[Classes and imports](languages/mvel.md#-classes-and-imports).
+
 **Who is affected:** anyone catching a `LinkageError` around `load()` or `run()`, and listeners that see one thrown
-by another listener. This reverses a 1.x decision, and the API compatibility check can't see it.
+by another listener. The API compatibility check can't see this change.
 
 **What to change:**
 
 | 1.x | 2.0 |
 | --- | --- |
-| `catch (NoClassDefFoundError e)` around `load(rules)` | `catch (RuleCompilationException e)`; `e.getRuleName()` names the rule; the error is in the cause chain |
-| `catch (LinkageError e)` around `run(facts)` | `catch (RuleExecutionException e)`, with the error as its cause |
+| `catch (NoClassDefFoundError e)` around `load(rules)` | `catch (RuleCompilationException e)`; `e.getRuleName()` names the rule; the error is in the cause chain, unless the class came through a package import (above) |
+| `catch (LinkageError e)` around `run(facts)` | `catch (RuleExecutionException e)`, with the error as its cause if it reached the engine (above) |
 | A listener throwing a `LinkageError` to abort a run | It's contained and logged at WARN, like any listener failure; the run continues |
-| `catch (OutOfMemoryError e)` | Unchanged: a `VirtualMachineError` still escapes unchanged |
+| `catch (OutOfMemoryError e)` | Unchanged: a `VirtualMachineError` still escapes |
 
 ## ⏳ Runs stop when interrupted or out of time
 

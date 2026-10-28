@@ -21,9 +21,9 @@ still leave a class unusable.
 
 A nested run or load can start deep in a stack; a language's first runs [check more room](exceptions-by-method.md).
 A `StackOverflowError` inside a class's static initializer leaves the class unusable for the JVM's life: every later
-use throws `NoClassDefFoundError`, in your code too. A rule that needs such a class fails to load with
-`Could not initialize class ...`, on every JDK: not as an overflow, although JDK 25 and 26 keep the overflow as the
-error's cause.
+use throws `NoClassDefFoundError`, in your code too. A rule that needs such a class fails `load()`, or `run()` if a
+package import reaches it, with `Could not initialize class ...`: not as an overflow, although JDK 25 and 26 keep it
+as the error's cause.
 
 ```java
 // At startup, near the top of a stack, before any build, load or run can be nested deep:
