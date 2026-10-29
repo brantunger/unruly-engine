@@ -96,18 +96,36 @@ class WrongNameNestedImportTest {
             }
             """;
 
+    private static final String LOWER_KIN = """
+            package com.acme;
+
+            public class kin {
+            }
+            """;
+
+    private static final String KIN = """
+            package com.acme;
+
+            public class Kin extends kin {
+            }
+            """;
+
     @TempDir
     static Path classes;
 
     @TempDir
     static Path otherCaseClasses;
 
+    @TempDir
+    static Path lowerKinClasses;
+
     /**
      * Compiles the classes once. {@code com.acme.Base} is then deleted, so {@code Outer.Sub} exists but can't be
      * loaded, and {@code com/acme/rules/Limit-1.class}, a copy of {@code Limit}'s class file, is a file whose name is
      * no class's. {@code com.acme.Dep} is replaced by {@code com/acme/DEP.class}, compiled apart, as the two files
      * would be one on a case-insensitive file system, so {@code NeedsDep} and {@code Holder.In} exist but their
-     * superclass's lookup finds a class file in another case.
+     * superclass's lookup finds a class file in another case. {@code com.acme.Kin}'s superclass,
+     * {@code com.acme.kin}, is compiled apart and left out, so its lookup finds {@code Kin.class} itself (#1261).
      */
     @BeforeAll
     static void compileClasses() throws IOException {
@@ -117,6 +135,10 @@ class WrongNameNestedImportTest {
                 source("com/acme/Holder", HOLDER)));
         assertCompiles(List.of("-proc:none", "-d", otherCaseClasses.toString()),
                 List.of(source("com/acme/DEP", OTHER_CASE_DEP)));
+        assertCompiles(List.of("-proc:none", "-d", lowerKinClasses.toString()),
+                List.of(source("com/acme/kin", LOWER_KIN)));
+        assertCompiles(List.of("-proc:none", "-cp", lowerKinClasses.toString(), "-d", classes.toString()),
+                List.of(source("com/acme/Kin", KIN)));
         Files.delete(classes.resolve("com/acme/Base.class"));
         Path limit = classes.resolve("com/acme/rules/Limit.class");
         Files.copy(limit, limit.resolveSibling("Limit-1.class"));
@@ -241,5 +263,26 @@ class WrongNameNestedImportTest {
         assertEquals("Can't import 'com.acme.Holder.In': the class exists but can't be loaded:"
                 + " java.lang.NoClassDefFoundError: com/acme/Dep (wrong name: com/acme/DEP)", ex.getMessage());
         assertInstanceOf(NoClassDefFoundError.class, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a class whose superclass's name differs from its own only in case, and finds the class's own file,"
+            + " is rejected, not taken for a package, though the JVM's error names it on the side OpenJ9 writes"
+            + " (#1261)")
+    void wrongNameOfASuperclassInAnotherCaseRejected() {
+        ClassLoader loader = new CaseInsensitiveClassDirectory();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> resolve(loader, "com.acme.Kin"));
+
+        assertEquals("Can't import 'com.acme.Kin': the class exists but can't be loaded:"
+                + " java.lang.NoClassDefFoundError: com/acme/kin (wrong name: com/acme/Kin)", ex.getMessage());
+        assertInstanceOf(NoClassDefFoundError.class, ex.getCause());
+    }
+
+    @Test
+    @DisplayName("a lookup of that superclass's own name, which finds the class's file, is still no class (#1261)")
+    void wrongNameOfTheSuperclassItselfIsAPackage() {
+        assertNull(resolve(new CaseInsensitiveClassDirectory(), "com.acme.kin"));
     }
 }

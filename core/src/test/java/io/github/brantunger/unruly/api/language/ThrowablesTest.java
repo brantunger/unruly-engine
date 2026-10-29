@@ -29,6 +29,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Throwables: reading what was thrown as the engine reads it")
 class ThrowablesTest {
 
+    /** Whether the tests run on OpenJ9, which writes the name asked for last in its "wrong name" error. */
+    private static final boolean ON_OPENJ9 = System.getProperty("java.vm.name", "").contains("OpenJ9");
+
     /** How many links of a cause chain the engine reads, which the contract fixes. */
     private static final int MAX_CAUSE_CHAIN_LENGTH = 100;
 
@@ -388,17 +391,18 @@ class ThrowablesTest {
     }
 
     @Test
-    @DisplayName("isWrongName: the JVM's \"wrong name\" error is told with the name first, as HotSpot writes it, or "
-            + "last, as OpenJ9 does, and from no other error or message")
+    @DisplayName("isWrongName: the JVM's \"wrong name\" error is told by the name on the side this JVM writes it:"
+            + " first on HotSpot, last on OpenJ9, and from no other error or message (#1261)")
     void wrongNamesAreTold() {
         List<WrongNameCase> cases = List.of(
-                new WrongNameCase(new NoClassDefFoundError("applicant (wrong name: Applicant)"), "applicant", true),
-                new WrongNameCase(new NoClassDefFoundError("p/a (wrong name: p/A)"), "p.a", true),
+                new WrongNameCase(new NoClassDefFoundError("applicant (wrong name: Applicant)"), "applicant",
+                        !ON_OPENJ9),
+                new WrongNameCase(new NoClassDefFoundError("p/a (wrong name: p/A)"), "p.a", !ON_OPENJ9),
                 new WrongNameCase(new NoClassDefFoundError("p/Rules$Limit (wrong name: p/rules$Limit)"),
-                        "p.Rules$Limit", true),
-                new WrongNameCase(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a", true),
+                        "p.Rules$Limit", !ON_OPENJ9),
+                new WrongNameCase(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a", ON_OPENJ9),
                 new WrongNameCase(new NoClassDefFoundError("p/rules$Limit (wrong name: p/Rules$Limit)"),
-                        "p.Rules$Limit", true),
+                        "p.Rules$Limit", ON_OPENJ9),
                 new WrongNameCase(new NoClassDefFoundError("p/Base (wrong name: p/BASE)"), "p.Sub", false),
                 new WrongNameCase(new NoClassDefFoundError("p/BASE (wrong name: p/Base)"), "p.Sub", false),
                 new WrongNameCase(new NoClassDefFoundError("p/SUBX (wrong name: p/SubX)"), "p.Sub", false),
