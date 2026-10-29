@@ -541,7 +541,7 @@ reads `Condition for rule 'r' failed to compile at line 1, column 6: Malformed e
 [Errors when rules load](languages/mvel.md#-errors-when-rules-load) covers what MVEL puts in one.
 
 Everything after the rule's name there is MVEL's own message, `failed to compile` and all. An expression MVEL
-rejects outright reads `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23)` instead,
+rejects outright begins `Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 23)` instead,
 with no `failed to compile`.
 
 When several rules fail, one exception reports them all, so `getCause()` is one level deeper than for a single rule:

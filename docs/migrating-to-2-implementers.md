@@ -151,7 +151,8 @@ says whether a condition or an action failed, on `RuleExecutionException` too, a
 Compile error messages name the expression, and your message is a fragment the engine completes: it writes
 `Condition for rule 'r' ` or `Action for rule 'r' ` and then your `InvalidExpressionException`'s message, adding
 `failed to compile: ` only when your compiler throws something else. So 1.x's `Can not compile rule 'r'. Error: ...`
-is now `Condition for rule 'r' contains an assignment ('=' at line 1, column 16)`, or
+is now one beginning `Condition for rule 'r' contains an assignment ('=' at line 1, column 16)`
+([full text](languages/mvel.md#-errors-when-rules-load)), or
 `Condition for rule 'r' failed to compile: ...` for any other exception.
 
 **Who is affected:** authors of expression languages, and code that reads compile error messages or causes.

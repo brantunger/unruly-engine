@@ -161,9 +161,10 @@ throws `UnsupportedOperationException`. `output()` is the output object, MVEL's 
 wrapped in your own exception. Keep caught exceptions as causes. A condition returning anything but a `Boolean`,
 `null` included, fails the rule: the engine coerces nothing.
 
-Since 2.33.0, `Throwables` reads what you catch as the engine does: `isFatal`, `isOverflow` (see
-[`prepare()`](#preparing-the-languages-classes)), `fatalError` and `isInterrupt`, which search suppressed exceptions
-too, and `messageOf`, `causeChain` and `rootCause`, safe when an accessor throws.
+Since 2.33.0, `Throwables` reads what you catch as the engine does: `fatalError` and `isInterrupt` search suppressed
+exceptions too, `isFatal` reads only the throwable (and an `InternalError`'s causes), `isOverflow` only causes (see
+[`prepare()`](#preparing-the-languages-classes)), `isWrongName` and `isMissingRegistration` tell two errors a class
+lookup throws, and `messageOf`, `causeChain` and `rootCause` are safe when an accessor throws.
 
 If code your expression calls starts a failing nested run, throw what it threw, or a wrapper with exactly its message,
 as MVEL's adapter does: added words get it [logged twice](../nested-runs.md#-what-is-logged). `FactProperties.read`'s
@@ -174,6 +175,9 @@ own `IllegalStateException` around such a failure is safe to let through.
 `Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
 `allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
 facts.
+
+**Defining classes.** Define them in a loader that delegates to both `classLoader()` and your runtime's own loader,
+whose classes the context loader may not see.
 
 **Your own imports.** Since 2.19.0, `languageImports()` lists those given with `.languageImports("my", ...)`: as
 written, in order, unmodifiable, and empty if none. They're yours alone, unchecked but for length; to reject one,
@@ -223,7 +227,7 @@ so keep it cheap to build. It's kept only with a `Boolean` value, and `afterEval
 
 > [!WARNING]
 > A condition that wraps another must override `evaluateWithDetail` and forward it. A lambda implements only
-> `evaluate`, so the default answers with no detail, and the wrapped condition's detail is silently dropped.
+> `evaluate`, so the wrapped condition's detail is silently dropped.
 
 ### Preparing the language's classes
 
@@ -454,8 +458,7 @@ rethrows what either method throws. An empty set reserves none.
 
 ## ⏳ Stopping a run
 
-A run can be interrupted, or given a [timeout](../stopping-runs.md), which a
-[nested run](../nested-runs.md#-what-counts-as-nested) inherits. The engine checks between rules, so your language
+A run can be interrupted, or given a [timeout](../stopping-runs.md). The engine checks between rules, so your language
 decides whether a running rule can be stopped:
 
 | Language | Can it stop inside an expression? |
@@ -485,7 +488,7 @@ Returning then stops the run, whatever you return, and so does throwing, unless 
 
 Since 2.9.0, `timeLeft()` is the time to the run's deadline, as the engine measures it, and
 `Duration.ZERO` once past: time your own calls with it. `deadline()` is a wall-clock `Instant` for showing, `null`
-without a timeout. None is required.
+without a timeout.
 
 Since 2.31.0, `startedAt()` and `tags()` are the run's
 [`RunContext.startedAt()` and `tags()`](../engines-and-runs.md#-choosing-which-rules-a-run-uses). Take "now" from
@@ -497,7 +500,7 @@ interrupt, nor without a deadline. If the deadline has passed, it runs on your t
 
 Otherwise it runs while your expression does, on a [reused](#-thread-safety) platform thread without the run's
 thread-locals or context class loader: keep it thread-safe and short. What it throws, or one still running after a
-second, is logged at WARN, a [fatal](../glossary.md#fatal-error) throw at ERROR; it delays no other action. The run's
+second, is [logged](../listeners-and-logging.md#-logging-setup); it delays no other action. The run's
 end closes open registrations; `onCancel` then throws `IllegalStateException`. One already started may still
 run, so give each expression a fresh flag.
 
@@ -549,6 +552,41 @@ Object execute(JexlScript script, CancellableContext jexlContext, EvaluationCont
 Since 2.26.2, `FactProperties` restores the interrupt status when an accessor it calls is interrupted, so a rule's own
 `try`/`catch` or `pcall` around a fact read leaves `isCancelled()` `true`, and the run stops when the expression
 returns. Around any other blocking call, your runtime must restore it, as above, or such a catch swallows the stop.
+
+> [!WARNING]
+> An action that interrupts your thread to stop a blocking call can act after `run()` returned, or just before your
+> `finally`, failing the caller's next run, on any engine, as above. Guard it with a lock, and clear your own
+> interrupt there:
+
+```java
+// In a condition's evaluate; an action returns ActionResult.done() instead of a Boolean.
+Thread runThread = Thread.currentThread();
+Object lock = new Object();
+boolean[] closed = {false};
+boolean[] interrupted = {false};
+CancelRegistration deadline = context.onCancel(() -> {
+    synchronized (lock) {
+        if (!closed[0]) {                                // the expression is still running
+            interrupted[0] = true;
+            runThread.interrupt();                       // stops the blocking call
+        }
+    }
+});
+try {
+    return blockingCall();                               // throws InterruptedException when interrupted
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();                  // keep the status: the finally clears it if it's ours
+    return Boolean.FALSE;                                // the run stops either way
+} finally {
+    synchronized (lock) {
+        closed[0] = true;                                // the action interrupts nothing from here on
+        if (interrupted[0]) {
+            Thread.interrupted();                        // ours, for the deadline: the engine reports the timeout
+        }
+    }
+    deadline.close();
+}
+```
 
 ## 🧵 Thread safety
 
