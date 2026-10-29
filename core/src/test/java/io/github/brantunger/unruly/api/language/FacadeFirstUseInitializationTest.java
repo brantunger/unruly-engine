@@ -58,6 +58,10 @@ class FacadeFirstUseInitializationTest {
     private static final String INITIALIZING = "Initializing '";
     private static final String NO_METHOD = "(no method)";
 
+    // Whether the child JVM, started from this one's java, is OpenJ9, the one JVM that names the class asked for last
+    // in its "wrong name" error, the only side read there (#1261).
+    private static final boolean ON_OPENJ9 = System.getProperty("java.vm.name", "").contains("OpenJ9");
+
     // The classes a first call may initialize, each measured safe: its first initialization, deep in a stack at
     // every depth to the end, was clean on JDK 21 and 25 (#1260), as its static initializer is too small to overflow.
     // Each may or may not appear, as a JDK may initialize it at startup.
@@ -141,7 +145,8 @@ class FacadeFirstUseInitializationTest {
                 "null", "false", "true", "true", "false", "outer",
                 "(message unavailable: java.lang.IllegalStateException)",
                 "[]", "[RuntimeException(outer), IllegalArgumentException(inner)]", "[CauseThrows(null)]",
-                "IllegalArgumentException(inner)", "CauseThrows(null)", "false", "true", "true", "false", "false",
+                "IllegalArgumentException(inner)", "CauseThrows(null)", "false", "true", String.valueOf(ON_OPENJ9),
+                "false", "false",
                 "false", "false", "true", "false", "null",
                 "it has 65 dot-separated parts, and an import may have at most 64",
                 "it has 1001 characters, and an import may have at most 1000"), answers.subList(0, 39), output);

@@ -30,7 +30,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * and defines it under the name it was asked for, so the JVM itself throws
  * {@code NoClassDefFoundError: Base (wrong name: BASE)} while it loads {@code applicant}, on every operating system.
  * That error is about {@code Base}, not the name looked up, so {@code applicant} is a class that exists but can't be
- * loaded, as where {@code Base.class} is simply missing, and not a name with no class.
+ * loaded, as where {@code Base.class} is simply missing, and not a name with no class. So is {@code p.Kin}, whose
+ * superclass {@code p.kin} has no class file of its own, so its lookup finds {@code Kin.class}, and the JVM throws
+ * {@code NoClassDefFoundError: p/kin (wrong name: p/Kin)}, which names {@code p.Kin} on the side OpenJ9 writes the name
+ * asked for (#1261).
  */
 @DisplayName("a fact name whose class's superclass finds a class file in another case fails the rule list (#993)")
 class WrongNameDependencyTest {
@@ -51,6 +54,20 @@ class WrongNameDependencyTest {
             }
             """;
 
+    private static final String LOWER_KIN = """
+            package p;
+
+            public class kin {
+            }
+            """;
+
+    private static final String KIN = """
+            package p;
+
+            public class Kin extends kin {
+            }
+            """;
+
     private static final Rule PRIME_RATE = Rule.builder().ruleName("prime-rate")
             .condition("applicant.creditScore >= 750").action("output.put('rate', 4.5)").build();
 
@@ -60,9 +77,13 @@ class WrongNameDependencyTest {
     @TempDir
     static Path otherCaseClasses;
 
+    @TempDir
+    static Path lowerKinClasses;
+
     /**
      * Compiles the classes once, then replaces {@code Base.class} by {@code BASE.class}, compiled apart, as the two
-     * files would be one on a case-insensitive file system.
+     * files would be one on a case-insensitive file system, and compiles {@code p.Kin} against {@code p.kin}, which is
+     * left out.
      */
     @BeforeAll
     static void compileClasses() throws IOException {
@@ -70,6 +91,9 @@ class WrongNameDependencyTest {
                 List.of(source("applicant", APPLICANT), source("Base", BASE)));
         assertCompiles(List.of("-proc:none", "-d", otherCaseClasses.toString()),
                 List.of(source("BASE", OTHER_CASE_BASE)));
+        assertCompiles(List.of("-proc:none", "-d", lowerKinClasses.toString()), List.of(source("p/kin", LOWER_KIN)));
+        assertCompiles(List.of("-proc:none", "-cp", lowerKinClasses.toString(), "-d", classes.toString()),
+                List.of(source("p/Kin", KIN)));
         Files.delete(classes.resolve("Base.class"));
         Files.copy(otherCaseClasses.resolve("BASE.class"), classes.resolve("BASE.class"));
     }
@@ -119,5 +143,26 @@ class WrongNameDependencyTest {
         assertTrue(Stream.iterate((Throwable) thrown, t -> t != null, Throwable::getCause)
                 .anyMatch(t -> t instanceof NoClassDefFoundError
                         && "Base (wrong name: BASE)".equals(t.getMessage())), thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("an inline import of a class whose superclass's name differs from its own only in case fails with"
+            + " the JVM's error for the superclass, not \"class not found\" (#1261)")
+    void wrongNameOfASuperclassInAnotherCaseFailsTheImport() {
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build();
+        Rule rule = Rule.builder().ruleName("kin").condition("import p.Kin; true").action("output.put('x', 1)")
+                .build();
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> withContextClassLoader(new CaseInsensitiveClassDirectory(), () -> {
+                    engine.load(List.of(rule));
+                    return null;
+                }));
+
+        assertFalse(thrown.getMessage().contains("class not found"), thrown.getMessage());
+        assertTrue(Stream.iterate((Throwable) thrown, t -> t != null, Throwable::getCause)
+                .anyMatch(t -> t instanceof NoClassDefFoundError
+                        && "p/kin (wrong name: p/Kin)".equals(t.getMessage())), thrown.getMessage());
     }
 }

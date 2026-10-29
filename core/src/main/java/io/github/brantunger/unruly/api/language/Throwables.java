@@ -173,11 +173,15 @@ public final class Throwables {
      * Tells whether an error a class lookup threw only means that a class file was found for the name looked up in
      * a different case, as a class directory on a case-insensitive file system finds one, so there is no class by
      * that name: the JVM's "wrong name" {@link NoClassDefFoundError}. Its message names the class asked for, in
-     * internal form ({@code com/acme/Rule}), on one side: first on HotSpot, as in {@code com/acme/rule (wrong name:
-     * com/acme/Rule)}, and last on OpenJ9, as in {@code ... (wrong name: com/acme/rule)}. An error about a class the
-     * one looked up depends on, such as its superclass, names it on neither side, so it isn't taken for it; nor is
-     * any other error, or one whose message can't be read (see {@link #messageOf}). The engine treats a lookup that
-     * threw such an error as a class that isn't there, and tries the next form of the name.
+     * internal form ({@code com/acme/Rule}), on one side, and only the side this JVM writes it on is read: first on
+     * HotSpot, as in {@code com/acme/rule (wrong name: com/acme/Rule)}, and last on OpenJ9, as in
+     * {@code ... (wrong name: com/acme/rule)}, told by its {@code java.vm.name}. An error about a class the one looked
+     * up depends on, such as its superclass, doesn't name it on that side, so it isn't taken for it. That holds even
+     * for a superclass whose name differs from the class's only in case, whose lookup finds the class's own file:
+     * HotSpot's error for {@code com.acme.Rule}'s superclass {@code com.acme.rule} is
+     * {@code com/acme/rule (wrong name: com/acme/Rule)}, which names {@code com.acme.Rule} last. Nor is any other
+     * error taken for it, or one whose message can't be read (see {@link #messageOf}). The engine treats a lookup
+     * that threw such an error as a class that isn't there, and tries the next form of the name.
      *
      * <p>
      * HotSpot cuts the message at 1023 bytes of UTF-8, so for a name over about 1,000 ASCII characters, or 500

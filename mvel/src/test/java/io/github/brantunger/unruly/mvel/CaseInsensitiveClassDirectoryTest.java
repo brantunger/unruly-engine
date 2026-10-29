@@ -82,15 +82,18 @@ class CaseInsensitiveClassDirectoryTest {
     }
 
     @Test
-    @DisplayName("only the JVM's wrong-name message for the name looked up counts, and only on a NoClassDefFoundError")
+    @DisplayName("only the JVM's wrong-name message for the name looked up, on the side this JVM writes it, counts, and"
+            + " only on a NoClassDefFoundError")
     void wrongNameRecognized() {
-        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("applicant (wrong name: Applicant)"),
+        // HotSpot names the class asked for first; OpenJ9 names the class in the file first, and the class asked for
+        // last. Only the side this JVM writes counts (#1261).
+        boolean onOpenJ9 = System.getProperty("java.vm.name", "").contains("OpenJ9");
+        assertEquals(!onOpenJ9, Throwables.isWrongName(new NoClassDefFoundError("applicant (wrong name: Applicant)"),
                 "applicant"));
-        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("pkg/a$B (wrong name: pkg/A$B)"),
+        assertEquals(!onOpenJ9, Throwables.isWrongName(new NoClassDefFoundError("pkg/a$B (wrong name: pkg/A$B)"),
                 "pkg.a$B"));
-        // OpenJ9 names the class in the file first, and the class asked for last.
-        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a"));
-        assertTrue(Throwables.isWrongName(new NoClassDefFoundError("pkg/A$B (wrong name: pkg/a$B)"),
+        assertEquals(onOpenJ9, Throwables.isWrongName(new NoClassDefFoundError("p/A (wrong name: p/a)"), "p.a"));
+        assertEquals(onOpenJ9, Throwables.isWrongName(new NoClassDefFoundError("pkg/A$B (wrong name: pkg/a$B)"),
                 "pkg.a$B"));
         assertFalse(Throwables.isWrongName(new NoClassDefFoundError("com/example/Missing"), "applicant"));
         assertFalse(Throwables.isWrongName(new NoClassDefFoundError(), "applicant"));

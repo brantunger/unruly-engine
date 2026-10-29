@@ -4,6 +4,8 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfSystemProperty;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -27,7 +29,8 @@ class UnloadableImportTest {
      * A class loader where these classes exist but can't be loaded: {@code p.A}, whose superclass {@code p.Base} is
      * missing; {@code p.B}, whose error has no message; and {@code p.C}, whose class file is malformed. And where
      * {@code p.a} finds {@code A}'s class file, as a class directory on a case-insensitive file system does, and
-     * {@code p.b} finds {@code B}'s, with the names in the order OpenJ9 writes them. And
+     * {@code p.b} finds {@code B}'s, with the names in the order OpenJ9 writes them, which HotSpot writes for a class
+     * whose superclass is named like it in another case (#1261). And
      * {@code p.D}, whose error text has a line break and a bidi control; {@code p.E}, whose error text is long;
      * {@code p.F}, whose error text has line breaks where it is cut; and {@code p.G}, whose error has no message and
      * a cause that has one. And {@code p.X\u0085forged}, whose name has a next line character, a line break to some
@@ -87,12 +90,27 @@ class UnloadableImportTest {
     }
 
     @Test
+    @EnabledIfSystemProperty(named = "java.vm.name", matches = ".*OpenJ9.*")
     @DisplayName("a name that only finds a class file in a different case is a package import on OpenJ9 too, which"
             + " names the class asked for last")
     void wrongNameInOpenJ9OrderIsAPackage() {
         RulesEngineBuilder<Map<String, Object>> builder = importing("p.b");
 
         assertDoesNotThrow(() -> withContextClassLoader(LOADER, builder::build));
+    }
+
+    @Test
+    @DisabledIfSystemProperty(named = "java.vm.name", matches = ".*OpenJ9.*")
+    @DisplayName("on HotSpot, a \"wrong name\" error that names the class asked for last, as for a class whose"
+            + " superclass is named like it in another case, is a class that can't be loaded (#1261)")
+    void wrongNameInOpenJ9OrderOnHotSpotRejected() {
+        RulesEngineBuilder<Map<String, Object>> builder = importing("p.b");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> withContextClassLoader(LOADER, builder::build));
+
+        assertEquals("Can't import 'p.b': the class exists but can't be loaded: "
+                + "java.lang.NoClassDefFoundError: p/B (wrong name: p/b)", ex.getMessage());
     }
 
     @Test

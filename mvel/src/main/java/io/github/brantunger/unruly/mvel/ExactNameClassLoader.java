@@ -22,8 +22,9 @@ import java.util.stream.Stream;
  * {@code Applicant.class}, and the JVM throws {@code NoClassDefFoundError: applicant (wrong name: Applicant)}. MVEL
  * doesn't catch it, so the rule would fail to compile. Reported as a {@link ClassNotFoundException}, it tells MVEL
  * that {@code applicant} isn't a class, so it reads it as the fact. Any other linkage error is passed on unchanged,
- * including a "wrong name" error for a class the class looked up depends on, such as its superclass, which the JVM
- * names in its message instead: that class exists but can't be loaded.
+ * including a "wrong name" error for a class the class looked up depends on, such as its superclass, which doesn't
+ * name the class looked up on the side this JVM writes the name asked for, even where the superclass's name differs
+ * from it only in case (#1261): that class exists but can't be loaded.
  * </p>
  *
  * <p>
