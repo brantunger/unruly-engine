@@ -95,17 +95,12 @@ class StrictMetadataImportTest {
 
     @ParameterizedTest(name = "as GraalVM for JDK {0} throws it")
     @ValueSource(ints = {21, 25})
-    @DisplayName("a name that is neither a class nor a valid package name is rejected, with the image's error in the"
-            + " cause")
+    @DisplayName("a name that isn't a valid package name is rejected before it is looked up, so with no cause (#1272)")
     void notAPackageName(int jdk) {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> resolve("p.1x", jdk));
 
         assertEquals("'p.1x' is neither a class nor a valid package name", ex.getMessage());
-        ClassNotFoundException notFound = assertInstanceOf(ClassNotFoundException.class, ex.getCause());
-        assertEquals("p.1x", notFound.getMessage());
-        Throwable cause = notFound.getCause();
-        assertEquals(MissingReflectionRegistrationError.class.getName(), cause.getClass().getName());
-        assertEquals(jdk == 25, cause instanceof LinkageError);
+        assertNull(ex.getCause());
     }
 
     @Test

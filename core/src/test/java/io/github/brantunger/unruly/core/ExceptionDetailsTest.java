@@ -17,14 +17,18 @@ class ExceptionDetailsTest {
     private final RulesEngineBuilder<Map<String, Object>> builder =
             RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).language(new ToyExpressionLanguage());
 
+    // A name of a package's shape that isn't a class is a package import, so no rejection has a failed lookup to keep;
+    // one for a class that exists but can't be loaded keeps the linkage error, as UnloadableImportTest checks.
     @Test
-    @DisplayName("a rejected import keeps the failed class lookup as its cause")
-    void rejectedImportKeepsCause() {
+    @DisplayName("an import that isn't a valid package name is rejected before it is looked up, so with no cause"
+            + " (#1272)")
+    void malformedImportHasNoCause() {
         builder.imports("not a package!!");
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, builder::build);
 
-        assertInstanceOf(ClassNotFoundException.class, ex.getCause());
+        assertEquals("'not a package!!' is neither a class nor a valid package name", ex.getMessage());
+        assertNull(ex.getCause());
     }
 
     @Test

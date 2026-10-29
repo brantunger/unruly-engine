@@ -66,7 +66,8 @@ public final class LanguageTestContexts {
      * @return The context
      * @throws NullPointerException     if an argument, or an element of a set, is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, which an engine rejects too
+     *                                  dot-separated parts, or isn't a valid package name, which an engine rejects
+     *                                  too, with the same message
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader) {
@@ -85,7 +86,8 @@ public final class LanguageTestContexts {
      * @return The context
      * @throws NullPointerException     if an argument, or an element of a set or of the options, is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, which an engine rejects too
+     *                                  dot-separated parts, or isn't a valid package name, which an engine rejects
+     *                                  too, with the same message
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options) {
@@ -109,9 +111,10 @@ public final class LanguageTestContexts {
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with a blank name or the name
-     *                                  {@code output}, which an engine rejects too when one of its languages reserves
-     *                                  it, as the default {@code ExpressionLanguage.reservedFactNames()} does
+     *                                  dot-separated parts, or isn't a valid package name, or a fact is declared with
+     *                                  a blank name or the name {@code output}, which an engine rejects too when one
+     *                                  of its languages reserves it, as the default
+     *                                  {@code ExpressionLanguage.reservedFactNames()} does
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -139,10 +142,10 @@ public final class LanguageTestContexts {
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, a language import has more than 1,000 characters, or a
-     *                                  fact is declared with a blank name or the name {@code output}, which an engine
-     *                                  rejects too when one of its languages reserves it, as the default
-     *                                  {@code ExpressionLanguage.reservedFactNames()} does
+     *                                  dot-separated parts, or isn't a valid package name, a language import has more
+     *                                  than 1,000 characters, or a fact is declared with a blank name or the name
+     *                                  {@code output}, which an engine rejects too when one of its languages reserves
+     *                                  it, as the default {@code ExpressionLanguage.reservedFactNames()} does
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -174,10 +177,10 @@ public final class LanguageTestContexts {
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if the language's name is {@code null} or blank; if an imported package has
-     *                                  more than 1,000 characters or more than 64 dot-separated parts, a language
-     *                                  import has more than 1,000 characters, or a fact is declared with a blank
-     *                                  name; or if a fact is declared with a name the language reserves, with the
-     *                                  message {@code build()} gives
+     *                                  more than 1,000 characters or more than 64 dot-separated parts, or isn't a
+     *                                  valid package name, a language import has more than 1,000 characters, or a
+     *                                  fact is declared with a blank name; or if a fact is declared with a name the
+     *                                  language reserves, with the message {@code build()} gives
      * @throws IllegalStateException    if the language's {@code reservedFactNames()} returns {@code null} or a set
      *                                  holding {@code null}, as {@code build()} throws it
      */

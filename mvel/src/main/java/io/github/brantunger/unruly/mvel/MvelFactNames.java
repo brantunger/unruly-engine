@@ -285,7 +285,7 @@ final class MvelFactNames {
         return ExactNameClassLoader.ClassLookup.forNameOrNull(className, classLoader) != null;
     }
 
-    // Read by char on purpose, unlike core.ImportResolver's check of a package name, which reads code points: MVEL
+    // Read by char on purpose, unlike internal.ImportSize's check of a package name, which reads code points: MVEL
     // can't read a letter outside the Basic Multilingual Plane, a surrogate pair, in a rule's text, so no rule
     // could refer to a fact named with one, and such a name is rejected like any other a rule can't refer to.
     static boolean isIdentifier(String name) {

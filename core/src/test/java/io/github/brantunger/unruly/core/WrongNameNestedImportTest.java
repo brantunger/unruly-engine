@@ -190,8 +190,8 @@ class WrongNameNestedImportTest {
     }
 
     @Test
-    @DisplayName("a name that finds a class file in another case and isn't a package name is rejected, with the JVM's"
-            + " error among the causes")
+    @DisplayName("a name that would find a class file in another case and isn't a package name is rejected before it"
+            + " is looked up, so with no cause (#1272)")
     void wrongNameWithInvalidPackageNameRejected() {
         ClassLoader loader = new CaseInsensitiveClassDirectory();
 
@@ -199,12 +199,7 @@ class WrongNameNestedImportTest {
                 () -> resolve(loader, "com.acme.Rules.Limit-1"));
 
         assertEquals("'com.acme.Rules.Limit-1' is neither a class nor a valid package name", ex.getMessage());
-        Throwable cause = ex.getCause();
-        while (cause != null && !(cause instanceof NoClassDefFoundError)) {
-            cause = cause.getCause();
-        }
-        assertNotNull(cause, "no NoClassDefFoundError among the causes");
-        assertEquals("com/acme/Rules/Limit-1 (wrong name: com/acme/rules/Limit)", cause.getMessage());
+        assertNull(ex.getCause());
     }
 
     @Test

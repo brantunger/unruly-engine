@@ -114,8 +114,10 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      *                                  languages reserves for every rule list (see
      *                                  {@link ExpressionLanguage#reservesForEveryRuleList()}); if a language's own
      *                                  import has more than 1,000 characters; if an import has more than 1,000
-     *                                  characters or more than 64 dot-separated parts, checked before it is looked
-     *                                  up; if it is neither a loadable class nor a valid package name; or if it names
+     *                                  characters or more than 64 dot-separated parts, or has a dot-separated part
+     *                                  that isn't a Java identifier ({@code '...' is neither a class nor a valid
+     *                                  package name}, with no cause), all checked before any class lookup, so even a
+     *                                  class of that name fails; or if it names
      *                                  a class that exists but can't be loaded, with the linkage error's text cut to
      *                                  at most 1,000 characters, with a note of how many were left out, then escaped,
      *                                  and a root cause it hides named

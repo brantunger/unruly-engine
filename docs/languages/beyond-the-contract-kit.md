@@ -186,19 +186,20 @@ Another, added in 2.23.0, takes your language first, then the same arguments. A 
 blank throws `IllegalArgumentException` with `An expression language's name must not be null or blank: <class>`.
 It asks the language's `reservedFactNames()` once, as `build()` does, and rejects a fact declared with one of those
 names with `build()`'s message, or throws `build()`'s `IllegalStateException` for a `null` set or name. The other
-overloads reject `output`, the default, whatever your language reserves. Use the new one when your language reserves
-another name, or none.
+overloads reject `output`, the default, whatever your language reserves. Use it when your language reserves another
+name, or none.
 
-A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`, such as
-`facts must not be null`. A `null` import, option name or option value throws `<parameter> must not contain null`,
-such as `classImports must not contain null`. A `null` declared fact name or type throws `name must not be null` or
-`type must not be null`. A fact's value may be `null`.
+A `null` argument other than `deadline` throws `NullPointerException` with `<parameter> must not be null`. A `null`
+import, option name or option value throws `<parameter> must not contain null`. A `null` declared fact name or type
+throws `name must not be null` or `type must not be null`. A fact's value may be `null`.
 
 As a run does, the evaluation and action contexts reject a `null` or blank fact name with `IllegalArgumentException`
 and the run's message, `fact name must not be null` or `fact name must not be blank`. They don't reject a reserved
-name: they have no engine, so no languages to ask. Like an engine, `compile()` rejects a fact declared with a
-blank or reserved name, a package import over the [size limits](mvel.md#-classes-and-imports), and a language import
-over 1,000 characters.
+name: they have no engine's languages to ask.
+
+Like `build()`, `compile()` rejects a fact declared with a blank or reserved name, a package import over the
+[size limits](mvel.md#-classes-and-imports) or with a part that isn't a Java identifier, and a language import over
+1,000 characters. It looks no name up: the class `"java.util.Map.Entry"` passes as a package.
 
 As in a run, each evaluation or action context equals only itself, and its `hashCode()` never reads the facts or, for
 an action context, the output object. A run passes the same evaluation context to every condition, and a new action

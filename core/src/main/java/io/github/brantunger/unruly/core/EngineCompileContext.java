@@ -53,15 +53,18 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     /**
      * Keeps unmodifiable copies of the imports, options, declarations and reserved names, so the context can't change
      * after it's created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)}
-     * says, so a language sees the same declarations from the test kit as from an engine. Package imports and language
-     * imports are checked for size as the engine's {@code build()} checks them, so a language's tests can't be handed
-     * one no engine would accept.
+     * says, so a language sees the same declarations from the test kit as from an engine. Package imports are checked
+     * for size and for a package name's shape, and language imports for size, as the engine's {@code build()} checks
+     * them, so a language's tests can't be handed one no engine would accept. What a package import resolves to isn't
+     * checked, as no class loader is asked: {@code build()} imports {@code java.util.Map.Entry} as a class, and a
+     * context keeps it as a package.
      *
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, a language import has more than 1,000 characters, or a
-     *                                  fact is declared with a blank name
+     *                                  dot-separated parts, or isn't a valid package name, with the message
+     *                                  {@code build()} gives; if a language import has more than 1,000 characters; or
+     *                                  if a fact is declared with a blank name
      */
     public EngineCompileContext {
         Objects.requireNonNull(packageImports, "packageImports must not be null");
@@ -75,14 +78,19 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         for (String packageName : packageImports) {
             Objects.requireNonNull(packageName, "packageImports must not contain null");
             ImportSize.checkSize(packageName);
+            ImportSize.checkPackageName(packageName);
         }
         for (Class<?> importedClass : classImports) {
             Objects.requireNonNull(importedClass, "classImports must not contain null");
         }
-        options.forEach((name, value) -> {
-            Objects.requireNonNull(name, "options must not contain null");
-            Objects.requireNonNull(value, "options must not contain null");
-        });
+        // Loops rather than lambdas, here and for the declarations below: a language's tests make a context with no
+        // engine built, maybe deep in a stack, and linking a lambda's call site initializes the JDK's method handle
+        // classes, and java.lang.Long on JDK 21, whose first initialization there could overflow (#1260, #1271). This
+        // class links none; a declared fact still initializes internal.Widening, whose static initializer does.
+        for (Map.Entry<String, String> option : options.entrySet()) {
+            Objects.requireNonNull(option.getKey(), "options must not contain null");
+            Objects.requireNonNull(option.getValue(), "options must not contain null");
+        }
         for (String name : languageImportNames) {
             Objects.requireNonNull(name, "languageImports must not contain null");
             ImportSize.checkLength(name);
@@ -96,7 +104,9 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         reservedFactNames = Set.copyOf(reservedFactNames);
         // declaredType names a null fact name or type itself.
         Map<String, Class<?>> declared = new LinkedHashMap<>();
-        declaredFacts.forEach((name, type) -> declared.put(name, declaredType(name, type)));
+        for (Map.Entry<String, Class<?>> fact : declaredFacts.entrySet()) {
+            declared.put(fact.getKey(), declaredType(fact.getKey(), fact.getValue()));
+        }
         declaredFacts = Map.copyOf(declared);
         languageImportNames = List.copyOf(languageImportNames);
     }
@@ -159,7 +169,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @param classLoader    The class loader that finds the classes in {@code packageImports}
      * @throws NullPointerException     if an argument, or an element of a set, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts
+     *                                  dot-separated parts, or isn't a valid package name
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader) {
         this(packageImports, classImports, classLoader, Object.class, Map.of(), Map.of(), false);
@@ -179,8 +189,9 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, or a fact is declared with a blank name or the name
-     *                                  {@value ActionContext#OUTPUT_NAME}, which the default reserves
+     *                                  dot-separated parts, or isn't a valid package name, or a fact is declared with
+     *                                  a blank name or the name {@value ActionContext#OUTPUT_NAME}, which the default
+     *                                  reserves
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
@@ -206,8 +217,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
-     *                                  dot-separated parts, a language import has more than 1,000 characters, or a
-     *                                  fact is declared with a blank name or the name
+     *                                  dot-separated parts, or isn't a valid package name, a language import has more
+     *                                  than 1,000 characters, or a fact is declared with a blank name or the name
      *                                  {@value ActionContext#OUTPUT_NAME}
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
@@ -240,9 +251,10 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if the language's name is {@code null} or blank; if a package import has more
-     *                                  than 1,000 characters or more than 64 dot-separated parts, a language import
-     *                                  has more than 1,000 characters, or a fact is declared with a blank name; or if
-     *                                  a fact is declared with a name the language reserves, checked last
+     *                                  than 1,000 characters or more than 64 dot-separated parts, or isn't a valid
+     *                                  package name, a language import has more than 1,000 characters, or a fact is
+     *                                  declared with a blank name; or if a fact is declared with a name the language
+     *                                  reserves, checked last
      * @throws IllegalStateException    if the language's
      *                                  {@link ExpressionLanguage#reservedFactNames()} returns {@code null} or a set
      *                                  holding {@code null}, as {@code build()} throws it

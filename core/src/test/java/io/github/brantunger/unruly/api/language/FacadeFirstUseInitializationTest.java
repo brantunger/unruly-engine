@@ -45,7 +45,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * used to initialize {@code TreeSet} before its first marker, and now the build and the options between the markers
  * must initialize neither. #1313: the engine's own {@code internal.Text}, which the escaping calls reach, held the
  * characters above U+00FF it escapes in two arrays, built by a static initializer, so it was measured safe; it now
- * decides them with comparisons, has no static initializer, and the calls must initialize it.
+ * decides them with comparisons, has no static initializer, and the calls must initialize it. #1271: a language's
+ * tests make a compile context with no engine built, which checks each package import's shape, as {@code build()}
+ * does, so the scenario makes one with a package import and tries one with an import that isn't a valid package name,
+ * between the markers; the context's constructor checked its options and declarations with two lambdas, whose call
+ * sites, when linked, initialized the JDK's method handle classes, and {@code java.lang.Long} on JDK 21, and it now
+ * checks them with loops.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -141,13 +146,17 @@ class FacadeFirstUseInitializationTest {
                 "it has 65 dot-separated parts, and an import may have at most 64",
                 "it has 1001 characters, and an import may have at most 1000"), answers.subList(0, 39), output);
         // MessageText's answers, which MessageTextTest pins, are only counted.
-        assertEquals(59, answers.size(), output);
+        assertEquals(61, answers.size(), output);
         // The names that start with a Greek letter were accepted: the rule and the run options, as each describes
         // itself, and the builder's three calls, each true for having answered the builder (#1292).
         assertEquals(List.of("Rule(ruleName=\u03c0rule, condition=x == 1, action=put hit true, priority=null,"
                 + " description=null, language=null, enabled=true, validFrom=null, validTo=null, tags=[\u03c0tag])",
                 "true", "true", "true", "RunOptions(timeout=the engine's, tags=[\u03c0run])"),
                 answers.subList(54, 59), output);
+        // The compile contexts: the package import kept, and the malformed one rejected with build()'s message (#1271).
+        assertEquals(List.of("[java.util]",
+                "IllegalArgumentException('zq..b' is neither a class nor a valid package name)"),
+                answers.subList(59, 61), output);
         assertTrue(lines.contains(FacadeFirstUseScenario.ENGINE + "{hit=true}"), "the engine didn't run:\n" + output);
     }
 
