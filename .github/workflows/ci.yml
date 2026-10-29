@@ -268,9 +268,11 @@ jobs:
       # survived. The heartbeat (.github/scripts/windows-heartbeat.ps1) is the record that leaves the VM while it
       # still runs: every minute it posts the free memory, commit charge, CPU, disk queues, JVMs, newest JUnit result
       # and busiest processes to a "Windows heartbeat" check run, and the watchdog's process lists once written. The
-      # finally marks it neutral. Left in progress, the step never reached its finally; neutral on a job cancelled at
-      # 25 minutes, the step did but the runner didn't. Its last line is the last minute the VM answered: lines past
-      # 17 minutes mean the VM still ran while the runner had stopped.
+      # finally marks it neutral, and so does running out its 30 minutes; its summary says which. Left in progress, the
+      # step never reached its finally, or the final post failed (the step's printed log then usually ends with
+      # "stopped"). Neutral with "The step reached its finally" on a job cancelled at 25 minutes: the step did but the
+      # runner didn't. Its last line is the last minute the VM answered: lines past 17 minutes mean the VM still ran
+      # while the runner had stopped.
       #
       # It runs in this step, not its own, because a process a step starts may be killed when the step ends
       # (actions/runner ProcessInvoker.cs). So GH_TOKEN is in Gradle's environment as well. It never fails the step:

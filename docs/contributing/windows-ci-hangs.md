@@ -129,40 +129,40 @@ dump ends with a `Found one Java-level deadlock` section when the JVM detects on
 
 ## 💓 The heartbeat
 
-A stalled runner leaves no log, no upload and no file, so only what leaves the VM while it still runs survives. The
-same step starts `.github/scripts/windows-heartbeat.ps1` just before the watchdog. It creates a check run named
-**Windows heartbeat** on the commit (a pull request's head commit).
+Only what leaves the VM while it runs survives a stall. The same step starts `.github/scripts/windows-heartbeat.ps1`
+before the watchdog. It creates a **Windows heartbeat** check run on the commit (a pull request's head commit).
 
-About every 60 seconds it adds a line: the time and time elapsed, free memory, commit charge against its limit, CPU,
-each disk's queue and idle time, the `java` processes and their memory, the newest JUnit XML and when it was written,
-and the five processes with the most CPU time. The watchdog's `*-processes.txt` follow once written. The check run
-keeps the newest 120 lines, 65,000 characters at most.
+About every 60 seconds it adds a line: the time, time elapsed, free memory, commit charge and limit, CPU, each disk's
+queue and idle time, the `java` processes and their memory, the newest JUnit XML and its time, and the five processes
+with the most CPU time. The watchdog's `*-processes.txt` follow. The check run keeps the newest 120 lines, 65,000
+characters at most.
 
-When `gradlew` returns, the step's `finally` creates the heartbeat's stop file and waits up to 30 seconds. The
-heartbeat usually sees it within half a second, adds a last line and marks the check run **neutral**: about ten lines
-on a healthy build. It's evidence, never one of the [required checks](build-and-gates.md#-ci).
+When `gradlew` returns, the step's `finally` creates the stop file and waits up to 30 seconds. The heartbeat usually
+sees it within half a second, adds a last line and marks the check run **neutral**: about ten lines on a healthy build.
+It's evidence, not a [required check](build-and-gates.md#-ci).
 
-A check run left **in progress** was never stopped by the `finally`. After a stall, its last line is the last minute
-the VM answered, and the lines before it show the slope: free memory falling, a disk queue growing, the newest JUnit
-result standing still. Lines past 17 minutes mean the VM still ran while the runner had stopped.
+A check run left **in progress** was never stopped by the `finally`, or its final post failed. After a stall, its last
+line is the last minute the VM answered, and the lines before show the slope: free memory falling, a disk queue growing,
+the newest JUnit result standing still. Lines past 17 minutes mean the VM outlived the runner.
 
-Open it from the commit's checks, or with the GitHub CLI. Each title names its run and attempt, and `filter=all`
-keeps a re-run's heartbeat from hiding the first attempt's:
+Open it from the commit's checks or the GitHub CLI. Each title names its run and attempt; `filter=all` keeps a re-run's
+heartbeat from hiding the first attempt's:
 
 ```bash
 gh api -X GET repos/brantunger/unruly-engine/commits/<sha>/check-runs \
   -f check_name='Windows heartbeat' -f filter=all --jq '.check_runs[] | .output.title, .output.text'
 ```
 
-Read its state with the job's:
+Read its summary first, then its state with the job's:
 
 | Heartbeat | Job | What happened |
 | --- | --- | --- |
-| Neutral | Passed or failed | The step's `finally` stopped it; the job's log has the rest |
-| Neutral | Cancelled at 25 minutes, no log | The step reached its `finally`, but the runner didn't end the job: the VM was alive |
+| Neutral, "The step reached its finally" | Passed or failed | The `finally` stopped it; read the job's log |
+| Neutral, "The step reached its finally" | Cancelled at 25 minutes, no log | The runner didn't end the job: the VM was alive |
+| Neutral, "Ran out its 30 minutes" | Any | No `finally` ran; the VM lived 30 minutes |
 | In progress | Cancelled at 25 minutes, no log, nothing uploaded | The runner or its VM stalled |
-| In progress | Failed at 17 minutes, or cancelled by a newer push | The runner ended the step, maybe before its `finally` ran |
-| In progress | Passed | The last post may have outlasted the step's 30-second wait; the printed log doesn't end with `stopped` |
+| In progress | Failed at 17 minutes, or cancelled by a newer push | The runner ended the step, maybe before its `finally` |
+| In progress | Passed | The final post failed after the `finally` (the printed log ends with `PATCH ... failed`, `stopped`) or outlasted the 30-second wait (no `stopped`) |
 | None | Any | See [the question below](#theres-no-windows-heartbeat-on-the-commit-did-it-break) |
 
 ## ❓ Questions you might not think to ask

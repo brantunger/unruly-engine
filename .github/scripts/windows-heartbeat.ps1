@@ -94,7 +94,8 @@ function Sample {
 }
 
 $inProgress = 'In progress: a heartbeat of the windows-latest build. ' +
-    'Left in progress, its step never reached its finally.'
+    'Left in progress after the job ended, either its step never reached its finally, or the final post failed: ' +
+    'then the step''s printed log usually ends with `stopped`.'
 $check = Post 'POST' 'check-runs' @{
     name = 'Windows heartbeat'; head_sha = $Sha; status = 'in_progress'; started_at = (Utc $started)
     output = @{ title = $title; summary = $inProgress; text = '' }
