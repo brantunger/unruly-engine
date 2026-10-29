@@ -27,9 +27,9 @@ the engine added itself to a failure it reported. Earlier kits read them: from 2
 2.31.1 for an interrupt.
 
 A language that passed the 2.33.0 kit passes as it is. The engine adds such an exception in two places: to the
-failure a listener's `onError` or `onRunError` gets, and to the stop a cancelled run throws. A stop's additions hold
-no `Error`, and an interrupt among them is already the stop's cause. A fatal error added for a listener is the one
-the run rethrows, or a second one beside it.
+failure a listener's `onError` or `onRunError` gets, and to the stop a cancelled run throws. An added interrupt is
+already the stop's cause, and an added `Error`, there or in a listener's failure, is a fatal error a listener threw:
+the one the run rethrows, or a second one beside it.
 
 So the kit sees a difference only when a listener or the language keeps a reported failure and throws it again: a
 fatal error the engine kept there, beside the one it rethrew, the kit no longer rethrows.

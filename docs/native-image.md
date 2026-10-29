@@ -246,6 +246,7 @@ packages. The application checks its own results and exits with 1 if one is wron
 - an all-matches engine with a `HashMap` output and a call to `Math.max`;
 - 200 runs of each engine, well past the about 50 runs after which MVEL's JIT would step in;
 - loading rules, which computes their checksum with SHA-256, and finding MVEL with `ServiceLoader`;
+- a run stopped at its 200 ms timeout through `onCancel`;
 - an image without Flight Recorder support.
 
 With `OutputWriter.beansAndMaps()`, it sets two properties on an output class that isn't public: one declared by a
@@ -261,6 +262,6 @@ matched against the simple names of the classes the engine already loaded, so it
 reading the code, and no image has run it.
 
 Not tested: Oracle GraalVM, GraalVM for other JDK versions, Windows and macOS images, the module path, frameworks'
-own native support such as Spring Boot's, listeners, timeouts, the other builder options, a fact named after a
+own native support such as Spring Boot's, listeners, the other builder options, a fact named after a
 single imported class, and recording Flight Recorder events in an image. Nor, with strict metadata: GraalVM 23 and
 later, any other package list, and a broken `META-INF/services` listing.
