@@ -19,33 +19,41 @@ final class ImportResolver {
     }
 
     /**
-     * Works out what an import string names. A class the context class loader can load is imported on its own, so
-     * {@code imports("java.time.LocalDate")} works; anything else must be a syntactically valid package name.
-     * A nested class can be written as Java imports it ({@code java.util.Map.Entry}) or by its binary name
-     * ({@code java.util.Map$Entry}), as in an inline MVEL {@code import}. A class file found for the name, or for one
-     * of its {@code $} forms, in a different case, as a class directory on a case-insensitive file system finds one,
-     * isn't a class of that name, so the forms still to try are tried; one found in a different case for a class the
-     * class named depends on, such as its superclass, makes it a class that can't be loaded. In a native image built
-     * with strict reachability metadata, a name the image has no metadata for isn't a class, as on the JVM a name no
-     * class has isn't one, so a package import such as {@code java.util} still works there.
+     * Works out what an import string names. Its size is checked first, then its shape: it must be a syntactically
+     * valid package name, every dot-separated part a Java identifier, before any class loader sees it, so a string
+     * rejected for either reason leaves no lock object in a parallel-capable class loader, such as the JDK's
+     * application class loader. So a class whose binary name isn't made of Java identifiers, as the JVM allows for a
+     * class defined at run time, can't be imported by name. A name of that shape that the context class loader can load
+     * as a class is then imported on its own, so {@code imports("java.time.LocalDate")} works; one no form of which is
+     * a class is a package import, and one whose class exists but can't be loaded is rejected. A nested class can be
+     * written as Java imports it ({@code java.util.Map.Entry}) or by its binary name ({@code java.util.Map$Entry}), as
+     * in an inline MVEL {@code import}. A class file found for the name, or for one of its {@code $} forms, in a
+     * different case, as a class directory on a case-insensitive file system finds one, isn't a class of that name, so
+     * the forms still to try are tried; one found in a different case for a class the class named depends on, such as
+     * its superclass, makes it a class that can't be loaded. In a native image built with strict reachability metadata,
+     * a name the image has no metadata for isn't a class, as on the JVM a name no class has isn't one, so a package
+     * import such as {@code java.util} still works there.
      *
      * @param name An import string given to the builder
      * @return The class, or {@code null} if {@code name} is a package name
      * @throws IllegalArgumentException if {@code name} has more than {@value ImportSize#MAX_IMPORT_LENGTH} characters
      *                                  or more than {@value ImportSize#MAX_IMPORT_PARTS} dot-separated parts (see
-     *                                  {@link ImportSize#checkSize}), checked before it is looked up; if it is neither
-     *                                  a loadable class nor a valid package name, or names
-     *                                  a class that exists but can't be loaded, for example because a class it depends
-     *                                  on is missing. The linkage error's text is cut to at most 1,000 characters,
-     *                                  with a note of how many were left out, then escaped, as the application's own
-     *                                  class loader may have written it, and a root cause it hides is named
+     *                                  {@link ImportSize#checkSize}); if it isn't a valid package name (see
+     *                                  {@link ImportSize#checkPackageName}), with no cause, as it wasn't looked up;
+     *                                  or if it names a class that exists but can't be loaded, for example because a
+     *                                  class it depends on is missing. The linkage error's text is cut to at most
+     *                                  1,000 characters, with a note of how many were left out, then escaped, as the
+     *                                  application's own class loader may have written it, and a root cause it hides
+     *                                  is named
      */
     static Class<?> resolve(String name) {
         ImportSize.checkSize(name);
+        ImportSize.checkPackageName(name);
         try {
             return loadImport(name, contextClassLoader());
         } catch (ClassNotFoundException e) {
-            return packageImport(name, e);
+            // A valid package name that isn't a class.
+            return null;
         } catch (LinkageError e) {
             // A class file found for the name looked up, in another case, is already no class (see load). Any other
             // linkage error, a class file found in another case for a class it depends on too, means the class
@@ -54,20 +62,6 @@ final class ImportResolver {
                     + "': the class exists but can't be loaded: "
                     + Failures.describeWithClass(e), e);
         }
-    }
-
-    /**
-     * Accepts a name that isn't a class as a package import.
-     *
-     * @return {@code null}, for a package name
-     * @throws IllegalArgumentException if {@code name} isn't a valid package name
-     */
-    private static Class<?> packageImport(String name, Throwable notAClass) {
-        if (!isPackageName(name)) {
-            throw new IllegalArgumentException("'" + Text.quote(name)
-                    + "' is neither a class nor a valid package name", notAClass);
-        }
-        return null;
     }
 
     /**
@@ -140,34 +134,5 @@ final class ImportResolver {
     static ClassLoader contextClassLoader() {
         ClassLoader loader = Thread.currentThread().getContextClassLoader();
         return loader != null ? loader : LIBRARY_CLASS_LOADER;
-    }
-
-    private static boolean isPackageName(String name) {
-        for (String part : name.split("\\.", -1)) {
-            if (!isIdentifier(part)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // Read by code point, as Java reads a name, so a letter outside the Basic Multilingual Plane, a surrogate pair, is
-    // a letter and a lone surrogate isn't. mvel.MvelFactNames reads a fact's name by char on purpose: MVEL can't read
-    // such a letter in a rule's text, so no rule could refer to a fact named with one.
-    private static boolean isIdentifier(String name) {
-        if (name.isEmpty()) {
-            return false;
-        }
-        int c = name.codePointAt(0);
-        if (!Character.isJavaIdentifierStart(c)) {
-            return false;
-        }
-        for (int i = Character.charCount(c); i < name.length(); i += Character.charCount(c)) {
-            c = name.codePointAt(i);
-            if (!Character.isJavaIdentifierPart(c)) {
-                return false;
-            }
-        }
-        return true;
     }
 }

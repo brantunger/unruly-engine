@@ -4,10 +4,12 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * How large an import string may be, and why one is rejected: the engine checks the imports it is built with and a
- * language's own imports before any class loader sees them, and {@code api.language.ImportLimits} publishes the
- * limits and the reason, so a language bounds an import in an expression's own text the same way, with the same
- * message, rather than keeping a copy that could drift. <b>Internal:</b> this class may change in any release, and
- * isn't part of the API: its package isn't exported, and the {@code api} and {@code core} packages share it.
+ * language's own imports before any class loader sees them, the former for a package name's shape too, and
+ * {@code api.language.ImportLimits} publishes the limits and the reason, so a language bounds an import in an
+ * expression's own text the same way, with the same message, rather than keeping a copy that could drift.
+ * <b>Internal:</b> this class may change in any release, and isn't part of the API: its package isn't exported, and
+ * the {@code api} and {@code core} packages share it. It has no static initializer of its own, so its first use deep
+ * in a stack, as when a language's tests make a compile context with no engine built, can't break it.
  */
 public final class ImportSize {
 
@@ -57,8 +59,8 @@ public final class ImportSize {
 
     /**
      * Rejects an import string too long, or with too many parts, to look up, before any class loader sees it.
-     * {@code EngineCompileContext} checks each package it is given with it too, so a context made outside an engine
-     * rejects what {@code build()} does.
+     * {@code EngineCompileContext} checks each package it is given with it, and then with {@link #checkPackageName},
+     * so a context made outside an engine rejects what {@code build()} does.
      *
      * @param name An import string
      * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more
@@ -84,6 +86,54 @@ public final class ImportSize {
         if (tooLong != null) {
             throw rejected(name, tooLong);
         }
+    }
+
+    /**
+     * Rejects an import string that isn't a valid package name: one whose dot-separated parts aren't each a Java
+     * identifier, read by code point, as Java reads a name. The engine checks each import it is built with by this,
+     * after {@link #checkSize} and before any class loader sees it, so one it rejects leaves no lock object behind; a
+     * class's name written as an import has the same shape. {@code EngineCompileContext} checks each package it is
+     * given with it too, so a context made outside an engine rejects what {@code build()} does.
+     *
+     * @param name An import string
+     * @throws IllegalArgumentException if {@code name} isn't a valid package name, with the message
+     *                                  {@code '<name>' is neither a class nor a valid package name}, the name quoted
+     *                                  as {@link Text#quote} quotes it, and no cause, as nothing was looked up
+     */
+    public static void checkPackageName(String name) {
+        if (!isPackageName(name)) {
+            throw new IllegalArgumentException("'" + Text.quote(name)
+                    + "' is neither a class nor a valid package name");
+        }
+    }
+
+    private static boolean isPackageName(String name) {
+        for (String part : name.split("\\.", -1)) {
+            if (!isIdentifier(part)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Read by code point, as Java reads a name, so a letter outside the Basic Multilingual Plane, a surrogate pair, is
+    // a letter and a lone surrogate isn't. mvel.MvelFactNames reads a fact's name by char on purpose: MVEL can't read
+    // such a letter in a rule's text, so no rule could refer to a fact named with one.
+    private static boolean isIdentifier(String name) {
+        if (name.isEmpty()) {
+            return false;
+        }
+        int c = name.codePointAt(0);
+        if (!Character.isJavaIdentifierStart(c)) {
+            return false;
+        }
+        for (int i = Character.charCount(c); i < name.length(); i += Character.charCount(c)) {
+            c = name.codePointAt(i);
+            if (!Character.isJavaIdentifierPart(c)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static @Nullable String tooLong(String name) {

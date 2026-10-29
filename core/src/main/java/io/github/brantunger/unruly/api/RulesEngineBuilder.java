@@ -259,14 +259,15 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * Whether a string names a class is decided by {@link #build()}, with the building thread's context class loader,
-     * or this library's class loader if the thread has none. A string that loader doesn't find as a class, but that is
-     * a valid package name, is imported as a package. Classes in imported packages are looked up each time rules are
+     * or this library's class loader if the thread has none. A string must be a valid package name, each dot-separated
+     * part a Java identifier, even to name a class; one that loader doesn't find as a class is imported as a package.
+     * Classes in imported packages are looked up each time rules are
      * loaded, with the loading thread's context class loader.
      * </p>
      *
      * <p>
-     * An import may have at most 1,000 characters and at most 64 dot-separated parts. {@link #build()} checks both
-     * before it looks the import up, and rejects one over either limit.
+     * An import may have at most 1,000 characters and at most 64 dot-separated parts. {@link #build()} checks both,
+     * and the import's shape, before it looks the import up, and rejects one that fails any of them.
      * </p>
      *
      * @param names Package or class names
@@ -747,10 +748,11 @@ public final class RulesEngineBuilder<O> {
      *                                  {@link ExpressionLanguage#reservedFactNames()} and
      *                                  {@link ExpressionLanguage#reservesForEveryRuleList()}); if a language's own
      *                                  import has more than 1,000 characters; if an import has more than 1,000
-     *                                  characters or more than 64 dot-separated parts, checked before it is looked up;
-     *                                  if it is neither
-     *                                  a loadable class nor a valid package name; if it names a class that exists but
-     *                                  can't be loaded, for example because a class it depends on is missing; or if
+     *                                  characters or more than 64 dot-separated parts, or has a dot-separated part
+     *                                  that isn't a Java identifier ({@code '...' is neither a class nor a valid
+     *                                  package name}, with no cause), all checked before any class lookup, so even a
+     *                                  class of that name fails; if it names a class that exists but can't be loaded,
+     *                                  for example because a class it depends on is missing; or if
      *                                  {@link #copiesAtLoad(int)} is more than {@link #maxCopies(int)}
      * @throws StackOverflowError       if this is the JVM's first engine and the calling thread has too little stack
      *                                  left to build it safely. The first engine initializes the classes engines use

@@ -107,9 +107,8 @@ instead: `unknown class or illegal statement`, often naming `BigDecimal`.
 Write a nested class as `new Outer.Nested()` after importing `Outer` or its package, or as
 `new com.example.Outer$Nested()`: `new com.example.Outer.Nested()` fails at `run()` with `could not resolve class`.
 
-- A string that is neither a loadable class nor a valid package name, such as `"java.util."`, fails `build()` with
-  `IllegalArgumentException`.
-- So does a string over 1,000 characters or 64 parts, before any lookup.
+- A string over 1,000 characters or 64 parts, or with a part that isn't a Java identifier, such as `"java.util."`,
+  fails `build()` with `IllegalArgumentException` before any lookup, even if a class has that name.
 - So does an existing class that can't load, such as one missing its superclass, with the `LinkageError` as cause.
 - A well-formed package that doesn't exist, such as `"com.nope"`, is accepted.
 - [`languageImports("mvel", ...)`](README.md#-choosing-a-language-per-rule) fails `load()` and `validate()`.

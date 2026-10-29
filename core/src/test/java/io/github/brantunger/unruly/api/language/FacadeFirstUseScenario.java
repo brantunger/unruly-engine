@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunOptions;
+import io.github.brantunger.unruly.core.EngineCompileContext;
 import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 
 import java.util.ArrayList;
@@ -21,14 +22,15 @@ import java.util.function.Supplier;
  * before it prints {@link #AFTER}. It makes what it reads first, then prints {@link #BEFORE}, calls every public
  * method of {@link Throwables}, {@link ImportLimits} and {@link MessageText} once or more, so each takes each of its
  * paths, then builds a rule whose name and tag start with a Greek letter, declares facts, adds a language and makes
- * run options with such names (#1292), and prints {@link #AFTER}. Between the two it concatenates no string and links
- * no lambda, as the test's own code does both through a call site the JVM links on its first use, and it keeps the
- * answers in an array. Then it prints each answer after {@link #ANSWER}, builds an engine and runs it, and prints
- * {@link #ENGINE} and what the run returned. Its text has characters above U+00FF, of each plane the escaping decides
- * a character of: escaping one read the JDK's table for it, a class the JVM builds on its first use, before the engine
- * decided them from a table of its own (#1286); and a name that starts with one read the same table in the blank
- * check, {@code String.isBlank()}, before the engine decided that from comparisons of its own (#1292). Before
- * {@link #BEFORE} it reads one character of that text, so the JVM's code for such strings,
+ * run options with such names (#1292), makes a compile context as a language's tests make one, with a package import
+ * and with one that isn't a valid package name, which it rejects (#1271), and prints {@link #AFTER}. Between the two
+ * it concatenates no string and links no lambda, as the test's own code does both through a call site the JVM links
+ * on its first use, and it keeps the answers in an array. Then it prints each answer after {@link #ANSWER}, builds an
+ * engine and runs it, and prints {@link #ENGINE} and what the run returned. Its text has characters above U+00FF, of
+ * each plane the escaping decides a character of: escaping one read the JDK's table for it, a class the JVM builds on
+ * its first use, before the engine decided them from a table of its own (#1286); and a name that starts with one read
+ * the same table in the blank check, {@code String.isBlank()}, before the engine decided that from comparisons of its
+ * own (#1292). Before {@link #BEFORE} it reads one character of that text, so the JVM's code for such strings,
  * {@code java.lang.StringUTF16}, is initialized before the calls, as it is at startup on Windows but not on Linux or
  * macOS: the test assumes the JVM has read such a string already. Before it too, it creates the engine builder the
  * names are given to, and it touches
@@ -123,7 +125,11 @@ final class FacadeFirstUseScenario {
         piFacts.put("\u03c0facts", String.class);
         Set<String> piRunTag = new HashSet<>();
         piRunTag.add("\u03c0run");
-        Object[] answers = new Object[59];
+        // The package imports a compile context is given, one of them not a valid package name (#1271).
+        Set<String> packages = Set.of("java.util");
+        Set<String> malformed = Set.of("zq..b");
+        ClassLoader loader = ClassLoader.getSystemClassLoader();
+        Object[] answers = new Object[61];
         int i = 0;
         // The test's precondition: the JVM has read a string with a character above U+00FF already, as a JVM on
         // Windows has at startup, so the calls aren't the first to initialize java.lang.StringUTF16, the JDK's code
@@ -195,6 +201,14 @@ final class FacadeFirstUseScenario {
         answers[i++] = builder.facts(piFacts) == builder;
         answers[i++] = builder.language(piLanguage) == builder;
         answers[i++] = options.withTags(piRunTag);
+        answers[i++] = new EngineCompileContext(packages, Set.of(), loader).packageImports();
+        Object rejected;
+        try {
+            rejected = new EngineCompileContext(malformed, Set.of(), loader);
+        } catch (IllegalArgumentException e) {
+            rejected = e;
+        }
+        answers[i++] = rejected;
         System.out.println(AFTER);
 
         for (Object answer : answers) {
