@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.9](https://github.com/brantunger/unruly-engine/compare/v2.33.8...v2.33.9) (2026-10-29)
+
+
+### Bug Fixes
+
+* an import that isn't a valid package name is now rejected before any class loader is asked, so it leaves no lock object in the JDK's loaders, and a test-kit compile context rejects it with build()'s message ([#1323](https://github.com/brantunger/unruly-engine/issues/1323)) ([dd49d26](https://github.com/brantunger/unruly-engine/commit/dd49d26925a452f1b1dea5b6488fee8796bdbb0a))
+
 ## [2.33.8](https://github.com/brantunger/unruly-engine/compare/v2.33.7...v2.33.8) (2026-10-28)
 
 
