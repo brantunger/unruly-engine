@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.10](https://github.com/brantunger/unruly-engine/compare/v2.33.9...v2.33.10) (2026-10-29)
+
+
+### Bug Fixes
+
+* an import of a class whose superclass is named like it in another case is now rejected as a class that can't be loaded, not taken for a package, as Throwables.isWrongName reads only the side of the "wrong name" message this JVM writes ([#1325](https://github.com/brantunger/unruly-engine/issues/1325)) ([2551c68](https://github.com/brantunger/unruly-engine/commit/2551c68e57a76ecce3665aab51908ab5206c2364))
+
 ## [2.33.9](https://github.com/brantunger/unruly-engine/compare/v2.33.8...v2.33.9) (2026-10-29)
 
 
