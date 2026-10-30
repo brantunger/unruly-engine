@@ -60,7 +60,8 @@ flowchart LR
    the two versions. The changelog entry records an intended increase, and a PR merged before the release PR
    re-records the baseline.
 4. Review the version and changelog, then **squash-merge the release PR** once CI and the title check pass; the
-   [release-please token](docs/contributing/release-token.md) gives it both.
+   [release-please token](docs/contributing/release-token.md) gives it both. Merge it weekly, or at once for a security
+   fix or one whose issue's **Severity:** is medium or worse.
 5. That merge makes release-please create the tag `vX.Y.Z` and a GitHub Release, which triggers the `publish` job in
    the same run. The job checks out the tag, finds the highest released version for the `Latest` mark and
    [`/latest/`](#-the-javadoc-site), and runs the full `build` (including Checkstyle, PMD, the coverage gate and the
@@ -76,8 +77,7 @@ flowchart LR
 
 The Release notes are the changelog entry, with links to [Migrating to 2.0](docs/migrating-to-2.md) and
 [Migrating a language or an engine](docs/migrating-to-2-implementers.md) appended by the `release-please` job. The
-links are pinned to the tag, so each release's notes keep pointing at the guides as that release left them. The
-step was added after 2.0.0, so that release's links were added by hand, in the shape it writes.
+links are pinned to the tag, so each release's notes keep pointing at the guides as that release left them.
 
 Central Portal validation is synchronous, so a green `publish` job means the release was accepted. The workflow
 doesn't wait for the sync to `repo1.maven.org`, up to 30–60 minutes;
@@ -88,8 +88,8 @@ doesn't wait for the sync to `repo1.maven.org`, up to 30–60 minutes;
 Only `feat:`, `fix:` and breaking (`!`) commits open a release PR. Every other type (`deps`, `perf`, `refactor`,
 `revert`, `docs`, `chore`, `build`, `ci`, `test`) is hidden in `release-please-config.json`, so it neither cuts a
 release on its own nor appears in the changelog. That's by design: weekly Dependabot bumps don't each ship a version
-but go out with the next release. To release them sooner, merge a `fix:` PR; they ship in that release without their
-own changelog entries.
+but go out with the next release. To release them sooner, merge the release PR, after a `fix:` PR opens one if
+needed.
 
 > [!WARNING]
 > `Release-As:` footers do **not** work here. The repository squash-merges with the PR title only, so commit bodies
