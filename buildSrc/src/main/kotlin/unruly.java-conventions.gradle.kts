@@ -1,10 +1,13 @@
 // Compilation, tests and static analysis, shared by every project.
 import java.time.Duration
+import net.ltgt.gradle.errorprone.errorprone
+import unruly.conventions.NullAwayJdkFloor
 
 plugins {
     `java-library`
     checkstyle
     pmd
+    id("net.ltgt.errorprone")
 }
 
 java {
@@ -48,6 +51,36 @@ tasks.withType<JavaCompile>().configureEach {
 // a hidden javac option, which a javac that drops it ignores without a word; StringConcatenationTest catches that.
 tasks.named<JavaCompile>("compileJava") {
     options.compilerArgs.add("-XDstringConcat=inline")
+}
+
+// NullAway, in JSpecify mode, checks that the main sources of the libraries obey their @NullMarked nullness. Every
+// other Error Prone check is off, and so is Error Prone on every other compilation.
+dependencies {
+    "errorprone"(toolVersions.findLibrary("error-prone-core").get())
+    "errorprone"(toolVersions.findLibrary("nullaway").get())
+}
+
+val nullAwayProjects = setOf(":core", ":mvel", ":test-kit")
+// -PnullAway=false turns it off everywhere, for a JDK 21 older than 21.0.8, which it needs: CI's native-image job,
+// whose GraalVM Community 21.0.2 is the last such build, and a contributor's older JDK. Every other CI build checks.
+val nullAway = providers.gradleProperty("nullAway").map { it.toBoolean() }.getOrElse(true)
+
+tasks.withType<JavaCompile>().configureEach {
+    options.errorprone.enabled = nullAway && name == "compileJava" && project.path in nullAwayProjects
+    options.errorprone {
+        disableAllChecks = true
+        error("NullAway")
+        option("NullAway:OnlyNullMarked", "true")
+        option("NullAway:JSpecifyMode", "true")
+    }
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    if (nullAway && project.path in nullAwayProjects) {
+        options.compilerArgs.add("-XDaddTypeAnnotationsToSymbol=true")
+        // An older JDK 21 would crash Error Prone; this fails first, naming the version and the way out.
+        doFirst(NullAwayJdkFloor())
+    }
 }
 
 // Every jar, and any other archive, gets its entries in a stable order and with a fixed timestamp, so two builds of

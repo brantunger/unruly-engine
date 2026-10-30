@@ -13,4 +13,5 @@ dependencies {
     implementation(libs.japicmp.plugin)
     implementation(libs.module.info.plugin)
     implementation(libs.cyclonedx.plugin)
+    implementation(libs.errorprone.plugin)
 }

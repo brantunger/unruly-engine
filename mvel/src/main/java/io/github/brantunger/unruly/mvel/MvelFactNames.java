@@ -1,9 +1,11 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
 import org.mvel2.compiler.AbstractParser;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.SplittableRandom;
 import java.util.concurrent.ConcurrentHashMap;
@@ -79,7 +81,7 @@ final class MvelFactNames {
     // under this lock, so the total is what the cache holds when names are cached on several threads at once. With
     // no package imported nothing is cached, so there are no slots.
     private final Object missesLock = new Object();
-    private final String[] slots;
+    private final @Nullable String[] slots;
     private final SplittableRandom evictions;
     private int slotCount;
     private int missChars;
@@ -213,7 +215,7 @@ final class MvelFactNames {
     @SuppressWarnings("PMD.NullAssignment")
     private void evictOne() {
         int victim = evictions.nextInt(slotCount);
-        String evicted = slots[victim];
+        String evicted = Objects.requireNonNull(slots[victim], "the slots below slotCount hold names");
         slotCount--;
         slots[victim] = slots[slotCount];
         slots[slotCount] = null;

@@ -640,7 +640,9 @@ public final class FactProperties {
         } catch (InvocationTargetException e) {
             // Always wrapped, never rethrown as it came: IllegalArgumentException is how this class says a fact has
             // no such property, so a getter that validates its state must not be mistaken for a misspelled rule.
-            throw readFailed(target, property, e.getCause());
+            // Method.invoke always gives it what the accessor threw as its cause.
+            throw readFailed(target, property,
+                    Objects.requireNonNull(e.getCause(), "an accessor's InvocationTargetException has a cause"));
         }
     }
 

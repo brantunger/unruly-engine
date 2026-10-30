@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
 import org.mvel2.CompileException;
 import org.mvel2.ast.ASTNode;
 import org.mvel2.compiler.AbstractParser;
@@ -55,7 +56,7 @@ final class MvelAnalysis extends ExpressionCompiler {
     private final transient Imports imports;
     // The configuration of the pass's own parser context, which counts MVEL's calls for the class loader.
     private final transient Imports.SharedLookupConfiguration configuration;
-    private String rejected;
+    private @Nullable String rejected;
 
     /**
      * Creates the analysis pass over an expression, with a parser context of its own.
@@ -171,7 +172,7 @@ final class MvelAnalysis extends ExpressionCompiler {
      *         expression, or its last node isn't a type's name MVEL stopped after, as {@link #typeNamed} tells,
      *         which rules out names holding a word Java or MVEL reserves
      */
-    String rejectedType() {
+    @Nullable String rejectedType() {
         return rejected;
     }
 
@@ -227,7 +228,7 @@ final class MvelAnalysis extends ExpressionCompiler {
      * @param cursor Where MVEL stopped in it
      * @return The type's name, or {@code null} if the node isn't a type's name MVEL stopped after
      */
-    static String typeNamed(ASTNode node, char[] expr, int cursor) {
+    static @Nullable String typeNamed(@Nullable ASTNode node, char[] expr, int cursor) {
         if (node == null || !ASTNode.class.equals(node.getClass())) {
             return null;
         }

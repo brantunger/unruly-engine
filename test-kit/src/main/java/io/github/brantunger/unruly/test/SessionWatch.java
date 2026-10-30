@@ -99,10 +99,11 @@ final class SessionWatch {
 
     // Session.none() is one shared instance, and the engine asks whether a language's session is it by identity.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private @Nullable Session watch(@Nullable Session session) {
+    private Session watch(Session session) {
         // Passed through as it is: a wrapped Session.none() would make the engine keep a copy of the rules for
         // each run, where it shares one, and change what's being checked. A null is passed through too, so the
-        // engine still rejects it with its own message.
+        // engine still rejects it with its own message. Declared non-null all the same: only a language under test
+        // that breaks its contract returns null, and NullAway can't express a null passed on as it came.
         if (session == null || session == Session.none()) {
             return session;
         }

@@ -35,7 +35,7 @@ does both, and CI builds and runs it on every pull request. These are CI's comma
 `-H:+ReportExceptionStackTraces` only makes a failed build print its stack traces:
 
 ```bash
-./gradlew :native-smoke:installDist
+./gradlew :native-smoke:installDist -PnullAway=false   # GraalVM CE 21.0.2 is older than NullAway's JDK 21.0.8
 mkdir -p native-smoke/build/native
 native-image --no-fallback -H:+ReportExceptionStackTraces -cp 'native-smoke/build/install/native-smoke/lib/*' \
     -o native-smoke/build/native/native-smoke com.example.nativesmoke.Main

@@ -95,9 +95,10 @@ final class CalledCodeFailures {
             }
             // The engine's own failure under MVEL's wrapper, as where MVEL wraps what an argument threw directly: kept
             // out of MVEL's wrapper, whose message would otherwise read as something the rule's code said. Only the
-            // engine's own classes create them, not a class a rule calls, even one in this library's packages.
-            if (below instanceof UnrulyException || ExceptionReads.thrownFrom(below, ENGINE_PACKAGE)
-                    || ExceptionReads.thrownFrom(below, FACT_NAMES)) {
+            // engine's own classes create them, not a class a rule calls, even one in this library's packages. A walk
+            // that ran out of causes, below an exception MVEL made with none, keeps what MVEL threw.
+            if (below != null && (below instanceof UnrulyException || ExceptionReads.thrownFrom(below, ENGINE_PACKAGE)
+                    || ExceptionReads.thrownFrom(below, FACT_NAMES))) {
                 return below;
             }
             return thrown;

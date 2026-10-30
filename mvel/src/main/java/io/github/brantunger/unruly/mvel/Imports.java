@@ -563,7 +563,7 @@ final class Imports {
          */
         // PMD asks for the context class loader instead, which is the one that may not see the imported class.
         @SuppressWarnings("PMD.UseProperClassLoader")
-        private Class<?> declaredClass(Class<?> outer, String name) {
+        private @Nullable Class<?> declaredClass(Class<?> outer, String name) {
             String binaryName = outer.getName() + '$' + name;
             ClassLoader outerLoader = outer.getClassLoader();
             ClassLoader loader = outerLoader != null ? outerLoader : getClassLoader();

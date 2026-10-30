@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Throwables;
+import org.jspecify.annotations.Nullable;
 import org.mvel2.CompileException;
 import org.mvel2.ErrorDetail;
 
@@ -589,7 +590,7 @@ final class MvelCompileErrors {
      *                     (see {@link MvelAnalysis#rejectedType()})
      * @return The exception to throw
      */
-    static InvalidExpressionException compileError(CompileException e, String rejectedType) {
+    static InvalidExpressionException compileError(CompileException e, @Nullable String rejectedType) {
         String message = String.valueOf(Throwables.messageOf(e));
         int line = 0;
         int column = 0;
@@ -677,7 +678,7 @@ final class MvelCompileErrors {
      * @return {@code unknown class or illegal statement: } and the type if MVEL's description is those words alone and
      *         the type is known, or else the description
      */
-    private static String named(String description, String rejectedType) {
+    private static String named(String description, @Nullable String rejectedType) {
         return rejectedType != null && UNKNOWN_CLASS.equals(description)
                 ? UNKNOWN_CLASS + ": " + rejectedType : description;
     }
