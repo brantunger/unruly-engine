@@ -3,7 +3,7 @@
 ## Supported versions
 
 Only the **latest release** on [Maven Central](https://central.sonatype.com/artifact/io.github.brantunger/unruly-engine)
-receives security fixes. Fixes ship as a new patch release, so upgrading to the newest version is always the
+receives security fixes. Fixes ship in a new release, so upgrading to the newest version is always the
 remedy.
 
 **The 1.x line ends at 2.0.0.** 1.8.0 is the last 1.x release, and once 2.0.0 is out it receives no security fixes.
