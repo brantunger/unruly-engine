@@ -1,0 +1,12 @@
+# zizmor's configuration; ci.yml's docs-and-hygiene job runs it on the workflows.
+rules:
+  # self-repository wants `uses: $/...` for a workflow in this repository, but actionlint 1.7.12, the newest, rejects
+  # that syntax. Turn this rule back on once actionlint accepts it.
+  self-repository:
+    disable: true
+  # pr-title.yml stays on pull_request_target on purpose: it then runs main's copy of itself, so a pull request can't
+  # edit the required pr-title check it's judged by, as it could under pull_request. It checks out nothing, passes the
+  # title through the environment, and its token can only read pull requests.
+  dangerous-triggers:
+    ignore:
+      - pr-title.yml

@@ -151,7 +151,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 21 on `ubuntu-latest`, `macos-latest` and `windows-latest` (`build-windows`) | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
 | JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
-| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
+| `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, zizmor, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Passes only when `build`, `build-windows` and `native-image` succeeded, or skipped as allowed below, and `docs-and-hygiene` succeeded. Any other result fails, such as a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
@@ -165,9 +165,10 @@ waits, so a run isn't cut off before its cache save. GitHub keeps one waiting ru
 a waiting one, whose commit has no build.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
-may have findings in lines you didn't touch. Steps after a failed one still run.
+may have findings in lines you didn't touch. zizmor warns too, until #1328. Steps after a failed one still run.
 `check_style.py` also enforces the 2,500-word cap, with the exceptions `docs/scripts/long-pages.txt` lists. Run the
-checks before you push, from the repository root, with Python 3 and [actionlint](https://github.com/rhysd/actionlint):
+checks before you push, from the repository root, with Python 3, [actionlint](https://github.com/rhysd/actionlint)
+and [zizmor](https://docs.zizmor.sh):
 
 ```bash
 python docs/scripts/check_docs.py
@@ -175,14 +176,15 @@ python docs/scripts/check_style.py docs/facts.md   # the pages you changed
 python docs/scripts/check_fixtures.py             # when you change a script in docs/scripts
 git ls-files --eol | grep -E '^i/(crlf|mixed)'   # lists files stored with CRLF; prints nothing when all is well
 actionlint                                        # needs shellcheck on the PATH, or it silently skips the shell checks
+zizmor --offline .github/workflows                # reads .github/zizmor.yml
 ```
 
 `check_fixtures.py` checks both docs scripts' output and exit codes on the cases in `config/docs-checks/`. When you
 fix a script, add its case there as `<name>.md.txt`, with its SVGs, and the expected output to `VERDICTS` in
 `check_fixtures.py`.
 
-CI downloads a pinned actionlint release, which Dependabot doesn't update: to bump it, change `ACTIONLINT_VERSION` in
-`ci.yml`, and take `ACTIONLINT_SHA256` from the `linux_amd64` line of the release's checksums file.
+CI downloads pinned actionlint and zizmor releases, which Dependabot doesn't update: to bump one, change its
+`_VERSION` and `_SHA256` in `ci.yml`.
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
 becomes the release commit. On one labelled `dependencies`, which Dependabot opens with a capitalised subject, it
