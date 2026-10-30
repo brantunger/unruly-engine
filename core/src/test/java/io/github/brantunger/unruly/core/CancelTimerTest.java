@@ -835,15 +835,23 @@ class CancelTimerTest {
 
     @Test
     @DisplayName("a timer interrupted while it sleeps goes on waiting for its actions")
-    void interruptedTimer() {
+    void interruptedTimer() throws InterruptedException {
         CancelRegistration pending = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         CountDownLatch ran = new CountDownLatch(1);
         // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
         try {
-            CancelTimer.runningThread().interrupt();
+            Thread timer = CancelTimer.runningThread();
+            timer.interrupt();
+            // Only the InterruptedException out of its wait clears the timer's interrupt status, so this waits for the
+            // timer to have handled it. Scheduling first could let the timer's next scan find the action due, before
+            // or after a notify won over the interrupt, and finish with its interrupt still set, the catch never run
+            // (#1337).
+            TestSupport.await(() -> !timer.isInterrupted(), 10, "the timer has handled the interrupt");
             scheduled(Duration.ofMillis(100), ran::countDown);
 
             await(ran);
+            // A timer that died of the interrupt would be replaced by the next registration, and its action run too.
+            assertSame(timer, CancelTimer.runningThread(), "the interrupted timer still serves its actions");
         } finally {
             pending.close();
         }
