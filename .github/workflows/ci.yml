@@ -153,7 +153,9 @@ jobs:
       # and test-kit the kit's other tests.
       - name: Test on JDK ${{ matrix.java-version }}
         if: matrix.java-version != '21'
-        run: ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=${{ matrix.java-version }}
+        env:
+          TEST_JDK: ${{ matrix.java-version }}
+        run: ./gradlew :core:test :mvel:test :test-kit:test "-PtestJdk=$TEST_JDK"
 
       # Artifact names must be unique within a run, and three legs run on JDK 21, build-windows's among them, so the
       # OS is part of each name.
@@ -436,10 +438,10 @@ jobs:
       - name: Run it with strict metadata
         run: native-smoke/build/native/native-smoke-strict
 
-  # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint, without
-  # Gradle. A failed step fails the job, and so ci-result, except the style check, which only warns
-  # (continue-on-error). Each check runs even when an earlier one failed (!cancelled()), so a run reports them all.
-  # See docs/contributing/build-and-gates.md for running them locally.
+  # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint and zizmor,
+  # without Gradle. A failed step fails the job, and so ci-result, except the style check and, for now, zizmor, which
+  # only warn (continue-on-error). Each check runs even when an earlier one failed (!cancelled()), so a run reports
+  # them all. See docs/contributing/build-and-gates.md for running them locally.
   docs-and-hygiene:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -479,6 +481,23 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" actionlint
           shellcheck --version   # without shellcheck, actionlint silently drops its shellcheck rule
           "$RUNNER_TEMP/actionlint" -color
+
+      # zizmor checks the workflows for security mistakes actionlint doesn't look for: template injection, dangerous
+      # triggers, wide permissions. It runs offline, and .github/zizmor.yml configures it. It only warns until #1328
+      # makes it fail the job. Like actionlint, the tarball isn't an action, so Dependabot doesn't bump it: to update,
+      # change the version and take the sha256 of zizmor-x86_64-unknown-linux-gnu.tar.gz from the release's assets.
+      - name: Workflow security
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          ZIZMOR_VERSION: 1.31.1
+          ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+        run: |
+          tarball=zizmor-x86_64-unknown-linux-gnu.tar.gz
+          curl -sSfL -o "$RUNNER_TEMP/$tarball"             "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/$tarball"
+          echo "$ZIZMOR_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" zizmor
+          "$RUNNER_TEMP/zizmor" --offline .github/workflows
 
       # Only the pages a pull request changes, and it only warns: pages written before docs/contributing/style.md
       # still have findings. CHANGELOG.md is written by release-please.
