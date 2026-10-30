@@ -394,8 +394,10 @@ jobs:
         with:
           cache-provider: basic
 
+      # Without NullAway: its JSpecify mode needs JDK 21.0.8 or later, and GraalVM Community 21.0.2 is the last
+      # Community JDK 21 build. The build job's legs, on Temurin's newest 21, check it.
       - name: Build the application
-        run: ./gradlew :native-smoke:installDist
+        run: ./gradlew :native-smoke:installDist -PnullAway=false
 
       # See the same step in the build job.
       - name: Upload Dependency Verification Report

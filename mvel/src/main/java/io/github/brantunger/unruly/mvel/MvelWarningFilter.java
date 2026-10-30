@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
+import org.jspecify.annotations.Nullable;
+
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import java.util.function.Supplier;
@@ -37,7 +39,7 @@ import java.util.logging.Logger;
  */
 // Its loggers are MVEL's, held to keep the filters on them, not loggers this class logs to.
 @SuppressWarnings("PMD.MoreThanOneLogger")
-final class MvelWarningFilter implements Filter, Supplier<Filter> {
+final class MvelWarningFilter implements Filter, Supplier<@Nullable Filter> {
 
     /** The logger of MVEL's reflective optimizer, which logs the failed conversion. */
     static final String LOGGER_NAME = "org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer";
@@ -50,7 +52,7 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     static final Logger LOGGER = Logger.getLogger(LOGGER_NAME);
     // The filter installed on it, or null if it couldn't be. Held here too, because another class loader's copy of
     // this class installed later holds it only weakly: it lives as long as this class loader.
-    static final MvelWarningFilter FILTER = install(LOGGER);
+    static final @Nullable MvelWarningFilter FILTER = install(LOGGER);
     /**
      * The logger of MVEL's ErrorUtil, which logs its own failure to place a compile error. Named as text, not from the
      * class, so initializing this class doesn't load ErrorUtil.
@@ -58,12 +60,12 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
     static final String ERROR_UTIL_LOGGER_NAME = "org.mvel2.util.ErrorUtil";
     // Held as LOGGER is, and the filter installed on it as FILTER is.
     static final Logger ERROR_UTIL_LOGGER = Logger.getLogger(ERROR_UTIL_LOGGER_NAME);
-    static final MvelWarningFilter ERROR_UTIL_FILTER = install(ERROR_UTIL_LOGGER);
+    static final @Nullable MvelWarningFilter ERROR_UTIL_FILTER = install(ERROR_UTIL_LOGGER);
 
     // Another class loader's copy of this filter, installed before this one, or null if there was none.
-    private final Reference<Filter> copy;
+    private final @Nullable Reference<Filter> copy;
     // The filter the logger had before any of them, or null if it had none.
-    private final Filter previous;
+    private final @Nullable Filter previous;
 
     /**
      * Creates a filter.
@@ -73,7 +75,7 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
      * @param previous The filter to ask while no rule's expression compiles or runs, when there is no copy or it is
      *                 gone, or {@code null} to log every record then
      */
-    MvelWarningFilter(Reference<Filter> copy, Filter previous) {
+    MvelWarningFilter(@Nullable Reference<Filter> copy, @Nullable Filter previous) {
         this.copy = copy;
         this.previous = previous;
     }
@@ -102,7 +104,7 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
      *         forbids it: the logger's filter is then unchanged, and the engine still reports the failure, but MVEL's
      *         WARNING is logged too
      */
-    static MvelWarningFilter install(Logger logger) {
+    static @Nullable MvelWarningFilter install(Logger logger) {
         try {
             // The logger may be shared with other class loaders' copies of this class, installing theirs at once.
             synchronized (logger) {
@@ -182,7 +184,7 @@ final class MvelWarningFilter implements Filter, Supplier<Filter> {
      * @return The filter, or {@code null} if the logger had none
      */
     @Override
-    public Filter get() {
+    public @Nullable Filter get() {
         return previous;
     }
 }

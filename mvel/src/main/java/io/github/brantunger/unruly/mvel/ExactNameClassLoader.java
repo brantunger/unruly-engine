@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Throwables;
+import org.jspecify.annotations.Nullable;
 
 import java.net.URLClassLoader;
 import java.util.Iterator;
@@ -535,7 +536,7 @@ final class ExactNameClassLoader extends ClassLoader {
          * @throws VirtualMachineError if loading the class throws one; a {@link RuntimeException} the class loader
          *                             throws is passed on too
          */
-        static Class<?> forNameOrNull(String name, ClassLoader loader) {
+        static @Nullable Class<?> forNameOrNull(String name, ClassLoader loader) {
             try {
                 return Class.forName(name, false, loader);
             } catch (ClassNotFoundException e) {

@@ -13,6 +13,8 @@ pmd = "7.28.0"
 apiguardian-api = "org.apiguardian:apiguardian-api:1.1.2"
 checkstyle = { module = "com.puppycrawl.tools:checkstyle", version.ref = "checkstyle" }
 cyclonedx-plugin = "org.cyclonedx.bom:org.cyclonedx.bom.gradle.plugin:3.4.1"
+error-prone-core = "com.google.errorprone:error_prone_core:2.51.0"
+errorprone-plugin = "net.ltgt.errorprone:net.ltgt.errorprone.gradle.plugin:5.2.0"
 # Only the tests of the documented Jackson mix-ins use Jackson; no artifact depends on it.
 jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.3"
 jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3"
@@ -27,6 +29,7 @@ junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 module-info-plugin = "org.gradlex.extra-java-module-info:org.gradlex.extra-java-module-info.gradle.plugin:1.14.2"
 mvel2 = "org.mvel:mvel2:2.5.4.Final"
+nullaway = "com.uber.nullaway:nullaway:0.14.3"
 pmd-java = { module = "net.sourceforge.pmd:pmd-java", version.ref = "pmd" }
 slf4j-api = "org.slf4j:slf4j-api:2.0.20"
 slf4j-simple = "org.slf4j:slf4j-simple:2.0.20"

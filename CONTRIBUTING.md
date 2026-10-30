@@ -65,8 +65,8 @@ flowchart TD
 
 ## 💻 Development setup
 
-You need **JDK 21** installed: the build compiles with a Java 21 toolchain, which Gradle doesn't download, so a
-missing JDK fails the build naming the version. Only `-PtestJdk=N` needs JDK N; CI uses 25 and 26.
+You need **JDK 21, 21.0.8 or later,** installed: the build compiles with a Java 21 toolchain, which Gradle doesn't
+download, so a missing JDK fails the build naming the version. Only `-PtestJdk=N` needs JDK N.
 
 In an IDE, import the project as a Gradle build: the build scripts and `buildSrc`'s convention plugins are Kotlin
 DSL (`.gradle.kts`). IntelliJ IDEA then completes code in them; Eclipse and VS Code only highlight their syntax.
@@ -109,9 +109,8 @@ where the builder or the test kit needs it. The constructors the test kit calls 
 may run on a newer `core`, so the build checks them against the latest release; see
 [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core).
 
-Where does my test go? The library has three test source sets. The line between `core/src/test` and
-`mvel/src/test` is whether the test needs MVEL, and `test-kit/src/test` holds the tests that use the test kit but
-not MVEL.
+Where does my test go? The line between `core/src/test` and `mvel/src/test` is whether the test needs MVEL, and
+`test-kit/src/test` holds the tests that use the test kit but not MVEL.
 
 A test in `core` or `test-kit` that runs a rule names a language of its own:
 `core/src/testFixtures` has `ToyExpressionLanguage`, which evaluates a tiny syntax, and `StubExpressionLanguage`,
@@ -165,7 +164,7 @@ first, then remove it with `git -c core.longpaths=true worktree remove --force .
 | 🧬 **API compatibility** | No binary- or source-incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |
-| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
+| 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, which NullAway enforces, engine visibility, class-file version, the test kit's links into `core` | The structural tests and NullAway, in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 
 Three things to know about the gate:
 

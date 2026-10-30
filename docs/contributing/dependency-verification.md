@@ -91,6 +91,15 @@ empty one. Neither step needs a signing key.
 > its cache, the write can miss entries, and the metadata then passes on your machine and fails in CI. A write in a
 > warm cache missed `kotlinx-coroutines-bom-1.8.0.pom` when `buildSrc` gained `kotlin-dsl`.
 
+Both passes need a Java 21 toolchain of JDK 21.0.8 or later, which NullAway needs. An empty Gradle home doesn't see
+the JDKs Gradle installed under `~/.gradle/jdks`, so the build may pick an older JDK 21 found elsewhere and fail,
+naming it.
+
+Then pin the JDK on both commands, with its home directory as `<jdk>`:
+`-Dorg.gradle.java.installations.auto-detect=false -Dorg.gradle.java.installations.paths=<jdk>`. Use `-D`: Gradle
+deprecates the `-P` form, and a deprecation fails the build. Gradle also counts the JDK it runs on as a toolchain,
+so run it on a JDK 21.0.8 or later too, through `JAVA_HOME`.
+
 Run this from the repository root, in Git Bash on Windows:
 
 ```bash

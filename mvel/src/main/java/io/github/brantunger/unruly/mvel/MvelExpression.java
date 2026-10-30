@@ -90,7 +90,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
     // tests.
     private final long callsPerRun;
     // The compiled copy from when the rule list loaded, which no run has used, until a session takes it.
-    private final AtomicReference<Copy> loaded;
+    private final AtomicReference<@Nullable Copy> loaded;
 
     private MvelExpression(String source, Imports imports, long callsPerRun, Copy loaded) {
         this.source = source;

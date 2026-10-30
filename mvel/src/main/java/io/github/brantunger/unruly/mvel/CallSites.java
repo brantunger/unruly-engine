@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.language.Throwables;
+import org.jspecify.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -118,7 +119,7 @@ final class CallSites {
     private boolean exact;
     // How many calls each site was counted, once the pass or run has made more than UNCOUNTED_CALLS, or null until
     // then: since every call has been counted, once it is, and from the walks until then.
-    private Map<Long, long[]> callsBySite;
+    private @Nullable Map<Long, long[]> callsBySite;
 
     /**
      * Creates the count for an analysis pass, or for each run of an expression.

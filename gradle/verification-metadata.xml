@@ -26,8 +26,17 @@
             <trusting group="com.puppycrawl.tools" name="checkstyle" version="14.1.0"/>
             <trusting group="com.puppycrawl.tools" name="checkstyle" version="14.3.0"/>
          </trusted-key>
+         <trusted-key id="0C435808EE750CC72A8BA847136EA64D9C8C7A0F" group="com.uber.nullaway" name="nullaway" version="0.14.3"/>
          <trusted-key id="0CC641C3A62453AB390066C4A41F13C999945293" group="commons-collections" name="commons-collections" version="3.2.2"/>
-         <trusted-key id="19BEAB2D799C020F17C69126B16698A4ADF4D638" group="org.checkerframework" name="checker-qual"/>
+         <trusted-key id="19BEAB2D799C020F17C69126B16698A4ADF4D638">
+            <trusting group="org.checkerframework" name="checker-qual"/>
+            <trusting group="org.checkerframework" name="dataflow-nullaway" version="4.3.1"/>
+         </trusted-key>
+         <trusted-key id="1A55F091AD28C07F831FA44D7905DE25C78AD456">
+            <trusting group="com.google.protobuf" name="protobuf-bom" version="4.36.2"/>
+            <trusting group="com.google.protobuf" name="protobuf-java" version="4.36.2"/>
+            <trusting group="com.google.protobuf" name="protobuf-parent" version="4.36.2"/>
+         </trusted-key>
          <trusted-key id="1BD97A6A154E7810EE0BC832E2F38302C8075E3D">
             <trusting group="net.rubygrapefruit" version="0.22-milestone-29"/>
             <trusting group="org.gradle.buildtool.internal" version="1.34"/>
@@ -57,6 +66,7 @@
          <trusted-key id="41A1A08C62FCA78B79D3081164A16FAAEC16A4BE" group="org.apache.commons" name="commons-math3" version="3.6.1"/>
          <trusted-key id="41CD49B4EF5876F9E9F691DABAC30622339994C4" group="org.jspecify" name="jspecify" version="1.0.1"/>
          <trusted-key id="475F3B8E59E6E63AA78067482C7B12F2A511E325" group="org.slf4j"/>
+         <trusted-key id="47FF105DF431FF5416B821FEAECDB81D38EA9C89" group="org.commonmark"/>
          <trusted-key id="4C5F68D09D42BA7FAC888DF9A929EA2321FDBF8F">
             <trusting group="net.sf.saxon"/>
             <trusting group="org.xmlresolver"/>
@@ -64,8 +74,10 @@
          <trusted-key id="4F7E32D440EF90A83011A8FC6425559C47CC79C4" group="javax.activation"/>
          <trusted-key id="517B94F8D0A46317A28D8AB30DA8A5EC02D11EAD" group="net.sf.jopt-simple" name="jopt-simple" version="5.0.4"/>
          <trusted-key id="5719E50EAC5A4B1DD390B72C2A742740E08E7F8D" group="org.antlr"/>
+         <trusted-key id="57213D99467517CD0B95BB32383470C6AC46CE51" group="org.safere" name="safere" version="1.0.0"/>
          <trusted-key id="5D283C23D9D9DC2D9C2130E6AADF2C18DCF95764" group="com.github.package-url" name="packageurl-java" version="1.5.0"/>
          <trusted-key id="60200AC4AE761F1614D6C46766D68DAA073BE985" group="org.slf4j"/>
+         <trusted-key id="635EE627345F3C1DD422B2E207D3516820BCF6B1" group="com.github.ben-manes.caffeine" name="caffeine" version="3.3.0"/>
          <trusted-key id="66D7CBFF956830FE9F5A723AFE6C7D77A1CE15A6" group="org.gradlex" name="extra-java-module-info" version="1.14.2"/>
          <trusted-key id="68AF82B99C3C9ADFE5CA661767AB3C2A8FC5C42E" group="com.github.oowekyala.ooxml" name="nice-xml-messages" version="3.1"/>
          <trusted-key id="694621A7227D8D5289699830ABE9F3126BB741C1" group="com.google.guava"/>
@@ -73,6 +85,7 @@
          <trusted-key id="6DD3B8C64EF75253BEB2C53AD908A43FB7EC07AC" group="jakarta.activation" name="jakarta.activation-api"/>
          <trusted-key id="6F538074CCEBF35F28AF9B066A0975F8B1127B83" group="org.jetbrains.kotlin"/>
          <trusted-key id="70CD19BFD9F6C330027D6F260315BFB7970A144F" group="javax.xml.bind"/>
+         <trusted-key id="7186BBF993566D8C2F4F7ED7D945E643368FEF62" group="io.github.eisop" name="dataflow-errorprone" version="3.41.0-eisop1"/>
          <trusted-key id="7616EB882DAF57A11477AAF559A252FB1199D873" group="com.google.code.findbugs" name="jsr305" version="3.0.2"/>
          <trusted-key id="7B72C18D9C362314BF8E981B0CAEBC0883C5BB65" group="^com[.]vanniktech($|([.].*))" regex="true"/>
          <trusted-key id="84789D24DF77A32433CE1F079EB80E92EB2135B1">
@@ -85,6 +98,7 @@
             <trusting group="org.eclipse.sisu"/>
          </trusted-key>
          <trusted-key id="A413F67D71BEEC23ADD0CE0ACB43338E060CF9FA" group="org.jacoco"/>
+         <trusted-key id="A4FD709CC4B0515F2E6AF04E218FA0F6A941A037" group="com.github.kevinstern" name="software-and-algorithms" version="1.0"/>
          <trusted-key id="A5BD02B93E7A40482EB1D66A5F69AD087600B22C" group="org.ow2.asm"/>
          <trusted-key id="AA417737BD805456DB3CBDDE6601E5C08DCCBB96" group="info.picocli" name="picocli" version="4.7.7"/>
          <trusted-key id="AA70C7C433D501636392EC02153E7A3C2B4E5118" group="org.eclipse.ee4j" name="project"/>
@@ -96,18 +110,33 @@
          <trusted-key id="BDB5FA4FE719D787FB3D3197F6D4A1D411E9D1AE" group="com.google.guava"/>
          <trusted-key id="BF9661F47207C09BD07635A330F8B7DC43EAFC07" group="io.github.brantunger"/>
          <trusted-key id="C3259D20DAEC4ACE6D57CC83340B090F727518D8" group="com.google.j2objc" name="j2objc-annotations" version="3.1"/>
-         <trusted-key id="C7BE5BCC9FEC15518CFDA882B0F3710FA64900E7" group="com.google.code.gson"/>
+         <trusted-key id="C7BE5BCC9FEC15518CFDA882B0F3710FA64900E7">
+            <trusting group="com.google.code.gson"/>
+            <trusting group="com.google.auto"/>
+            <trusting group="com.google.auto.service"/>
+            <trusting group="com.google.auto.value"/>
+         </trusted-key>
+         <trusted-key id="D477D51812E692011DB11E66A6EA2E2BF22E0543">
+            <trusting group="io.github.java-diff-utils" name="java-diff-utils" version="4.17"/>
+            <trusting group="io.github.java-diff-utils" name="java-diff-utils-parent" version="4.17"/>
+         </trusted-key>
          <trusted-key id="D5F46BC0B86AF5DC56DF58F05E975CB00C643DBF" group="com.google.inject"/>
          <trusted-key id="DBD744ACE7ADE6AA50DD591F66B50994442D2D40" group="^com[.]squareup($|([.].*))" regex="true"/>
          <trusted-key id="DC61AE5DFD409C64F592AC1A6FD54E1F311B47E9" group="org.cyclonedx" name="cyclonedx-core-java" version="13.1.0"/>
-         <trusted-key id="E0D98C5FD55A8AF232290E58DEE12B9896F97E34" group="org.pcollections" name="pcollections" version="4.0.2"/>
+         <trusted-key id="E0D98C5FD55A8AF232290E58DEE12B9896F97E34">
+            <trusting group="org.pcollections" name="pcollections" version="4.0.2"/>
+            <trusting group="org.pcollections" name="pcollections" version="5.0.0"/>
+         </trusted-key>
          <trusted-key id="E5C3B1929191DF06136CCB2B164779204E106A76">
             <trusting group="org.javassist" name="javassist" version="3.28.0-GA"/>
             <trusting group="org.javassist" name="javassist" version="3.30.2-GA"/>
          </trusted-key>
          <trusted-key id="E77417AC194160A3FABD04969A259C7EE636C5ED" group="com.google.errorprone"/>
          <trusted-key id="E7DC75FC24FB3C8DFE8086AD3D5839A2262CBBFB" group="org.jetbrains.kotlinx"/>
-         <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320" group="com.google.errorprone"/>
+         <trusted-key id="EE0CA873074092F806F59B65D364ABAA39A47320">
+            <trusting group="com.google.errorprone"/>
+            <trusting group="com.google.googlejavaformat"/>
+         </trusted-key>
          <trusted-key id="F3D15B8FF9902805DE4BE6B18DC6F3D0ABDBD017" group="org.codehaus.plexus" name="plexus-sec-dispatcher" version="2.0"/>
          <trusted-key id="F4DD59C90148BDC52BEB90A4530AA5F25C25011F">
             <trusting group="commons-codec"/>
@@ -691,6 +720,19 @@
       <component group="net.java" name="jvnet-parent" version="5">
          <artifact name="jvnet-parent-5.pom">
             <sha256 value="1af699f8d9ddab67f9a0d202fbd7915eb0362a5a6dfd5ffc54cafa3465c9cb0a" origin="Generated by Gradle" reason="Artifact is not signed"/>
+         </artifact>
+      </component>
+      <component group="net.ltgt.errorprone" name="net.ltgt.errorprone.gradle.plugin" version="5.2.0">
+         <artifact name="net.ltgt.errorprone.gradle.plugin-5.2.0.pom">
+            <sha256 value="1933349ff1bd01e371534cd25b5dc9df967aafb1380e38fe04e12c20f7921c11" origin="Generated by Gradle" reason="Artifact is not signed"/>
+         </artifact>
+      </component>
+      <component group="net.ltgt.gradle" name="gradle-errorprone-plugin" version="5.2.0">
+         <artifact name="gradle-errorprone-plugin-5.2.0.jar">
+            <sha256 value="89124c70fe8ee74724c4b84bc66b02f93196d10b75b34f2730036f696444dada" origin="Generated by Gradle" reason="Artifact is not signed"/>
+         </artifact>
+         <artifact name="gradle-errorprone-plugin-5.2.0.module">
+            <sha256 value="80cced6bc92a1f7a48bf07ef4c0395ad8f7b964a5cb3418e50b5edca9d564575" origin="Generated by Gradle" reason="Artifact is not signed"/>
          </artifact>
       </component>
       <component group="net.sf.jopt-simple" name="jopt-simple" version="5.0.4">

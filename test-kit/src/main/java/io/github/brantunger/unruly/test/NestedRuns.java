@@ -50,8 +50,8 @@ final class NestedRuns {
      * @param failing The {@link Nesting} the check makes the nested run fail with, or {@code null}: a nested failure
      *                that is the one it planned isn't a second defect
      */
-    static Map<String, Object> runAround(RulesEngine<Map<String, Object>> engine, Nesting nest, String where,
-                                         @Nullable Nesting failing) {
+    static @Nullable Map<String, Object> runAround(RulesEngine<Map<String, Object>> engine, Nesting nest,
+                                                   String where, @Nullable Nesting failing) {
         try {
             return engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>(NEST, nest)));
         } catch (RuleExecutionException e) {

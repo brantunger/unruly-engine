@@ -70,6 +70,10 @@ dependencies {
 // name on the module path, so this gives mvel2 the same name.
 extraJavaModuleInfo {
     automaticModule("org.mvel:mvel2", "mvel2")
+    // Error Prone and NullAway run as annotation processors and aren't modules; they stay on the processor paths. The
+    // plugin adds them to every source set's, the tests' too, even where Error Prone is off.
+    deactivate(configurations.annotationProcessor)
+    deactivate(configurations.testAnnotationProcessor)
 }
 
 mavenPublishing {

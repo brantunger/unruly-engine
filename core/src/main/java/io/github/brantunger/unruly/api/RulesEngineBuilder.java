@@ -230,8 +230,10 @@ public final class RulesEngineBuilder<O> {
                 throw new IllegalArgumentException("An expression language's name must not be null or blank: "
                         + language.getClass().getName());
             }
+            // TAKEN means the map has the name, and it never holds a null language.
+            ExpressionLanguage taken = Objects.requireNonNull(languageMap.get(name), "a taken name has a language");
             throw new IllegalArgumentException("Two expression languages are named '" + Names.quote(name) + "': "
-                    + languageMap.get(name).getClass().getName() + " and " + language.getClass().getName());
+                    + taken.getClass().getName() + " and " + language.getClass().getName());
         }
         languageMap.put(name, language);
         return this;

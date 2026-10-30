@@ -938,7 +938,8 @@ public abstract class ExpressionLanguageContractTest {
             assertSameOutput(Map.of(SEEN, true), engine.run(new FactMap<>(new Fact<>("x", true))));
             for (Object notBoolean : Arrays.asList(null, "true", 1)) {
                 assertThrows(RuleExecutionException.class,
-                        () -> engine.run(new FactMap<>(new Fact<>("x", notBoolean))), String.valueOf(notBoolean));
+                        () -> engine.run(new FactMap<@Nullable Object>(new Fact<>("x", notBoolean))),
+                        String.valueOf(notBoolean));
             }
         });
     }
@@ -1464,7 +1465,9 @@ public abstract class ExpressionLanguageContractTest {
 
             assertEquals("r", ex.getRuleName());
             assertEquals(ExpressionKind.CONDITION, ex.getExpressionKind());
-            assertTrue(ex.getMessage().startsWith("Condition for rule 'r' "), ex.getMessage());
+            // The engine's own words, which always name the rule.
+            String message = Objects.requireNonNull(ex.getMessage(), "the engine's compile failure has a message");
+            assertTrue(message.startsWith("Condition for rule 'r' "), message);
         });
     }
 
