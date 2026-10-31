@@ -121,7 +121,7 @@ final class MvelExpressionCompiler implements ExpressionCompiler {
             namesRead.clear();
             LoggerFactory.getLogger(LOGGER_NAME).debug("MVEL checks every fact for this rule list: the {} of rule '{}'"
                     + " has {}, too long to scan for the names it reads", source.kind().name().toLowerCase(Locale.ROOT),
-                    MessageText.escape(source.ruleName()), limit);
+                    MessageText.quote(source.ruleName()), limit);
         }
     }
 

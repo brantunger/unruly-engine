@@ -393,6 +393,28 @@ class ScopedFactNamesMvelTest {
         }
     }
 
+    /**
+     * The DEBUG line quotes a rule's name as every other message does: shortened to 200 characters, then escaped, so a
+     * long name doesn't make the line as long as the name (#1306).
+     */
+    @Test
+    @DisplayName("a word past the limits is logged with the rule's name shortened to 200 characters, then escaped")
+    void wordPastTheLimitsLoggedWithTheNameShortened() {
+        String word = "'" + "a".repeat(ImportLimits.MAX_IMPORT_LENGTH) + "'";
+        String name = "m\n" + "R".repeat(300);
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(
+                HashMap::new).language(new MvelExpressionLanguage()).build()) {
+            String logs = TestLogs.logsOf(() -> engine.load(List.of(Rule.builder().ruleName(name)
+                    .condition(word + " != null").action("output.put('r', " + word + ")").build())));
+
+            String line = "DEBUG " + EngineLogs.ENGINE_LOGGER + "MVEL checks every fact for this rule list: the"
+                    + " condition of rule 'm\\n" + "R".repeat(198) + "... (102 more characters)' has a word of more"
+                    + " than " + ImportLimits.MAX_IMPORT_LENGTH + " characters, too long to scan for the names it"
+                    + " reads";
+            assertTrue(logs.contains(line), logs);
+        }
+    }
+
     static Stream<Arguments> readWholeBetweenEnds() {
         String put = "output.put('r', 1)";
         return Stream.of(

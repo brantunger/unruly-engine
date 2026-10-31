@@ -722,7 +722,7 @@ final class Failures {
      * Returns the part of a text that a description shows, for {@link #causeNote} to search: the characters it keeps
      * themselves, not the shortened text, whose note of what was left out could match. That's the whole text if it
      * fits, or else its first characters as {@link Text#clip} keeps them, which can be up to 5 fewer than
-     * {@link Text#truncate} keeps.
+     * {@link Text#truncate} keeps, or one more where the limit falls just after a lone high surrogate.
      *
      * @param text The text, or {@code null} if there's none that can be read
      * @return The part shown, or {@code null} if {@code text} is

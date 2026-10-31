@@ -17,9 +17,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link MessageText#quoteWithin} promise for any text, checked on random text at the edges of each limit (see
  * {@link PropertyInputs}). Whatever is shown is a prefix of the text: escaped, it reads back as that prefix, it is cut
  * between code points and never inside raw text that reads as an escape, and its note counts the rest. It keeps within
- * the limit, and text that fits is shown whole. The checks are the Javadoc's, not a copy of what the code returns; they
- * don't ask that the most text that would fit is shown, as a cut just after a lone high surrogate shows one character
- * fewer (#1306).
+ * the limit, and text that fits is shown whole. The checks are the Javadoc's, not a copy of what the code returns.
+ * With no room limit, a cut keeps fewer characters than its limit allows only to leave out whole a surrogate pair or
+ * raw text that reads as an escape the limit falls inside, and never stops short before a lone high surrogate (#1306).
  */
 @DisplayName("MessageText: any text is shown as an escaped prefix of it, within the limit (#1332)")
 class MessageTextPropertyTest {
@@ -72,6 +72,44 @@ class MessageTextPropertyTest {
         int shownWithin = check("quoteWithin", name, MessageText.quoteWithin(name, nameRoom), MAX_NAME_LENGTH,
                 nameRoom);
         assertTrue(shownWithin <= quoted, () -> "quoteWithin showed more than quote: " + points(name));
+    }
+
+    @ParameterizedTest(name = "seed {0}")
+    @MethodSource("seeds")
+    @DisplayName("with no room limit, quote and escapeWithin keep fewer characters than the limit only at a surrogate"
+            + " pair or raw text that reads as an escape the limit falls inside (#1306)")
+    void shortOnlyAtAPairOrAnEscape(long seed) {
+        PropertyInputs inputs = new PropertyInputs(seed);
+        String name = inputs.text(inputs.lengthAround(MAX_NAME_LENGTH));
+        assertShortOnlyAtAPairOrAnEscape("quote", name, MessageText.quote(name), MAX_NAME_LENGTH);
+
+        int most = inputs.lengthAround(inputs.oneOf(1, 2, 5, 6, 7, 20));
+        String text = inputs.text(inputs.below(2) == 0 ? inputs.lengthAround(most) : inputs.below(40));
+        assertShortOnlyAtAPairOrAnEscape("escapeWithin", text, MessageText.escapeWithin(text, most,
+                Integer.MAX_VALUE), most);
+    }
+
+    /**
+     * Checks that what a method showed of a text, with no room limit, keeps as many of its characters as {@code most}
+     * allows, unless the limit falls inside a surrogate pair, which is then left out whole, or inside raw text that
+     * reads as an escape, which is then left out whole from its backslash on.
+     *
+     * @param method What showed it
+     * @param text   The text, raw
+     * @param shown  What the method returned
+     * @param most   The most characters of the text it may show
+     */
+    private static void assertShortOnlyAtAPairOrAnEscape(String method, String text, String shown, int most) {
+        int kept = check(method, text, shown, most, Integer.MAX_VALUE);
+        int limit = Math.max(0, Math.min(text.length(), most));
+        if (kept == limit) {
+            return;
+        }
+        boolean pair = kept == limit - 1 && limit < text.length() && Character.isHighSurrogate(text.charAt(kept))
+                && Character.isLowSurrogate(text.charAt(limit));
+        boolean escape = text.charAt(kept) == '\\' && kept + escapeLength(text, kept) > limit;
+        assertTrue(pair || escape, () -> method + " of " + points(text) + " (most " + most + ") kept " + kept
+                + " characters, fewer than " + limit + ", though no surrogate pair or escape straddles the limit");
     }
 
     /**

@@ -98,7 +98,7 @@ class MessageTextTest {
                 new String[]{"a" + low + "b", "a\\udc00b"},
                 new String[]{"" + low + high, "\\udc00\\ud800"},
                 new String[]{beforeLast + high, beforeLast + "\\ud800"},
-                new String[]{beforeLast + high + "y", beforeLast + "... (2 more characters)"},
+                new String[]{beforeLast + high + "y", beforeLast + "\\ud800... (1 more characters)"},
                 new String[]{"x".repeat(MAX_NAME_LENGTH - 2) + READS_AS_ESCAPE + "y",
                         "x".repeat(MAX_NAME_LENGTH - 2) + "... (7 more characters)"});
     }
@@ -218,14 +218,16 @@ class MessageTextTest {
     }
 
     @Test
-    @DisplayName("a lone surrogate is escaped, also at the end of a short name, and a name of 200 is kept whole")
+    @DisplayName("a lone surrogate is escaped, also at the end of a short name and at the limit, and a name of 200 is"
+            + " kept whole")
     void loneSurrogateEscaped() {
         String beforeLast = "x".repeat(199);
 
         assertEquals("a\\ud800", MessageText.quote("a" + (char) 0xd800));
         assertEquals("a\\udc00b", MessageText.quote("a" + (char) 0xdc00 + "b"));
         assertEquals(beforeLast + "\\ud800", MessageText.quote(beforeLast + (char) 0xd800));
-        assertEquals(beforeLast + "... (2 more characters)", MessageText.quote(beforeLast + (char) 0xd800 + "y"));
+        assertEquals(beforeLast + "\\ud800... (1 more characters)",
+                MessageText.quote(beforeLast + (char) 0xd800 + "y"));
     }
 
     @Test

@@ -175,11 +175,11 @@ public final class MessageText {
 
     /**
      * Escapes text within a room as {@link #escapeWithin(String, int)} does, showing at most its first {@code most}
-     * characters (UTF-16 units). Where {@code most} falls inside a surrogate pair or just after a lone high
-     * surrogate, or inside an escape the text holds or raw text that reads as one, that is left out whole, as
-     * {@link #quote} leaves it out at {@value #MAX_NAME_LENGTH}, so up to 5 fewer characters show. A {@code most} of
-     * 0 or less shows none of a non-empty text, only the note. With a {@code room} of {@link Integer#MAX_VALUE}, the
-     * text is shortened to {@code most} characters alone.
+     * characters (UTF-16 units). Where {@code most} falls inside a surrogate pair, or inside an escape the text holds
+     * or raw text that reads as one, that is left out whole, as {@link #quote} leaves it out at
+     * {@value #MAX_NAME_LENGTH}, so up to 5 fewer characters show. A {@code most} of 0 or less shows none of a
+     * non-empty text, only the note. With a {@code room} of {@link Integer#MAX_VALUE}, the text is shortened to
+     * {@code most} characters alone.
      *
      * @param text The text, raw, or with escapes the engine already wrote
      * @param most The most of its characters to show
