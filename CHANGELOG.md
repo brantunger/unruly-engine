@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.11](https://github.com/brantunger/unruly-engine/compare/v2.33.10...v2.33.11) (2026-10-31)
+
+
+### Bug Fixes
+
+* quoting and escaping keep a lone high surrogate at the limit, and the MVEL DEBUG line quotes the rule name ([#1306](https://github.com/brantunger/unruly-engine/issues/1306)) ([#1346](https://github.com/brantunger/unruly-engine/issues/1346)) ([cb4f828](https://github.com/brantunger/unruly-engine/commit/cb4f828e3eb15d147de86e45038c846b3ce2f6c8))
+
 ## [2.33.10](https://github.com/brantunger/unruly-engine/compare/v2.33.9...v2.33.10) (2026-10-29)
 
 
