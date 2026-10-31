@@ -16,6 +16,7 @@ usual fix for each.
 - [The build cache and the configuration cache](#-the-build-cache-and-the-configuration-cache)
 - [CI](#-ci)
 - [Running the tests on another JDK](#-running-the-tests-on-another-jdk)
+- [Mutation testing](#-mutation-testing)
 - [PMD suppressions](#-pmd-suppressions)
 - [Javadoc and doclint](#-javadoc-and-doclint)
 
@@ -43,12 +44,10 @@ packages.
 | 🔍 **PMD** | Main sources only, by decision, with the best-practices, error-prone and multithreading rule sets | `config/pmd/ruleset.xml`, applied by `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | ⚠️ **Warnings** | No javac warning (`-Xlint:all -Werror`) in the jar projects, and no Javadoc warning (`-Xdoclint:all -Werror`) | `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
 | 🚫 **Nullness** | NullAway, in JSpecify mode: published code in a `@NullMarked` package obeys its annotations. Unmarked packages and tests aren't checked. `-PnullAway=false` skips it, for a JDK older than 21.0.8 | `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts` |
-| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources | `build.gradle.kts` |
+| 📊 **JaCoCo** | **100%** instruction *and* branch coverage of the published artifacts' main sources (`jacocoTestCoverageVerification`; no outside service) | `build.gradle.kts` |
 | 🧬 **API compatibility** | No incompatible change to a public or protected member since the latest release, nor to the `core` constructors the test kit calls | `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, `config/japicmp/accepted-breaks.txt`, `config/japicmp/test-kit-linkage.txt` |
 | 🧭 **Module path** | `ModulePathTest` compiles four applications against the built jars and runs each on the module path | `mvel/src/test/resources/module-path` |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, engine visibility, class-file version, the test kit's links into `core` | The structural tests below |
-
-Some details behind the table:
 
 - **Checkstyle's** `AvoidStarImport` allows static member imports, so `import static ...Assertions.*` is fine.
 - **PMD** excludes `GuardLogStatement` from best-practices, and `AvoidCatchingGenericException` from error-prone,
@@ -59,9 +58,8 @@ Some details behind the table:
 - **The module-path applications** are `withMvel`, `withoutMvel`, `withTestKit` and `withJackson`, each compiled
   with `-Xlint:all -Werror` like the main sources.
 
-**Checkstyle's** `LineLength` fails a line over 120 columns in any main, test or test-fixtures source, except a
-`package` or `import` line. The applications under `mvel/src/test/resources/module-path` are test resources, which
-Checkstyle doesn't read. `FileTabCharacter` fails a tab, and `NewlineAtEndOfFile` a file without a final newline.
+**Checkstyle's** `LineLength` exempts `package` and `import` lines. The applications under
+`mvel/src/test/resources/module-path` are test resources, which Checkstyle doesn't read.
 
 **PMD's multithreading** rule set runs without four of its rules. `config/pmd/ruleset.xml` says why next to each:
 
@@ -73,9 +71,7 @@ Checkstyle doesn't read. `FileTabCharacter` fails a tab, and `NewlineAtEndOfFile
 | `AvoidSynchronizedStatement` | Every synchronized block is short and never parks, so no run waits long on a monitor or pins its virtual thread while parked |
 
 **The build never runs PMD on test sources, by decision.** On them the rule set found 2,885 violations (at
-`0367bb2`), 2,576 of them an assertion without a message, a test with several assertions, or a resource a test doesn't
-close. Its multithreading rules found none, but `AvoidSynchronizedAtMethodLevel`, excluded then, would flag the tests'
-`synchronized getCause()` overrides. `check` runs `pmdMain` only.
+`0367bb2`), most of them an assertion without a message, a test with several assertions, or an unclosed resource.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
 so a test that never returns fails the build within its job's 20-minute cap. Gradle
@@ -83,8 +79,7 @@ logs `Requesting stop of task ':core:test' as it has exceeded its configured tim
 fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
 report, where the test that never returned shows as skipped.
 
-On `windows-latest`, where jobs stalled, a watchdog thread-dumps the JVMs at 14 minutes, and a heartbeat posts a
-check run with `build-windows`'s `checks: write`: [Windows CI hangs](windows-ci-hangs.md).
+On `windows-latest`, a watchdog thread-dumps the JVMs at 14 minutes: [Windows CI hangs](windows-ci-hangs.md).
 
 A test class that waits on threads, latches or deadlines carries a class-level `@Timeout`. The test fixtures'
 `junit-platform.properties`, which the tests of `core`, `mvel` and `test-kit` share, sets
@@ -93,7 +88,7 @@ own and aborts it at the deadline, instead of reporting the deadline once the te
 
 `RuleSetTest` opts back out, with `threadMode = SAME_THREAD`, because `@BeforeEach` and `@AfterEach` stay on the
 `Test worker` thread whatever the mode, and its `@AfterEach` checks that the test left no run counted on the thread it
-ran on. One method in it asks for `SEPARATE_THREAD` by name, to test a wait that has no deadline.
+ran on.
 
 The `benchmarks` project's main sources are the exception to the javac gate: they compile JMH's generated code, so
 `compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle.kts`). Its test sources are hand-written, so
@@ -138,8 +133,8 @@ so a second build reuses task outputs, including those of another branch, and th
 - `./gradlew :mvel:test --rerun` runs a task again though its inputs haven't changed.
 - `--no-build-cache --no-configuration-cache` rebuilds everything from scratch, when a result looks stale.
 - The release workflow builds with `--no-build-cache`, so the published artifacts are built from scratch.
-- Locally, the API baseline lookup is cached 24 hours for configuration cache reuse; `"-PapiCheck.refresh"`, which CI
-  passes, skips the cache.
+- Locally, the API baseline lookup is cached 24 hours, for configuration cache reuse; `"-PapiCheck.refresh"`
+  skips that cache.
 
 ## 🤖 CI
 
@@ -148,7 +143,7 @@ so a second build reuses task outputs, including those of another branch, and th
 | Job | Runs | Why |
 | --- | --- | --- |
 | JDK 21 on `ubuntu-latest`, `macos-latest` and `windows-latest` (`build-windows`) | `./gradlew build jacocoTestReport "-PapiCheck.refresh"`; on `ubuntu-latest`, `setup-gradle` also generates the dependency graph, without submitting it | The module-path applications and the child JVMs depend on the OS; Windows and macOS file systems are case-insensitive, so the tests that look a compiled class up in another case run there instead of being skipped. Generating the graph resolves the dependency-graph plugin with verification on, so a stale [pin](dependency-verification.md#-the-dependency-graph-plugin) fails the pull request |
-| JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them; compilation stays on the Java 21 toolchain |
+| JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist -PnullAway=false`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, zizmor, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
 | `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
@@ -159,9 +154,8 @@ and `native-image`. A release PR, a new `version=` in `gradle.properties` plus d
 `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest` leg, coverage gate included, and skips
 `native-image`. `changes` decides; if it fails, everything runs, as on a push.
 
-A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started: the next push
-waits, so a run isn't cut off before its cache save. GitHub keeps one waiting run per branch, so a later push cancels
-a waiting one, whose commit has no build.
+A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started, and GitHub
+keeps one waiting run per branch, so a later push cancels a waiting one, whose commit gets no build.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
 may have findings in lines you didn't touch. zizmor warns too, until #1328. Steps after a failed one still run.
@@ -186,20 +180,16 @@ CI downloads pinned actionlint and zizmor releases, which Dependabot doesn't upd
 `_VERSION` and `_SHA256` in `ci.yml`.
 
 A second workflow, `pr-title.yml`, checks a pull request's title against Conventional Commits, because the title
-becomes the release commit. On one labelled `dependencies`, which Dependabot opens with a capitalised subject, it
-skips the format check, but still rejects a `!` on any type but `feat` and `fix`.
+becomes the release commit. On one labelled `dependencies`, it skips the format check, but still rejects a `!` on any
+type but `feat` and `fix`.
 
 What the jobs leave behind:
 
 - **Artifacts:** each build leg's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
   the JaCoCo report (`build/reports/jacoco/`), or `test-results-jdk<version>-ubuntu-latest`;
-  `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*` only when a job fails. The coverage
-  gate itself is `jacocoTestCoverageVerification`, which `build` runs; no outside service checks coverage.
+  `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*` only when a job fails.
 - **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release
   workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
-
-The Windows job stops its Gradle daemon before setup-gradle saves the cache: Windows file locks are mandatory, so
-`tar` can't read the daemon's lock files.
 
 The `main-require-green-ci` ruleset, with no bypass, requires `ci-result` and `pr-title`; a PR needn't be up to date
 with `main`.
@@ -215,11 +205,34 @@ differs.
 ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26
 ```
 
+## 🦠 Mutation testing
+
+PIT mutates each library's main classes and reruns the tests covering each mutant. It's a report, not a gate: no
+build or pull request runs it. `-Pmutation.targetClasses` narrows a run to a comma-separated list of classes or
+`package.*` globs, so bug hunts needn't hand-write mutants.
+
+```bash
+./gradlew :core:pitest -Pmutation --warning-mode=all
+./gradlew :core:pitest -Pmutation --warning-mode=all '-Pmutation.targetClasses=io.github.brantunger.unruly.internal.*'
+```
+
+The report is `<project>/build/reports/pitest/index.html`. The plugin is applied only with `-Pmutation`, because
+applying it calls the deprecated `Configuration.setVisible`, so `org.gradle.warning.mode=fail` would fail
+every build; `--warning-mode=all` lets the run through. `.github/workflows/mutation.yml` runs each project weekly, or by
+hand, and uploads its report.
+
+Each project's `build.gradle.kts` excludes the tests PIT can't use:
+
+- A test whose scenario runs in a child JVM can't kill a mutant: that JVM loads unmutated classes.
+- `ModulePathTest`, `PackageDependencyTest` and `TestKitLinkageTest` read files only the `test` task passes them.
+- `StackEndSweepTest` measures stack frames, which PIT's instrumentation changes.
+- `FactImmutabilityTest` and `RuleImmutabilityTest` fail once PIT instruments `Fact` and `Rule` for coverage.
+- `RunTimeLoopTest` takes 50 seconds per mutant under PIT.
+
 ## 🔕 PMD suppressions
 
-PMD runs on the main sources of every project, and never on tests ([why](#-what-build-runs)). A finding is fixed,
-unless the code is right and the rule is wrong for it; then the suppression is as narrow as PMD allows, and a comment
-on the line above says why. For example,
+A PMD finding is fixed, unless the code is right and the rule is wrong for it; then the suppression is as narrow as
+PMD allows, and a comment on the line above says why. For example,
 `core/src/main/java/io/github/brantunger/unruly/core/CopyPool.java`:
 
 ```java
@@ -239,8 +252,7 @@ Excluding a rule for every project is done once, in `config/pmd/ruleset.xml`, wi
 Every Javadoc task runs with `-Xdoclint:all -Werror`, so a missing comment, `@param`, `@return` or `@throws`, a
 broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in two places:
 
-- Each jar project's `javadoc` task documents its own module. Its output is what the project's `-javadoc.jar`
-  packages at publish time.
+- Each jar project's `javadoc` task documents its own module, for its `-javadoc.jar`.
 - The root project's `javadoc` task builds one site for all the modules in `build/docs/javadoc`. It hands the
   javadoc tool the modules rather than source files, so it documents only the packages they export, and passes
   `-notimestamp`, so no page carries its generation date and a rebuild of the same sources gives the same files.
