@@ -1,0 +1,81 @@
+name: Mutation testing
+
+# Runs PIT mutation testing on core, mvel and test-kit once a week, and by hand (`gh workflow run mutation.yml`), and
+# uploads each module's report. It is a report, not a gate: no threshold fails it, nothing requires its check, and no
+# pull request or push runs it. A surviving mutant is a lead for a test to write, read from the report.
+# docs/contributing/build-and-gates.md describes the run, its excluded tests, and running it locally.
+#
+# The pitest plugin is applied only with -Pmutation, because applying it calls a method Gradle 9 deprecates, which
+# org.gradle.warning.mode=fail would turn into a failed build; --warning-mode=all lets the run through.
+
+on:
+  # Sundays at 04:23 UTC, off the hour, when the shared runners are quietest.
+  schedule:
+    - cron: '23 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A run started by hand while another is going waits for it, rather than doubling the load or cutting it off.
+concurrency:
+  group: mutation
+  cancel-in-progress: false
+
+jobs:
+  pitest:
+    name: PIT on ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    # One leg per module, so a slow or hung module doesn't take the others' time, and each has its own cap. Each cap
+    # is the module's full run measured locally on 32 threads, times four for the runner's 4 vCPUs (8 times fewer
+    # threads, but half the local ones idled), then doubled: core took 16 minutes locally, mvel 44 and test-kit 4.
+    # mvel's is held at 350, under the 360 minutes a job may run at most. The job gets 10 minutes more than its PIT
+    # step, so the upload still runs after the step is stopped. Expressions can't add, so both are listed.
+    timeout-minutes: ${{ matrix.job-timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: core
+            timeout: 130
+            job-timeout: 140
+          - module: mvel
+            timeout: 350
+            job-timeout: 360
+          - module: test-kit
+            timeout: 35
+            job-timeout: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # Validates the Gradle wrapper and restores Gradle's caches, as in ci.yml. The basic provider is open source.
+      # Read-only, so this job's entry doesn't take cache space from ci.yml's main-branch entries.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Run PIT
+        timeout-minutes: ${{ matrix.timeout }}
+        env:
+          MODULE: ${{ matrix.module }}
+        run: ./gradlew ":$MODULE:pitest" -Pmutation --warning-mode=all
+
+      # Also after a failure or a timeout, to keep whatever PIT had written by then. A local mvel run wrote
+      # mutations.xml in blocks and a few class pages while it ran, and the rest at the end.
+      - name: Upload the PIT report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pitest-report-${{ matrix.module }}
+          path: ${{ matrix.module }}/build/reports/pitest/
+          if-no-files-found: ignore

@@ -120,3 +120,18 @@ tasks.named<Test>("test") {
                 layout.settingsDirectory.dir("test-kit/src/main/java"))
     })
 }
+
+// The tests PIT leaves out (-Pmutation; unruly.library has the rest). Each but the last three runs its scenario in a
+// child JVM, which loads the classes from the class path, unmutated, so it can't kill a mutant. ModulePathTest also
+// reads the module-path jars, and PackageDependencyTest the main sources, from properties only the test task sets;
+// neither checks behaviour a mutant changes. RunTimeLoopTest compiles expressions thousands of properties long, which
+// took 50 seconds under PIT, and every mutant it covers would wait that long.
+pluginManager.withPlugin("info.solidsoft.pitest") {
+    configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+        excludedTestClasses = listOf(
+            "LazyLanguageTest", "BarePrepareInitializationTest", "DeepFirstUseTest", "DeepWalkTest",
+            "ErrorUtilInitializationTest", "FirstUseClassInitializationTest", "UrlContextLockTest",
+            "ModulePathTest", "PackageDependencyTest", "RunTimeLoopTest",
+        ).map { "*.$it" }.toSet()
+    }
+}

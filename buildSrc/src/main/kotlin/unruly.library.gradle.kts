@@ -411,3 +411,42 @@ val bom = tasks.named<CyclonedxDirectTask>("cyclonedxDirectBom") {
 tasks.named("assemble") {
     dependsOn(bom)
 }
+
+// Mutation testing with PIT, on demand: ./gradlew pitest -Pmutation --warning-mode=all. It reports and gates nothing.
+// The plugin is applied only with -Pmutation because applying it calls Configuration.setVisible, which Gradle 9
+// deprecates, so every build would fail under org.gradle.warning.mode=fail; --warning-mode=all lets the run through.
+// It mutates the project's own classes, its packages under io.github.brantunger.unruly, which
+// -Pmutation.targetClasses=a.B,c.* narrows. PIT runs the tests in its own JVMs, not through the test task, so they
+// get the test task's JVM arguments and system properties here. A project leaves out tests PIT can't use in a
+// pluginManager.withPlugin("info.solidsoft.pitest") block of its own.
+val mutation = providers.gradleProperty("mutation").isPresent
+if (mutation) {
+    apply(plugin = "info.solidsoft.pitest")
+    val toolVersions = extensions.getByType<VersionCatalogsExtension>().named("libs")
+    val packagesRoot = layout.projectDirectory.dir("src/main/java/io/github/brantunger/unruly").asFile
+    val ownPackages = (packagesRoot.listFiles() ?: arrayOf()).filter { it.isDirectory }.sortedBy { it.name }
+        .map { "io.github.brantunger.unruly.${it.name}.*" }
+    val targetClassesOverride = providers.gradleProperty("mutation.targetClasses")
+        .map { value -> value.split(',').map { it.trim() }.filter { it.isNotEmpty() } }
+    val testTask = tasks.named<Test>("test")
+    configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+        pitestVersion = toolVersions.findVersion("pitest").get().requiredVersion
+        junit5PluginVersion = toolVersions.findVersion("pitest-junit5").get().requiredVersion
+        targetClasses = targetClassesOverride.orElse(ownPackages)
+        // Every test of the project, whatever its package: many of mvel's and test-kit's tests are in core's packages.
+        // Without this, PIT looks for tests only among targetClasses, so narrowing those would leave out every test.
+        targetTests = setOf("io.github.brantunger.unruly.*")
+        threads = Runtime.getRuntime().availableProcessors()
+        // A mutant times out when a test takes longer than 1.25 times its unmutated time plus this. PIT's default is
+        // 4 seconds, and a timed-out mutant counts as detected anyway, so a shorter wait only ends a mutant that loops
+        // for ever sooner.
+        timeoutConstInMillis = 2000
+        timestampedReports = false
+        outputFormats = setOf("HTML", "XML")
+        // The class path in a file, not on the command line, which Windows limits to 32,767 characters.
+        useClasspathFile = true
+        jvmArgs = testTask.map { test ->
+            test.jvmArgs.orEmpty() + test.systemProperties.map { (key, value) -> "-D$key=$value" }
+        }
+    }
+}

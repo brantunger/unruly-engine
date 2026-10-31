@@ -14,4 +14,5 @@ dependencies {
     implementation(libs.module.info.plugin)
     implementation(libs.cyclonedx.plugin)
     implementation(libs.errorprone.plugin)
+    implementation(libs.pitest.plugin)
 }

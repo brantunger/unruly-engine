@@ -85,3 +85,13 @@ tasks.named<Test>("test") {
         files.from(namedModuleTestJars)
     })
 }
+
+// The tests PIT leaves out (-Pmutation; unruly.library has the rest). Both read files from properties only the test
+// task sets: TestKitLinkageTest the kit's classes and linkage list, NamedModuleLayoutTest the jars it runs a child JVM
+// with, which loads the classes unmutated.
+pluginManager.withPlugin("info.solidsoft.pitest") {
+    configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+        excludedTestClasses = setOf("*.TestKitLinkageTest",
+            "*.NamedModuleLayoutTest")
+    }
+}

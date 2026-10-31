@@ -83,3 +83,19 @@ tasks.named<Jar>("testFixturesJar") {
         attributes("Automatic-Module-Name" to "io.github.brantunger.unruly.testfixtures")
     }
 }
+
+// The tests PIT leaves out (-Pmutation; unruly.library has the rest). Each runs its scenario in a child JVM, which
+// loads core's classes from the class path, unmutated, so it can't kill a mutant and only costs a JVM start per mutant
+// it covers. StackEndSweepTest overflows the stack thousands of times; PIT's instrumentation changes the frames it
+// measures. FactImmutabilityTest and RuleImmutabilityTest check that every declared field of Fact and Rule is private
+// and final, and fail once PIT instruments those classes for coverage, most likely on a probe field it adds.
+pluginManager.withPlugin("info.solidsoft.pitest") {
+    configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+        excludedTestClasses = listOf(
+            "ConcurrentFirstBuildTest", "DeepCompileOverflowTest", "DeepFirstBuildTest", "DeepFirstErrorLogTest",
+            "DeepFirstFailureTest", "DeepFirstSortTest", "DeepFirstToStringTest", "FacadeFirstUseInitializationTest",
+            "FirstRunClassInitializationTest", "LoggingRuleListenerDebugOffTest", "MalformedImportLockTest",
+            "RunScopeTurnTest", "StackEndSweepTest", "FactImmutabilityTest", "RuleImmutabilityTest",
+        ).map { "*.$it" }.toSet()
+    }
+}
