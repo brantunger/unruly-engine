@@ -9,6 +9,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.beans.Introspector;
+import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
@@ -137,12 +138,15 @@ class FactPropertiesNamePropertyTest {
         String about = "a bean with " + getters + ": ";
 
         assertEquals(winners.keySet(), FactProperties.propertyNames(bean), about + "its properties");
+        Field called = type.getDeclaringClass().getField("called");
         for (Map.Entry<String, Getter> winner : winners.entrySet()) {
+            called.set(null, null);
             Object value = FactProperties.read(bean, winner.getKey());
 
-            assertEquals(winner.getValue().name(), type.getDeclaringClass().getField("called").get(null),
+            assertEquals(winner.getValue().name(), called.get(null),
                     about + "the getter '" + winner.getKey() + "' is read with");
-            assertEquals("String".equals(winner.getValue().returns()) ? winner.getValue().name() : true, value);
+            assertEquals("String".equals(winner.getValue().returns()) ? winner.getValue().name() : true, value,
+                    about + "the value of '" + winner.getKey() + "'");
         }
     }
 

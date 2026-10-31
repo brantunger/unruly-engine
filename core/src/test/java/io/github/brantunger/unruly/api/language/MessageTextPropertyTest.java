@@ -45,6 +45,9 @@ class MessageTextPropertyTest {
         int quoted = check("quote", name, MessageText.quote(name), MAX_NAME_LENGTH, Integer.MAX_VALUE);
         if (name.length() <= MAX_NAME_LENGTH) {
             assertEquals(name.length(), quoted, () -> "quote shortened a name of at most 200: " + points(name));
+        } else {
+            assertTrue(quoted >= MAX_NAME_LENGTH - 5, () -> "quote kept " + quoted + " characters, more than 5 fewer "
+                    + "than 200, of " + points(name));
         }
 
         int most = inputs.lengthAround(inputs.oneOf(1, 2, 5, 6, 7, 20));
@@ -60,6 +63,10 @@ class MessageTextPropertyTest {
                 Integer.MAX_VALUE), Integer.MAX_VALUE, Integer.MAX_VALUE), () -> "escapeWithin shortened text with"
                 + " no limit: " + points(text));
         assertTrue(within <= text.length());
+        int alone = check("escapeWithin", text, MessageText.escapeWithin(text, most, Integer.MAX_VALUE), most,
+                Integer.MAX_VALUE);
+        assertTrue(alone >= Math.min(text.length(), most) - 5, () -> "escapeWithin with no room limit kept " + alone
+                + " characters, more than 5 fewer than " + most + ", of " + points(text));
 
         int nameRoom = inputs.lengthAround(inputs.oneOf(30, 220, 400));
         int shownWithin = check("quoteWithin", name, MessageText.quoteWithin(name, nameRoom), MAX_NAME_LENGTH,
