@@ -60,6 +60,7 @@ public final class Text {
 
     /**
      * Shortens text to at most {@value #MAX_DESCRIPTION_LENGTH} characters as {@link #truncate} does, except where the
+     * limit falls just after a lone high surrogate, which is kept, as {@link #keptBeforeEscape} keeps it, and where the
      * limit falls inside an escape {@link #escape} writes ({@code \n}, {@code \r}, {@code \t}, or a backslash,
      * {@code u} and four lowercase hex digits): the escape is left out whole, and the text keeps at most 5 characters
      * fewer. {@link #escape} doesn't escape a backslash, so text that only reads as an escape is left out the same way.
@@ -81,14 +82,16 @@ public final class Text {
      * How many characters of text longer than {@code limit} to keep, as {@link #shortenBeforeEscape} keeps
      * {@value #MAX_DESCRIPTION_LENGTH} and {@link #shorten(String)} keeps {@value #MAX_NAME_LENGTH}: as many as
      * {@link #shorten(String, int)} keeps, or fewer, up to the backslash of an escape they would end inside, or of text
-     * that reads as one.
+     * that reads as one. It keeps one more than {@link #shorten(String, int)} where the limit falls just after a lone
+     * high surrogate: the cut falls between code points, and {@link #escape} writes the surrogate as an escape, so
+     * only a surrogate pair the limit falls inside is left out whole.
      *
      * @param text  The text, longer than {@code limit}
      * @param limit The most characters to keep, at least 1
      * @return How many of its first characters to keep
      */
     public static int keptBeforeEscape(String text, int limit) {
-        int kept = keptLength(text, limit);
+        int kept = keptOutsidePair(text, limit);
         int backslash = text.lastIndexOf('\\', kept - 1);
         return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
     }
@@ -231,6 +234,15 @@ public final class Text {
      */
     private static int keptLength(String text, int limit) {
         return Character.isHighSurrogate(text.charAt(limit - 1)) ? limit - 1 : limit;
+    }
+
+    /**
+     * How many characters of text longer than {@code limit} to keep before escaping it: {@code limit}, or one fewer
+     * when a surrogate pair straddles the limit. A lone surrogate is kept: {@link #escape} writes it as an escape.
+     */
+    private static int keptOutsidePair(String text, int limit) {
+        return Character.isHighSurrogate(text.charAt(limit - 1)) && Character.isLowSurrogate(text.charAt(limit))
+                ? limit - 1 : limit;
     }
 
     /**
