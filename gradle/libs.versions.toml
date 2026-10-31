@@ -4,7 +4,7 @@
 # convention plugins apply, by their marker coordinates; buildSrc reads them from here, so the same Dependabot entry
 # bumps them.
 checkstyle = "14.3.0"
-jacoco = "0.8.15"
+jacoco = "0.8.16"
 jmh = "1.37"
 junit = "6.1.3"
 pmd = "7.28.0"
@@ -20,9 +20,9 @@ cyclonedx-plugin = "org.cyclonedx.bom:org.cyclonedx.bom.gradle.plugin:3.4.1"
 error-prone-core = "com.google.errorprone:error_prone_core:2.51.0"
 errorprone-plugin = "net.ltgt.errorprone:net.ltgt.errorprone.gradle.plugin:5.2.0"
 # Only the tests of the documented Jackson mix-ins use Jackson; no artifact depends on it.
-jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.3"
-jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.3"
-jackson3-databind = "tools.jackson.core:jackson-databind:3.2.3"
+jackson2-databind = "com.fasterxml.jackson.core:jackson-databind:2.22.4"
+jackson2-datatype-jsr310 = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.22.4"
+jackson3-databind = "tools.jackson.core:jackson-databind:3.2.4"
 jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 japicmp-plugin = "me.champeau.gradle.japicmp:me.champeau.gradle.japicmp.gradle.plugin:0.4.6"
 # Only the unpublished benchmarks project uses JMH; no artifact depends on it.
@@ -32,7 +32,7 @@ jspecify = "org.jspecify:jspecify:1.0.1"
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 module-info-plugin = "org.gradlex.extra-java-module-info:org.gradlex.extra-java-module-info.gradle.plugin:1.14.2"
-mvel2 = "org.mvel:mvel2:2.5.4.Final"
+mvel2 = "org.mvel:mvel2:2.6.0.Final"
 nullaway = "com.uber.nullaway:nullaway:0.14.3"
 pitest = { module = "org.pitest:pitest", version.ref = "pitest" }
 pitest-junit5-plugin = { module = "org.pitest:pitest-junit5-plugin", version.ref = "pitest-junit5" }
