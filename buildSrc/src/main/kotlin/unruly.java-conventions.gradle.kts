@@ -40,6 +40,7 @@ pmd {
 // Compilation always uses the Java 21 toolchain. The tests run on the JDK given by -PtestJdk (default 21), so
 // CI can run them on each JDK in its matrix; otherwise the test task would use the 21 toolchain every time.
 val testJdk = providers.gradleProperty("testJdk").getOrElse("21")
+val propertyTestSeed = providers.systemProperty("unruly.test.seed")
 
 // Every javac warning fails the build, in main and test sources.
 tasks.withType<JavaCompile>().configureEach {
@@ -126,4 +127,7 @@ tasks.named<Test>("test") {
         // The engine logs a listener's stack trace at DEBUG; enabled so it can be asserted.
         "org.slf4j.simpleLogger.log.io.github.brantunger.unruly.engine" to "debug",
     ))
+    // The property tests' base seed is fixed in the tests; -Dunruly.test.seed=N on the command line replaces it, for
+    // an exploratory run. Read through a provider, so the configuration cache sees a change to it.
+    propertyTestSeed.orNull?.let { systemProperty("unruly.test.seed", it) }
 }
