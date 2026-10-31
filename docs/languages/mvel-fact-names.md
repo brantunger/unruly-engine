@@ -70,9 +70,8 @@ every declared fact's name with it: their failures can include one such as
 
 ## 🚫 Fact names MVEL rejects
 
-These rules apply to a fact whose name the rule list's MVEL text holds. `run()` throws `IllegalArgumentException` for
-such a fact whose name MVEL can't read as that fact. A declared one fails `load()` instead:
-`Declared fact 'Math' can't be used: ...`.
+These rules apply to a fact whose name the rule list's MVEL text holds. A declared fact that breaks them fails
+`load()` with `Declared fact 'Math' can't be used: ...`.
 
 A name must be a Java identifier. `my-fact` would read as `my - fact`, so it's rejected with the message below. So is
 `2nd` where a rule's text holds it, such as in a comment: code that reads it, such as `2nd == 1`, fails `load()` with
@@ -91,8 +90,8 @@ MVEL reads these as something else first, so they're rejected too:
 | Built-in class names | The 22 in [Classes and imports](mvel.md#-classes-and-imports), such as `Math`, `String` and `Thread` |
 | Operators and keywords | `and` `assert` `contains` `convertable_to` `def` `do` `else` `for` `foreach` `function` `if` `import` `import_static` `in` `instanceof` `is` `isdef` `new` `or` `return` `soundslike` `stacklang` `strsim` `switch` `until` `var` `while` `with` `this` |
 | Imported classes | The simple name of an imported class: `LocalDate` for `imports("java.time.LocalDate")`, `Entry` for `imports("java.util.Map.Entry")`. Any class in an imported package MVEL [can load](../thread-safety.md#-class-loaders): `Date` for `imports("java.util")`. A rule's own inline import, for the condition or action holding it, and the static fields or constants it reads; see below |
-| Package roots | `java` once `load()` or `validate()`, compiling a rule, looks up a class whose package starts with `java`, as for `java.lang.Integer.MAX_VALUE == 7`. Here MVEL would read the fact in the class's place; see below |
-| Classes with no package | `Foo` once `load()` or `validate()`, compiling a rule, looks up a class `Foo` in the default package, as for `Foo.LIMIT == 7`. Here too MVEL would read the fact in the class's place; see below |
+| Package roots | `java` once `load()` or `validate()`, compiling a rule, looks up a class whose package starts with `java`, as for `java.lang.Integer.MAX_VALUE == 7`; see below |
+| Classes with no package | `Foo` once `load()` or `validate()`, compiling a rule, looks up a class `Foo` in the default package, as for `Foo.LIMIT == 7`; see below |
 
 ```text
 'Math' cannot be used as a fact name: MVEL reads it as a keyword or class name, so rules would never see the fact
@@ -106,8 +105,8 @@ MVEL reads these as something else first, so they're rejected too:
 
 A `VirtualMachineError` while loading such a class isn't read as no class. An `OutOfMemoryError` leaves `run()`,
 `load()` or `validate()`. A `StackOverflowError` fails `run()` with
-`The 'mvel' expression language failed to check fact name '...': ...`, and a declared fact's check with
-`Declared fact '...' can't be used: The 'mvel' expression language failed to check fact name '...': ...`.
+`The 'mvel' expression language failed to check fact name '...': ...`, and a declared fact's check with that
+message, prefixed by `Declared fact '...' can't be used:`.
 
 > [!WARNING]
 > A fact named like a function an action defines, `bonus` with `def bonus(score) { ... }`, isn't rejected: every run
@@ -144,7 +143,7 @@ imported class (`Map.Entry`) or named in a rule's `import`. It's also each class
 strings and comments (`new java.util.ArrayList()`).
 
 A root that comes from an import, and so isn't written in the rule, is rejected only where a rule's text also
-holds the name, even in a comment. That's `acme` for `Order` with `imports("acme.orders")`, or `java` for `Map.Entry`
+holds the name, even in a comment. That's `acme` in the example above, or `java` for `Map.Entry`
 with `imports("java.util.Map")`. Where no rule's text holds `acme`, a fact `acme` is accepted, and the rules still
 read the class.
 
@@ -190,9 +189,8 @@ A span of a word starts at any of these places:
   of an identifier either, as in `isdef#a`.
 
 From each start, a span ends at the word's end, and another just before each later character that isn't part of an
-identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. A fact `my-fact` is
-checked, and rejected, though MVEL reads `my-fact-1` as `my` minus `fact` minus 1. `a.b--` gives
-`a.b`, `x^my]+=1` gives `my]`, and `isdef#a` gives `#a`.
+identifier. `my-fact-1` gives `my`, `fact`, `1`, `my-fact`, `fact-1` and `my-fact-1`. `a.b--` gives `a.b`,
+`x^my]+=1` gives `my]`, and `isdef#a` gives `#a`.
 
 A span that holds one of `( ) [ ] { } , ; ' " = < > ! & | ? : * / + % # ^ « » ¬ ~` after its first character is left
 out, unless each is one of `, « » ¬`, in a run of characters MVEL skips that starts the span and ends just before
@@ -265,6 +263,5 @@ rule, or an empty one while MVEL is the default language. For such a list:
 - `load()` throws, and `validate()` returns, a `RuleCompilationException` for a declared `output`, with
   `'output' is reserved for the output object and cannot be declared as a fact`. `build()` accepts the declaration.
 
-A rule list with no MVEL rule, such as another language's, accepts a fact `output`, unless another
-of the engine's languages reserves it; see [Fact names](custom.md#-fact-names). `Output` and `OUTPUT` are ordinary
-names.
+A rule list with no MVEL rule accepts a fact `output`, unless another of the engine's languages reserves it; see
+[Fact names](custom.md#-fact-names). `Output` and `OUTPUT` are ordinary names.

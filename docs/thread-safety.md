@@ -26,7 +26,7 @@ one run does.
 
 | Method | Thread-safe? | When to call it |
 | --- | :---: | --- |
-| `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine it builds is thread-safe, and everything but the rules is fixed from then on. |
+| `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine it builds is thread-safe. |
 | `load()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish compiling wins. |
 | `validate()` | ✅ | At any time, from any thread. It compiles and discards, and changes nothing. |
 | `run()`, `runWithResult()` | ✅ | From any number of threads, once `load()` has returned. |
@@ -38,12 +38,9 @@ type, output writer, declared facts and language options are all fixed when it's
 anything afterwards.
 
 Interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression
-returns** — before each condition and each action, when each returns, and once an action's properties are set, so a
-run whose last condition or action returns past its deadline fails.
-
-Whether a running expression can be stopped depends on the language: MVEL can't, so an MVEL rule that loops for ever
-still blocks its thread; run rules you don't trust in a process of their own. See
-[Stopping a run](stopping-runs.md).
+returns**; see [What stops a run](stopping-runs.md#-what-stops-a-run). Whether a running expression can be stopped
+depends on the language: MVEL can't, so an MVEL rule that loops for ever still blocks its thread; run rules you don't
+trust in a process of their own.
 
 ### What you must keep thread-safe
 
@@ -144,12 +141,11 @@ compiler is logged at WARN, unless a [nested run](nested-runs.md#-what-is-logged
 twice does nothing the second time, unless the first stopped part way.
 
 A [fatal error](glossary.md#fatal-error) from closing sessions or compilers is rethrown once everything else is closed,
-by the `close()`, `load()` or `validate()` call, or the run, that closes them. Who throws it, what it replaces, and
-what stops closing part way is in [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
+by the call or run that closes them; see [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
 
 ### Draining before you close
 
-The engine has no "wait for runs to finish" call. Stop the work reaching it, then close:
+Stop the work reaching the engine, then close:
 
 ```java
 executor.shutdown();                                   // no new runs are submitted
