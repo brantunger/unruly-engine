@@ -31,11 +31,10 @@ that need MVEL or the test kit, and those that check the whole build), `test-kit
 (`unruly-engine-bom`, a [BOM](../glossary.md#artifacts) pinning the other three; its `checkBomCoverage` fails unless
 it lists exactly the published artifacts).
 
-The other two aren't: `benchmarks`, whose sources the build checks and whose generated workload one test asserts the
-shape of, while only the `jmh` task measures anything, and `native-smoke`, a small application CI builds into a
-GraalVM native image. Its `checkStrictImagePackages`, run by `build` without GraalVM, fails unless CI's
-[strict](../native-image.md#-strict-metadata) image step gives `native-image` exactly the `core` and `mvel` jars'
-packages.
+The other two aren't: `benchmarks`, whose sources the build checks, while only the `jmh` task measures anything,
+and `native-smoke`, a small application CI builds into a GraalVM native image. Its `checkStrictImagePackages`, run
+by `build` without GraalVM, fails unless CI's [strict](../native-image.md#-strict-metadata) image step gives
+`native-image` exactly the `core` and `mvel` jars' packages.
 
 | Gate | Checks | Configured in |
 | --- | --- | --- |
@@ -70,14 +69,14 @@ packages.
 | `AvoidUsingVolatile` | The engine's and a rule list's shared fields are written by `load()`, `close()` or the run that finds no language keeps state, and read by every run without a lock |
 | `AvoidSynchronizedStatement` | Every synchronized block is short and never parks, so no run waits long on a monitor or pins its virtual thread while parked |
 
-**The build never runs PMD on test sources, by decision.** On them the rule set found 2,885 violations (at
-`0367bb2`), most of them an assertion without a message, a test with several assertions, or an unclosed resource.
+**PMD skips test sources, by decision.** On them the rule set found 2,885 violations (at `0367bb2`), most of them an
+assertion without a message, a test with several assertions, or an unclosed resource.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
 so a test that never returns fails the build within its job's 20-minute cap. Gradle
-logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout`, stops the test worker, and
-fails the task with `Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML
-report, where the test that never returned shows as skipped.
+logs `Requesting stop of task ':core:test' as it has exceeded its configured timeout` and fails the task with
+`Timeout has been exceeded`. A task stopped that way writes no JUnit XML, so read the HTML report, where the test that
+never returned shows as skipped.
 
 On `windows-latest`, a watchdog thread-dumps the JVMs at 14 minutes: [Windows CI hangs](windows-ci-hangs.md).
 
@@ -132,7 +131,7 @@ so a second build reuses task outputs, including those of another branch, and th
 
 - `./gradlew :mvel:test --rerun` runs a task again though its inputs haven't changed.
 - `--no-build-cache --no-configuration-cache` rebuilds everything from scratch, when a result looks stale.
-- The release workflow builds with `--no-build-cache`, so the published artifacts are built from scratch.
+- The release workflow builds with `--no-build-cache`.
 - Locally, the API baseline lookup is cached 24 hours, for configuration cache reuse; `"-PapiCheck.refresh"`
   skips that cache.
 
@@ -192,7 +191,8 @@ What the jobs leave behind:
   workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
 
 The `main-require-green-ci` ruleset, with no bypass, requires `ci-result` and `pr-title`; a PR needn't be up to date
-with `main`.
+with `main`. CodeQL runs as GitHub's default-setup scan of the Java and Kotlin sources and the workflows. No ruleset
+requires it, so it never gates CI or a release; its alerts are triaged under Security → Code scanning.
 
 ## 🔢 Running the tests on another JDK
 
@@ -209,7 +209,7 @@ differs.
 
 PIT mutates each library's main classes and reruns the tests covering each mutant. It's a report, not a gate: no
 build or pull request runs it. `-Pmutation.targetClasses` narrows a run to a comma-separated list of classes or
-`package.*` globs, so bug hunts needn't hand-write mutants.
+`package.*` globs.
 
 ```bash
 ./gradlew :core:pitest -Pmutation --warning-mode=all
@@ -255,7 +255,7 @@ broken `{@link}` or bad HTML fails the build. `check` depends on the Javadoc in 
 - Each jar project's `javadoc` task documents its own module, for its `-javadoc.jar`.
 - The root project's `javadoc` task builds one site for all the modules in `build/docs/javadoc`. It hands the
   javadoc tool the modules rather than source files, so it documents only the packages they export, and passes
-  `-notimestamp`, so no page carries its generation date and a rebuild of the same sources gives the same files.
+  `-notimestamp`, so a rebuild of the same sources gives the same files.
 
 `./gradlew javadoc` runs every project's `javadoc` task, `benchmarks` included, and the site; `./gradlew :javadoc`
 builds the site alone. The site is published to [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on
