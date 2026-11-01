@@ -1,15 +1,15 @@
 package io.github.brantunger.unruly.internal;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Function;
+import java.util.Objects;
 
 /**
  * Widens a boxed primitive to another primitive type as Java does (JLS 5.1.2), lossy conversions included, and never
  * narrows or otherwise converts one. <b>Internal:</b> this class may change in any release. It's public only so that
  * the default output writer, {@code OutputWriter.beansAndMaps()} in another package, and the engine's widening and
- * check of a declared fact share it.
+ * check of a declared fact share it. Its lookups decide with comparisons, which allocate nothing, as the engine asks
+ * for one for every declared fact of every run; only {@link #widen} allocates, to box its result. It has no static
+ * initializer of its own, so its first use deep in a stack, as when a language's test makes a compile context with a
+ * declared fact and no engine built, can't break it (#1322).
  */
 public final class Widening {
 
@@ -19,52 +19,51 @@ public final class Widening {
     public static final String ONLY_WIDENED = "a value is only widened as Java widens a primitive, never narrowed or"
             + " converted";
 
-    // The primitive types, from the narrowest to the widest of those Java widens between, then boolean.
-    private static final List<Class<?>> PRIMITIVES = List.of(byte.class, short.class, char.class, int.class,
-            long.class, float.class, double.class, boolean.class);
-
-    // The wrappers of the primitive types.
-    private static final Set<Class<?>> WRAPPERS = Set.of(Byte.class, Short.class, Character.class, Integer.class,
-            Long.class, Float.class, Double.class, Boolean.class);
-
-    // For each wrapper, the primitive types other than its own that Java widens its primitive to (JLS 5.1.2), lossy
-    // ones included. A byte or a short never becomes a char, and a char never becomes a short. A boolean becomes
-    // nothing else, so Boolean has none.
-    private static final Map<Class<?>, Set<Class<?>>> WIDENED = Map.of(
-            Byte.class, Set.of(short.class, int.class, long.class, float.class, double.class),
-            Short.class, Set.of(int.class, long.class, float.class, double.class),
-            Character.class, Set.of(int.class, long.class, float.class, double.class),
-            Integer.class, Set.of(long.class, float.class, double.class),
-            Long.class, Set.of(float.class, double.class),
-            Float.class, Set.of(double.class));
-
-    // The wrapper of each primitive type, void included, as MethodType.wrap() gives it. A table, so looking one up
-    // allocates nothing: the engine does it for every declared fact of every run.
-    private static final Map<Class<?>, Class<?>> WRAPPER_OF = Map.of(
-            byte.class, Byte.class, short.class, Short.class, char.class, Character.class, int.class, Integer.class,
-            long.class, Long.class, float.class, Float.class, double.class, Double.class, boolean.class, Boolean.class,
-            void.class, Void.class);
-
-    // How a number becomes each primitive type something widens to, as Java's cast to that type does. Nothing widens
-    // to a byte, a char or a boolean.
-    private static final Map<Class<?>, Function<Number, Object>> CONVERSIONS = Map.of(
-            short.class, Number::shortValue,
-            int.class, Number::intValue,
-            long.class, Number::longValue,
-            float.class, Number::floatValue,
-            double.class, Number::doubleValue);
-
     private Widening() {
     }
 
+    // A primitive type, as the component type of an array of it. A primitive type's literal, such as short.class,
+    // reads its wrapper's TYPE field, which initializes the wrapper, and on JDK 21 nothing at startup initializes Short
+    // or Long, so a first use deep in a stack could break them (#1260, #1322). An array class's literal initializes
+    // nothing, and its component type is a field the JVM set when it made the class, so this allocates nothing.
+    private static Class<?> componentOf(Class<?> arrayType) {
+        return arrayType.getComponentType();
+    }
+
     /**
-     * Returns the type itself, or its wrapper if it's primitive.
+     * Returns the type itself, or its wrapper if it's primitive, {@code void} included, as {@code MethodType.wrap()}
+     * gives it.
      *
      * @param type Any type
      * @return The type a boxed value of it is an instance of
+     * @throws NullPointerException if {@code type} is {@code null}
      */
     public static Class<?> wrap(Class<?> type) {
-        return WRAPPER_OF.getOrDefault(type, type);
+        if (!type.isPrimitive()) {
+            return type;
+        }
+        if (type == componentOf(byte[].class)) {
+            return Byte.class;
+        }
+        if (type == componentOf(short[].class)) {
+            return Short.class;
+        }
+        if (type == componentOf(char[].class)) {
+            return Character.class;
+        }
+        if (type == componentOf(int[].class)) {
+            return Integer.class;
+        }
+        if (type == componentOf(long[].class)) {
+            return Long.class;
+        }
+        if (type == componentOf(float[].class)) {
+            return Float.class;
+        }
+        if (type == componentOf(double[].class)) {
+            return Double.class;
+        }
+        return type == componentOf(boolean[].class) ? Boolean.class : Void.class;
     }
 
     /**
@@ -74,9 +73,34 @@ public final class Widening {
      *
      * @param type Any type
      * @return Its place, from 0, or -1 if it isn't primitive, or is {@code void}
+     * @throws NullPointerException if {@code type} is {@code null}
      */
     public static int order(Class<?> type) {
-        return PRIMITIVES.indexOf(type);
+        if (!type.isPrimitive()) {
+            return -1;
+        }
+        if (type == componentOf(byte[].class)) {
+            return 0;
+        }
+        if (type == componentOf(short[].class)) {
+            return 1;
+        }
+        if (type == componentOf(char[].class)) {
+            return 2;
+        }
+        if (type == componentOf(int[].class)) {
+            return 3;
+        }
+        if (type == componentOf(long[].class)) {
+            return 4;
+        }
+        if (type == componentOf(float[].class)) {
+            return 5;
+        }
+        if (type == componentOf(double[].class)) {
+            return 6;
+        }
+        return type == componentOf(boolean[].class) ? 7 : -1;
     }
 
     /**
@@ -85,9 +109,12 @@ public final class Widening {
      * @param type Any type
      * @return Whether it's {@link Byte}, {@link Short}, {@link Character}, {@link Integer}, {@link Long},
      *         {@link Float}, {@link Double} or {@link Boolean}
+     * @throws NullPointerException if {@code type} is {@code null}
      */
     public static boolean isWrapper(Class<?> type) {
-        return WRAPPERS.contains(type);
+        Objects.requireNonNull(type, "type must not be null");
+        return type == Byte.class || type == Short.class || type == Character.class || type == Integer.class
+                || type == Long.class || type == Float.class || type == Double.class || type == Boolean.class;
     }
 
     /**
@@ -102,7 +129,9 @@ public final class Widening {
     }
 
     /**
-     * Returns whether Java widens the primitive a value boxes to a primitive type other than its own.
+     * Returns whether Java widens the primitive a value boxes to a primitive type other than its own (JLS 5.1.2),
+     * lossy conversions included. A {@code byte} or a {@code short} never becomes a {@code char}, and a {@code char}
+     * never becomes a {@code short}. A {@code boolean} becomes nothing else, and nothing becomes a {@code byte}.
      *
      * @param value     Any value, not {@code null}
      * @param primitive The type to widen to
@@ -110,7 +139,26 @@ public final class Widening {
      * @throws NullPointerException if {@code value} is {@code null} and {@code primitive} is primitive
      */
     public static boolean widens(Object value, Class<?> primitive) {
-        return primitive.isPrimitive() && WIDENED.getOrDefault(value.getClass(), Set.of()).contains(primitive);
+        if (!primitive.isPrimitive()) {
+            return false;
+        }
+        Class<?> from = value.getClass();
+        // Every wrapper but Long's, Float's, Double's and Boolean's widens to a long, a float and a double.
+        boolean toLongOrWider = primitive == componentOf(long[].class) || primitive == componentOf(float[].class)
+                || primitive == componentOf(double[].class);
+        if (from == Byte.class) {
+            return primitive == componentOf(short[].class) || primitive == componentOf(int[].class) || toLongOrWider;
+        }
+        if (from == Short.class || from == Character.class) {
+            return primitive == componentOf(int[].class) || toLongOrWider;
+        }
+        if (from == Integer.class) {
+            return toLongOrWider;
+        }
+        if (from == Long.class) {
+            return primitive == componentOf(float[].class) || primitive == componentOf(double[].class);
+        }
+        return from == Float.class && primitive == componentOf(double[].class);
     }
 
     /**
@@ -127,8 +175,21 @@ public final class Widening {
         if (!widens(value, primitive)) {
             return value;
         }
-        // A char isn't a Number, but it widens to an int, and from there to the rest.
+        // A char isn't a Number, but it widens to an int, and from there to the rest. Each conversion is Java's cast
+        // to the type. Nothing widens to a byte, a char or a boolean, so a type none of these is is a double.
         Number number = value instanceof Character character ? Integer.valueOf(character) : (Number) value;
-        return CONVERSIONS.get(primitive).apply(number);
+        if (primitive == componentOf(short[].class)) {
+            return number.shortValue();
+        }
+        if (primitive == componentOf(int[].class)) {
+            return number.intValue();
+        }
+        if (primitive == componentOf(long[].class)) {
+            return number.longValue();
+        }
+        if (primitive == componentOf(float[].class)) {
+            return number.floatValue();
+        }
+        return number.doubleValue();
     }
 }

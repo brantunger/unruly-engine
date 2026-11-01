@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.internal.Widening;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,7 +51,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * does, so the scenario makes one with a package import and tries one with an import that isn't a valid package name,
  * between the markers; the context's constructor checked its options and declarations with two lambdas, whose call
  * sites, when linked, initialized the JDK's method handle classes, and {@code java.lang.Long} on JDK 21, and it now
- * checks them with loops.
+ * checks them with loops. #1322: a context keeps a declared fact's type as its wrapper, which the engine's own
+ * {@code internal.Widening} gives, and Widening's static initializer built tables, one of them of five method
+ * references, whose linking initialized the JDK's method handle classes, and {@code java.lang.Long} on JDK 21; it now
+ * decides with comparisons and has no static initializer, so the scenario makes three contexts with a declared fact,
+ * an {@code int}, a {@code long} and a {@code String}, and the calls must initialize it, and not {@code java.lang.Long}
+ * through the {@code long} type's literal, which reads {@code Long.TYPE}.
  */
 @DisplayName("the language facades' first calls, with no engine, initialize no class with a static initializer (#1260)")
 class FacadeFirstUseInitializationTest {
@@ -79,7 +85,8 @@ class FacadeFirstUseInitializationTest {
             ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
             Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
             "io.github.brantunger.unruly.core.FactNames", "io.github.brantunger.unruly.core.LanguageNames",
-            "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting");
+            "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting",
+            Widening.class.getName());
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
     // No JDK initializes TreeSet or TreeMap at startup, unless a multi-release jar is opened before the main class, so
@@ -151,17 +158,19 @@ class FacadeFirstUseInitializationTest {
                 "it has 65 dot-separated parts, and an import may have at most 64",
                 "it has 1001 characters, and an import may have at most 1000"), answers.subList(0, 39), output);
         // MessageText's answers, which MessageTextTest pins, are only counted.
-        assertEquals(61, answers.size(), output);
+        assertEquals(64, answers.size(), output);
         // The names that start with a Greek letter were accepted: the rule and the run options, as each describes
         // itself, and the builder's three calls, each true for having answered the builder (#1292).
         assertEquals(List.of("Rule(ruleName=\u03c0rule, condition=x == 1, action=put hit true, priority=null,"
                 + " description=null, language=null, enabled=true, validFrom=null, validTo=null, tags=[\u03c0tag])",
                 "true", "true", "true", "RunOptions(timeout=the engine's, tags=[\u03c0run])"),
                 answers.subList(54, 59), output);
-        // The compile contexts: the package import kept, and the malformed one rejected with build()'s message (#1271).
+        // The compile contexts: the package import kept, and the malformed one rejected with build()'s message
+        // (#1271); then the declared facts, the primitive one kept as its wrapper (#1322).
         assertEquals(List.of("[java.util]",
-                "IllegalArgumentException('zq..b' is neither a class nor a valid package name)"),
-                answers.subList(59, 61), output);
+                "IllegalArgumentException('zq..b' is neither a class nor a valid package name)",
+                "{x=class java.lang.Integer}", "{n=class java.lang.Long}", "{s=class java.lang.String}"),
+                answers.subList(59, 64), output);
         assertTrue(lines.contains(FacadeFirstUseScenario.ENGINE + "{hit=true}"), "the engine didn't run:\n" + output);
     }
 
