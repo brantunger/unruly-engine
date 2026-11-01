@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.12](https://github.com/brantunger/unruly-engine/compare/v2.33.11...v2.33.12) (2026-11-01)
+
+
+### Bug Fixes
+
+* an MVEL inline class import over 1,000 characters or 64 parts is rejected for its size, as a package import is ([#1263](https://github.com/brantunger/unruly-engine/issues/1263)) ([#1348](https://github.com/brantunger/unruly-engine/issues/1348)) ([3748fe5](https://github.com/brantunger/unruly-engine/commit/3748fe5fe850d70785bbde704e09ee65b344675c))
+
 ## [2.33.11](https://github.com/brantunger/unruly-engine/compare/v2.33.10...v2.33.11) (2026-10-31)
 
 
