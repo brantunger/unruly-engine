@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.13](https://github.com/brantunger/unruly-engine/compare/v2.33.12...v2.33.13) (2026-11-01)
+
+
+### Bug Fixes
+
+* internal.Widening has no static initializer, so a first compile context with a declared fact can't break it deep in a stack ([#1322](https://github.com/brantunger/unruly-engine/issues/1322)) ([#1353](https://github.com/brantunger/unruly-engine/issues/1353)) ([bae573e](https://github.com/brantunger/unruly-engine/commit/bae573e234fa31cf4e160a2da66ece4f73bf2887))
+
 ## [2.33.12](https://github.com/brantunger/unruly-engine/compare/v2.33.11...v2.33.12) (2026-11-01)
 
 
