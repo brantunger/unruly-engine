@@ -23,7 +23,9 @@ import java.util.function.Supplier;
  * method of {@link Throwables}, {@link ImportLimits} and {@link MessageText} once or more, so each takes each of its
  * paths, then builds a rule whose name and tag start with a Greek letter, declares facts, adds a language and makes
  * run options with such names (#1292), makes a compile context as a language's tests make one, with a package import
- * and with one that isn't a valid package name, which it rejects (#1271), and prints {@link #AFTER}. Between the two
+ * and with one that isn't a valid package name, which it rejects (#1271), makes three with a declared fact, an
+ * {@code int}, a {@code long} and a {@code String}, as a declared fact initializes the engine's own
+ * {@code internal.Widening} (#1322), and prints {@link #AFTER}. Between the two
  * it concatenates no string and links no lambda, as the test's own code does both through a call site the JVM links
  * on its first use, and it keeps the answers in an array. Then it prints each answer after {@link #ANSWER}, builds an
  * engine and runs it, and prints {@link #ENGINE} and what the run returned. Its text has characters above U+00FF, of
@@ -128,8 +130,16 @@ final class FacadeFirstUseScenario {
         // The package imports a compile context is given, one of them not a valid package name (#1271).
         Set<String> packages = Set.of("java.util");
         Set<String> malformed = Set.of("zq..b");
+        // The options and the declarations of the contexts with a declared fact, which initialize internal.Widening
+        // (#1322): two of a primitive type, kept as its wrapper, and one of a class. One is a long, which Widening
+        // must tell without long.class, as that literal reads Long.TYPE, which initializes java.lang.Long on JDK 21; so
+        // it's made here as the component type of a long[], which initializes nothing.
+        Map<String, String> noOptions = Map.of();
+        Map<String, Class<?>> intFact = Map.of("x", int.class);
+        Map<String, Class<?>> longFact = Map.of("n", long[].class.getComponentType());
+        Map<String, Class<?>> stringFact = Map.of("s", String.class);
         ClassLoader loader = ClassLoader.getSystemClassLoader();
-        Object[] answers = new Object[61];
+        Object[] answers = new Object[64];
         int i = 0;
         // The test's precondition: the JVM has read a string with a character above U+00FF already, as a JVM on
         // Windows has at startup, so the calls aren't the first to initialize java.lang.StringUTF16, the JDK's code
@@ -209,6 +219,12 @@ final class FacadeFirstUseScenario {
             rejected = e;
         }
         answers[i++] = rejected;
+        answers[i++] = new EngineCompileContext(packages, Set.of(), loader, Object.class, noOptions, intFact, false)
+                .declaredFacts();
+        answers[i++] = new EngineCompileContext(packages, Set.of(), loader, Object.class, noOptions, longFact, false)
+                .declaredFacts();
+        answers[i++] = new EngineCompileContext(packages, Set.of(), loader, Object.class, noOptions, stringFact, false)
+                .declaredFacts();
         System.out.println(AFTER);
 
         for (Object answer : answers) {

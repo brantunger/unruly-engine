@@ -86,7 +86,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         // Loops rather than lambdas, here and for the declarations below: a language's tests make a context with no
         // engine built, maybe deep in a stack, and linking a lambda's call site initializes the JDK's method handle
         // classes, and java.lang.Long on JDK 21, whose first initialization there could overflow (#1260, #1271). This
-        // class links none; a declared fact still initializes internal.Widening, whose static initializer does.
+        // class links none, and internal.Widening, which a declared fact initializes, has no static initializer
+        // (#1322).
         for (Map.Entry<String, String> option : options.entrySet()) {
             Objects.requireNonNull(option.getKey(), "options must not contain null");
             Objects.requireNonNull(option.getValue(), "options must not contain null");
