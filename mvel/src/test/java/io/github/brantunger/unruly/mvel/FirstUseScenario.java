@@ -96,6 +96,11 @@ final class FirstUseScenario {
     static final String CLASS_CALLED = "a load that fails, a class called like a method";
     /** The step whose load is the first to fail for an import with too many parts (#1097). */
     static final String IMPORT_TOO_LARGE = "a load that fails, an import with too many parts";
+    /**
+     * The step whose load is the first to fail for an inline class import with too many parts, which the rule list's
+     * class loader rejects after it walks the stack (#1263).
+     */
+    static final String CLASS_IMPORT_TOO_LARGE = "a load that fails, a class import with too many parts";
     /** The step whose load is the first to fail for an import of a class with a null static field (#1198). */
     static final String NULL_FIELD_IMPORT = "a load that fails, an import of a class with a null static field";
     /** The step whose load is the first to fail for a package import too far into the text for MVEL to read (#1097). */
@@ -150,9 +155,10 @@ final class FirstUseScenario {
 
     // The actions of the loads that fail for an import, built when the scenario's class is initialized: this test
     // fixture is compiled with javac's default string concatenation, whose first use would initialize the JDK's
-    // classes in a step. An import of 65 parts, one more than an import may have, and one whose last '.' is at index
-    // 32,768, which MVEL keeps in a short (see MvelCompileErrors).
+    // classes in a step. An import of 65 parts, one more than an import may have, of a package and of a class, and one
+    // whose last '.' is at index 32,768, which MVEL keeps in a short (see MvelCompileErrors).
     private static final String TOO_MANY_PARTS = "import " + "a.".repeat(64) + "a.*; x = 1";
+    private static final String CLASS_OF_TOO_MANY_PARTS = "import " + "a.".repeat(64) + "a; x = 1";
     private static final String IMPORT_TOO_FAR = " ".repeat(32_768 - "import java.util".length())
             + "import java.util.*; output.put('k', new ArrayList().size())";
     // The rules that ask for the class loader many times (#1099), built here for the same reason. A chain in 12 levels
@@ -382,15 +388,16 @@ final class FirstUseScenario {
 
     // Loads of a rule that fails to compile, each in a step of its own, for each way MVEL's compile errors are
     // described: a condition that assigns, which the engine rejects before MVEL compiles it; a syntax error; a class
-    // called like a method; an import with too many parts; an import of a class with a null static field (#1198);
-    // and a package import whose last '.' is too far into the text for MVEL to read (#1097). The condition that
-    // assigns comes first, as every failed load creates what it does.
+    // called like a method; an import with too many parts, of a package and of a class (#1263); an import of a class
+    // with a null static field (#1198); and a package import whose last '.' is too far into the text for MVEL to read
+    // (#1097). The condition that assigns comes first, as every failed load creates what it does.
     private static void failsToCompile(RulesEngine<Map<String, Object>> engine,
                                        RulesEngine<Map<String, Object>> imported, List<String> unexpected) {
         failsToLoadRule(engine, CONDITION_ASSIGNS, rule("assigns", "x = 1", "1"), unexpected);
         failsToLoadRule(engine, LOAD_FAILS, rule("broken", "x >", "1"), unexpected);
         failsToLoadRule(imported, CLASS_CALLED, rule("called", "true", "x = ArrayList(y)"), unexpected);
         failsToLoadRule(engine, IMPORT_TOO_LARGE, rule("imports", "true", TOO_MANY_PARTS), unexpected);
+        failsToLoadRule(engine, CLASS_IMPORT_TOO_LARGE, rule("class", "true", CLASS_OF_TOO_MANY_PARTS), unexpected);
         failsToLoadRule(engine, NULL_FIELD_IMPORT, rule("nulls", "true", "import probe.NullFieldHolder.*; x = 1"),
                 unexpected);
         failsToLoadRule(engine, PACKAGE_IMPORT_UNREAD, rule("far", "true", IMPORT_TOO_FAR), unexpected);

@@ -203,8 +203,8 @@ final class MvelCompileErrors {
     }
 
     /**
-     * Reports an {@code import} in the expression's own text of a package too long, or with too many parts, to look
-     * up, with one issue at the package's name, such as {@code Can't import 'a.a.a...': it has 65 dot-separated
+     * Reports an {@code import} in the expression's own text of a package or a class too long, or with too many
+     * parts, to look up, with one issue at the name, such as {@code Can't import 'a.a.a...': it has 65 dot-separated
      * parts, and an import may have at most 64}: the engine's own words for such an import. An import of a class with a
      * public static field whose value is {@code null} is reported the same way, such as
      * {@code Can't import 'acme.Bar.*': its public static field 'X' is null}. The line and column count
@@ -216,7 +216,8 @@ final class MvelCompileErrors {
      * the name where it first follows {@code import} and any whitespace. The name's text in a string or a comment
      * before it isn't taken for it, even after {@code import}. The scan ends a comment where MVEL ends it, so
      * {@code /*}{@code /} is a whole comment (#747), and MVEL passes the name as a slice of the text, from just after
-     * the keyword and the characters it skips as whitespace, so the {@code import} MVEL read is always found. With no
+     * the keyword and the characters it skips as whitespace, so the {@code import} MVEL read is always found, as it is
+     * for a class import, whose name the class loader passes without the whitespace that ends it. With no
      * {@code import} of the name in the text at all, which MVEL never passes, the error is reported with no line or
      * column, as {@link #positionless} reports one.
      * </p>

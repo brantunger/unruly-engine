@@ -107,6 +107,93 @@ class InlineImportLimitsTest {
                 + " dot-separated parts, and an import may have at most 64");
     }
 
+    // #1263: an inline class import is bounded as a package import is, so a class name too large for an import isn't
+    // looked up, and the message says why rather than "class not found".
+    private static final String CLASS_OF_65_PARTS = "a.".repeat(64) + "a";
+    private static final String CLASS_OF_1001_CHARACTERS = "a.b." + "c".repeat(997);
+    private static final String PARTS_MESSAGE = "Can't import '" + CLASS_OF_65_PARTS + "': it has 65 dot-separated"
+            + " parts, and an import may have at most 64";
+    private static final String CHARACTERS_MESSAGE = "Can't import '" + CLASS_OF_1001_CHARACTERS.substring(0, 200)
+            + "... (801 more characters)': it has 1001 characters, and an import may have at most 1000";
+
+    @Test
+    @DisplayName("a class import of 65 dot-separated parts in a condition is rejected at the name, with no lookup")
+    void conditionClassImportOfTooManyPartsRejected() {
+        assertRejected(rule("import " + CLASS_OF_65_PARTS + "; v0 == 1", "true"), 1, 8, PARTS_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("a class import of 65 dot-separated parts in an action is rejected at the name, with no lookup")
+    void actionClassImportOfTooManyPartsRejected() {
+        assertRejected(rule("true", "x = 1;\n  import " + CLASS_OF_65_PARTS + "; x = v0;"), 2, 10, PARTS_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("a class import of 1,001 characters in a condition is rejected at the name, with no lookup")
+    void conditionClassImportOfTooManyCharactersRejected() {
+        assertRejected(rule("import " + CLASS_OF_1001_CHARACTERS + "; v0 == 1", "true"), 1, 8, CHARACTERS_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("a class import of 1,001 characters in an action is rejected at the name, with no lookup")
+    void actionClassImportOfTooManyCharactersRejected() {
+        assertRejected(rule("true", "x = 1;\n  import " + CLASS_OF_1001_CHARACTERS + "; x = v0;"), 2, 10,
+                CHARACTERS_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("a class import of 65 parts with whitespace before its ';' is rejected at the name, without it")
+    void classImportWithWhitespaceBeforeSemicolonRejected() {
+        assertRejected(rule("true", "import " + CLASS_OF_65_PARTS + " \t; x = v0;"), 1, 8, PARTS_MESSAGE);
+    }
+
+    // What MVEL says of a class import it can't find: the expression's whole text after "class not found: ".
+    private static void assertClassNotFound(String action) {
+        RecordingClassLoader loader = new RecordingClassLoader();
+        RulesEngine<Map<String, Object>> engine = engine();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                () -> load(loader, engine, rule("true", action)));
+
+        assertAll(
+                () -> assertEquals(1, ex.issues().size(), ex.issues().toString()),
+                () -> assertTrue(ex.issues().get(0).message().startsWith("class not found: import "),
+                        ex.issues().get(0).message()),
+                () -> assertTrue(importLookups(loader) > 0, "MVEL looks the import up"));
+    }
+
+    @Test
+    @DisplayName("a class import of exactly 64 parts is still looked up, and fails as a class that isn't there")
+    void classImportOfSixtyFourPartsLookedUp() {
+        assertClassNotFound("import " + "a.".repeat(63) + "a; x = 1;");
+    }
+
+    @Test
+    @DisplayName("a class import of exactly 1,000 characters is still looked up, and fails as a class that isn't there")
+    void classImportOfThousandCharactersLookedUp() {
+        assertClassNotFound("import a.b." + "c".repeat(996) + "; x = 1;");
+    }
+
+    @Test
+    @DisplayName("a class import of 1,000 characters and a space before its ';' is still looked up, the space not"
+            + " counted")
+    void classImportOfThousandCharactersAndSpaceLookedUp() {
+        assertClassNotFound("import a.b." + "c".repeat(996) + " ; x = 1;");
+    }
+
+    @Test
+    @DisplayName("an import_static of 65 parts fails as before, with MVEL's own message")
+    void staticImportOfTooManyPartsFailsAsBefore() {
+        RulesEngine<Map<String, Object>> engine = engine();
+
+        RuleCompilationException ex = assertThrows(RuleCompilationException.class,
+                () -> load(new RecordingClassLoader(), engine,
+                        rule("true", "import_static " + CLASS_OF_65_PARTS + "; x = 1;")));
+
+        assertEquals(List.of(new InvalidExpressionException.Issue(InvalidExpressionException.Issue.Severity.ERROR, 1,
+                15, "unable to import class")), ex.issues(), ex.getMessage());
+    }
+
     @Test
     @DisplayName("the position is the import's, not that of the same text in a string before it")
     void positionAfterStringWithName() {

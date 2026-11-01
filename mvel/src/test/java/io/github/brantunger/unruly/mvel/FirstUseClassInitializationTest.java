@@ -201,10 +201,10 @@ class FirstUseClassInitializationTest {
     private static final String SCENARIO_LOADED = "[class,load] " + FirstUseScenario.class.getName();
     private static final List<String> FAILING = List.of(FirstUseScenario.CONDITION_FAILS,
             FirstUseScenario.ACTION_FAILS, FirstUseScenario.CONDITION_ASSIGNS, FirstUseScenario.LOAD_FAILS,
-            FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.NULL_FIELD_IMPORT,
-            FirstUseScenario.PACKAGE_IMPORT_UNREAD, FirstUseScenario.FAILING_NESTED_LOAD,
-            FirstUseScenario.VALIDATE_FAILS, FirstUseScenario.ANALYSIS_LOOP, FirstUseScenario.RUN_LOOP,
-            FirstUseScenario.NESTED_NAME_TOO_LARGE);
+            FirstUseScenario.CLASS_CALLED, FirstUseScenario.IMPORT_TOO_LARGE, FirstUseScenario.CLASS_IMPORT_TOO_LARGE,
+            FirstUseScenario.NULL_FIELD_IMPORT, FirstUseScenario.PACKAGE_IMPORT_UNREAD,
+            FirstUseScenario.FAILING_NESTED_LOAD, FirstUseScenario.VALIDATE_FAILS, FirstUseScenario.ANALYSIS_LOOP,
+            FirstUseScenario.RUN_LOOP, FirstUseScenario.NESTED_NAME_TOO_LARGE);
     // The steps whose load or run is the JVM's first to ask for the class loader so many times that MVEL's loop
     // detection walks the stack, which succeed, and must load, initialize or link no more than a failing one (#1099).
     private static final List<String> WALKING = List.of(FirstUseScenario.MANY_CALLS_LOAD,

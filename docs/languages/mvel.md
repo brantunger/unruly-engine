@@ -119,10 +119,10 @@ Write a nested class as `new Outer.Nested()` after importing `Outer` or its pack
 Your facts' and output object's classes must be reachable from the `load()` thread's too. Looking up a name's class
 file leaves a soft cache entry in the JDK's loaders, freed under memory pressure: not a leak.
 
-An `import pkg.*;` anywhere in a rule's text has the 1,000-character and 64-part limits, checked before any
-lookup even if unused. It fails at the name: `Can't import '...': it has 65 dot-separated parts, and an import may
-have at most 64`. One whose `.*` starts past the text's first 32,768 characters fails too: move it earlier, or use
-`imports(...)`. Inline class imports and `import_static` aren't size-checked.
+An `import pkg.*;` or `import pkg.Cls;` anywhere in a rule's text has the 1,000-character and 64-part limits,
+checked before any lookup even if unused. It fails at the name: `Can't import '...': it has 65 dot-separated parts,
+and an import may have at most 64`. One whose `.*` starts past the text's first 32,768 characters fails too: move it
+earlier, or use `imports(...)`. `import_static` isn't size-checked.
 
 `import acme.Bar.*;` fails, even if unused, when `Bar` declares a `null` public static field:
 `Can't import 'acme.Bar.*': its public static field 'X' is null`.

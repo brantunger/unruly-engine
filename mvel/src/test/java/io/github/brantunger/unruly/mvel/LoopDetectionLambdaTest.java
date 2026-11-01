@@ -36,8 +36,10 @@ class LoopDetectionLambdaTest {
     // site.
     private static final List<String> CALL_SITES_METHODS = List.of("counted", "countedAt", "nextGap",
             "hashOfStack", "hashOfTopAndDepth", "frame");
-    // The method that refuses a name with a '$' and too many parts, and the one that walks the stack for it.
-    private static final List<String> CLASS_LOADER_METHODS = List.of("checkSize", "inNestedLookup");
+    // The method that refuses a name with a '$' and too many parts, and the one that walks the stack for it, and the
+    // method that rejects a class import too large for an import, and the one that walks the stack for it (#1263).
+    private static final List<String> CLASS_LOADER_METHODS = List.of("checkSize", "inNestedLookup", "checkImportSize",
+            "inClassImport");
     // The classes nested in Imports that count the calls and throw once MVEL went round in a loop.
     private static final List<String> IMPORTS_CLASSES = List.of("SharedLookupConfiguration", "LoopGuard",
             "AnalysisLoop", "RunLoop");
