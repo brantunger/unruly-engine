@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.ImportLimits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -441,13 +442,18 @@ class DottedNameLimitsTest {
     }
 
     @Test
-    @DisplayName("an import of a class of 82 parts fails to compile with MVEL's own error, as it did before the bound")
-    void longClassImportFailsAsBefore() {
+    @DisplayName("an import of a class of 82 parts is rejected for its size, as a package import is, and isn't looked"
+            + " up (#1263)")
+    void longClassImportRejectedForItsSize() {
         CountingLoader loader = new CountingLoader();
 
         RuleCompilationException ex = assertRejected(loader, "import " + chain(82) + "; x = 1;");
 
-        assertIssue(ex, 1, 8, "class not found: import " + chain(82) + "; x = 1;");
+        assertIssue(ex, 1, 8, "Can't import '" + chain(82) + "': it has 82 dot-separated parts, and an import may have"
+                + " at most " + ImportLimits.MAX_IMPORT_PARTS);
+        // A load looks short names up too, such as the rule's own classes.
+        assertTrue(loader.mostParts.get() <= ImportLimits.MAX_IMPORT_PARTS, "a lookup of " + loader.mostParts.get()
+                + " parts reached the application's class loader");
     }
 
     /** A path through nested maps of {@code parts} parts, {@code m.a.a...x$y}, whose last key has a '$'. */

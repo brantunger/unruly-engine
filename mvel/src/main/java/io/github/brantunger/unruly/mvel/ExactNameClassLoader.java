@@ -71,17 +71,32 @@ import java.util.stream.Stream;
  * <p>
  * A refused name is reported as a {@link ClassNotFoundException}, so MVEL reads it as it reads any name that isn't a
  * class: a chain as properties, {@code (a.b...c)}, which MVEL first tries as a cast, as the expression in
- * parentheses, and {@code new a.b...c$D()} as a class it can't find when it runs. The one exception is a name with
+ * parentheses, and {@code new a.b...c$D()} as a class it can't find when it runs. One exception is a name with
  * too many parts and a {@code $} that MVEL's lookup of a nested class tries, which is reported as a
  * {@link NameTooLarge}. That lookup tries the next name with a {@code $} after a {@link ClassNotFoundException}, but
  * gives up on the chain after any other exception, which every caller of it catches and reads as "not a class", so a
  * chain costs lookups that grow with n. The first name with a {@code $} it tries is refused, as turning the last dot
  * into a {@code $} leaves the count as it is. A name too long alone doesn't make that loop any longer, so it is always
- * a {@link ClassNotFoundException}. Every rule that loaded without the bound and names no class of more than
- * {@value ClassLookup#MAX_DOLLAR_NAME_PARTS} parts still loads, and runs the same. A member read through a class of
- * more than {@value ClassLookup#MAX_DOLLAR_NAME_PARTS} parts, such as {@code pkg.Outer.Inner.FIELD} with
+ * a {@link ClassNotFoundException}. The other exception is an inline class import, below. Every rule that loaded
+ * without the bound, names no class of more than {@value ClassLookup#MAX_DOLLAR_NAME_PARTS} parts and imports none
+ * inline too large for an import still loads, and runs the same. A member read through a class of more than
+ * {@value ClassLookup#MAX_DOLLAR_NAME_PARTS} parts, such as {@code pkg.Outer.Inner.FIELD} with
  * {@value ClassLookup#MAX_NAME_PARTS} parts before the field, is read as properties, as MVEL gives up on the chain
  * before it looks up the class.
+ * </p>
+ *
+ * <p>
+ * An inline class import, such as {@code import a.b.C;}, is held to the engine's limits on an import (see
+ * {@link ImportLimits}), as an inline package import is (see {@link Imports#checkSize}): MVEL's {@code ImportNode}
+ * looks its name up with {@link Class#forName(String, boolean, ClassLoader)} and this loader, so a name of more than
+ * {@value ImportLimits#MAX_IMPORT_LENGTH} characters or {@value ImportLimits#MAX_IMPORT_PARTS} dot-separated parts,
+ * not counting the whitespace before its {@code ;}, is rejected with an {@link Imports.ImportRejected} before the
+ * application's class loader is asked, which the compiler reports at the import, as
+ * {@code Can't import 'a.a...': it has 65 dot-separated parts, and an import may have at most 64}, where MVEL said
+ * "class not found" (#1263). A real class whose name is that large can't be imported inline, as it can't be by the
+ * engine's imports. Only a name over those limits walks the stack, to tell whether {@code ImportNode} asks for it, so
+ * every other lookup costs what it did; a lookup by any other caller is checked as above. An {@code import_static}
+ * reads its name another way and isn't checked.
  * </p>
  *
  * <p>
@@ -127,6 +142,12 @@ final class ExactNameClassLoader extends ClassLoader {
     // runs, and linking one makes a class. The first refused name with a '$' may be looked up deep in a stack, where
     // that could overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads it.
     private static final Function<Stream<StackWalker.StackFrame>, Boolean> NESTED_LOOKUP = new NestedLookup();
+
+    // MVEL's reading of an inline class import, as import a.b.C;, which looks the name up with Class.forName and this
+    // loader, and what reads the stack for it, a class of its own for the same reason as NESTED_LOOKUP.
+    private static final String CLASS_IMPORT_CLASS = ExceptionReads.MVEL_PACKAGE + "ast.ImportNode";
+    private static final String CLASS_IMPORT_METHOD = "<init>";
+    private static final Function<Stream<StackWalker.StackFrame>, Boolean> CLASS_IMPORT = new ClassImport();
 
     // The start of every name in a package only the JDK may define classes in: the JVM lets no class loader but the
     // platform class loader define one there.
@@ -241,7 +262,8 @@ final class ExactNameClassLoader extends ClassLoader {
 
     /**
      * Looks a class up in the application's class loader, unless its name is too long, or has too many parts, to be
-     * a class the engine can import, or can't be a class's name.
+     * a class the engine can import, or can't be a class's name. For MVEL's reading of an inline class import, the
+     * name is held to the limits on an import first (see {@link #checkImportSize}).
      *
      * @param name The class's binary name
      * @return The class
@@ -258,10 +280,18 @@ final class ExactNameClassLoader extends ClassLoader {
      * @throws NameTooLarge           if MVEL's lookup of a nested class asks for {@code name}, which has a {@code $}
      *                                and more than {@value ClassLookup#MAX_NAME_PARTS} parts, counting one for the
      *                                {@code $}, before the application's class loader is asked
+     * @throws Imports.ImportRejected if MVEL's reading of an inline class import asks for {@code name}, which has more
+     *                                than {@value ImportLimits#MAX_IMPORT_LENGTH} characters, not counting the
+     *                                whitespace it ends with, or more than {@value ImportLimits#MAX_IMPORT_PARTS}
+     *                                dot-separated parts, before the application's class loader is asked
      */
     @Override
     public Class<?> loadClass(String name) throws ClassNotFoundException {
-        checkSize(name);
+        int parts = RuleText.dottedParts(name);
+        if (name.length() > ImportLimits.MAX_IMPORT_LENGTH || parts > ImportLimits.MAX_IMPORT_PARTS) {
+            checkImportSize(name);
+        }
+        checkSize(name, parts);
         if (!ClassLookup.isBinaryName(name)
                 || classFileFirst && !classes.contains(name) && !hasClassFile(getParent(), name)
                 || !classFileFirst && name.startsWith(JDK_ONLY_PACKAGES) && !hasClassFile(JDK_CLASS_FILES, name)) {
@@ -308,9 +338,11 @@ final class ExactNameClassLoader extends ClassLoader {
      * a class that isn't there, unless it has too many parts and a {@code $} and MVEL's lookup of a nested class asks
      * for it, when a {@link NameTooLarge} stops that lookup. Each message says why, such as
      * {@code Can't look up 'a.a.a...$B': it has 81 dot-separated parts and a '$', and a class name with a '$' may have
-     * at most 80}.
+     * at most 80}. An inline class import too large for an import is rejected before this, by
+     * {@link #checkImportSize}.
      *
-     * @param name The name to look up
+     * @param name  The name to look up
+     * @param parts How many dot-separated parts it has, counted once for every check of it
      * @throws ClassNotFoundException if {@code name} has more than {@value ClassLookup#MAX_NAME_LENGTH} characters,
      *                                more than {@value ClassLookup#MAX_NAME_PARTS} dot-separated parts and no
      *                                {@code $}, or a {@code $} and more than {@value ClassLookup#MAX_NAME_PARTS}
@@ -320,11 +352,10 @@ final class ExactNameClassLoader extends ClassLoader {
      *                                and more than {@value ClassLookup#MAX_NAME_PARTS} parts, counting one for the
      *                                {@code $}
      */
-    private static void checkSize(String name) throws ClassNotFoundException {
-        if (!ClassLookup.refuses(name)) {
+    private static void checkSize(String name, int parts) throws ClassNotFoundException {
+        if (!ClassLookup.refuses(name, parts)) {
             return;
         }
-        int parts = RuleText.dottedParts(name);
         if (name.indexOf('$') >= 0) {
             if (parts > ClassLookup.MAX_DOLLAR_NAME_PARTS) {
                 String refusal = "Can't look up '" + MessageText.quote(name) + "': it has " + parts
@@ -342,6 +373,27 @@ final class ExactNameClassLoader extends ClassLoader {
         // Refused, and not for its parts, so for its length.
         throw new ClassNotFoundException("Can't look up '" + MessageText.quote(name) + "': it has " + name.length()
                 + " characters, and a class name may have at most " + ClassLookup.MAX_NAME_LENGTH);
+    }
+
+    /**
+     * Rejects a name too long, or with too many parts, for an import, when MVEL's reading of an inline class import
+     * asks for it, as {@link Imports#checkSize} rejects a package import, so the application's class loader isn't
+     * asked for it and the message says why. MVEL passes the text up to the {@code ;} as it is, so the whitespace it
+     * ends with, which MVEL itself trims before its second lookup, isn't counted. Any other lookup, such as of a
+     * dotted chain MVEL tries as a class, is left to {@link #checkSize(String, int)}.
+     *
+     * @param name The name to look up, with more than {@value ImportLimits#MAX_IMPORT_LENGTH} characters or more
+     *             than {@value ImportLimits#MAX_IMPORT_PARTS} dot-separated parts
+     * @throws Imports.ImportRejected if MVEL's reading of an inline class import asks for {@code name}, and it is
+     *                                still too large without the whitespace it ends with
+     */
+    private static void checkImportSize(String name) {
+        if (!inClassImport()) {
+            return;
+        }
+        // trim() drops the whitespace before the ';', every character up to U+0020, as MVEL's own trim() does before
+        // its second lookup: MVEL skips the whitespace before the name.
+        Imports.checkSize(name.trim());
     }
 
     /**
@@ -394,6 +446,17 @@ final class ExactNameClassLoader extends ClassLoader {
      */
     private static boolean inNestedLookup() {
         return StackWalker.getInstance().walk(NESTED_LOOKUP);
+    }
+
+    /**
+     * Tells whether MVEL's reading of an inline class import is what asks for a name. Only a name too large for an
+     * import asks, so the stack is walked only for a name a rule has no use for.
+     *
+     * @return {@code true} if the first frame that is neither this class's nor {@link Class}'s is
+     *         {@code ImportNode}'s constructor
+     */
+    private static boolean inClassImport() {
+        return StackWalker.getInstance().walk(CLASS_IMPORT);
     }
 
     /**
@@ -469,7 +532,18 @@ final class ExactNameClassLoader extends ClassLoader {
          * @return {@code true} if the name is refused
          */
         static boolean refuses(String name) {
-            int parts = RuleText.dottedParts(name);
+            return refuses(name, RuleText.dottedParts(name));
+        }
+
+        /**
+         * Tells whether a name looked up with this loader is refused, as {@link #refuses(String)} does, with its
+         * dot-separated parts already counted.
+         *
+         * @param name  The name to look up
+         * @param parts How many dot-separated parts it has
+         * @return {@code true} if the name is refused
+         */
+        static boolean refuses(String name, int parts) {
             int mostParts = name.indexOf('$') >= 0 ? MAX_DOLLAR_NAME_PARTS : MAX_NAME_PARTS;
             return name.length() > MAX_NAME_LENGTH || parts > mostParts;
         }
@@ -680,6 +754,38 @@ final class ExactNameClassLoader extends ClassLoader {
                 if (NESTED_LOOKUP_CLASS.equals(frame.getClassName())
                         && NESTED_LOOKUP_METHOD.equals(frame.getMethodName())) {
                     return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Tells whether the first frame of a stack that is neither {@link ExactNameClassLoader}'s nor {@link Class}'s, as
+     * {@link Class#forName(String, boolean, ClassLoader)}'s are, is {@code ImportNode}'s constructor, read with a loop
+     * rather than a stream, as {@link NestedLookup} reads one. Only the first such frame is read, so a lookup made by
+     * anything else while an import is read, such as a class's static initializer, isn't taken for the import's, and
+     * at most {@value #MOST_FRAMES} frames.
+     */
+    static final class ClassImport implements Function<Stream<StackWalker.StackFrame>, Boolean> {
+
+        /**
+         * The most frames read: enough for this class's and {@link Class}'s between {@code ImportNode} and the walk,
+         * 6 on JDK 21 and 5 on JDK 25 (3 of this class's, then 3 or 2 of {@link Class}'s).
+         */
+        static final int MOST_FRAMES = 16;
+
+        private static final String LOADER_CLASS = ExactNameClassLoader.class.getName();
+        private static final String CLASS_CLASS = Class.class.getName();
+
+        @Override
+        public Boolean apply(Stream<StackWalker.StackFrame> frames) {
+            Iterator<StackWalker.StackFrame> each = frames.iterator();
+            for (int seen = 0; seen < MOST_FRAMES && each.hasNext(); seen++) {
+                StackWalker.StackFrame frame = each.next();
+                String type = frame.getClassName();
+                if (!LOADER_CLASS.equals(type) && !CLASS_CLASS.equals(type)) {
+                    return CLASS_IMPORT_CLASS.equals(type) && CLASS_IMPORT_METHOD.equals(frame.getMethodName());
                 }
             }
             return false;

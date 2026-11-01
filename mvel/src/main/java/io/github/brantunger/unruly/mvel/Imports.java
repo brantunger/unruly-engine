@@ -157,9 +157,10 @@ final class Imports {
     /**
      * Rejects an import too long, or with too many parts, to look up, as the engine rejects one it is built with: the
      * same limits, and the same message, the quoted import and the reason {@link ImportLimits#importSizeProblem}
-     * gives. {@link ExactNameClassLoader} bounds the names it looks up from the same limits.
+     * gives. {@link ExactNameClassLoader} bounds the names it looks up from the same limits, and rejects an inline
+     * class import with this, when MVEL's reading of one asks it for a name too large for an import (#1263).
      *
-     * @param name The package's name
+     * @param name The package's or the class's name
      * @throws ImportRejected if {@code name} has more than {@value ImportLimits#MAX_IMPORT_LENGTH} characters or more
      *                        than {@value ImportLimits#MAX_IMPORT_PARTS} dot-separated parts
      */
@@ -581,8 +582,8 @@ final class Imports {
          * Imports a package an {@code import pkg.*;} in the expression's own text names, as MVEL does, once its name
          * is checked as the engine checks its own imports: MVEL looks each name the expression uses up in it, once for
          * each dot, as a nested class. The rule list's own packages are set, not added, so they aren't checked again.
-         * An inline import of a class, or an {@code import_static}, isn't checked: MVEL looks its name up once or
-         * twice, then rejects the expression if it isn't a class.
+         * An inline import of a class is checked by the class loader instead, as MVEL looks its name up with that
+         * (see {@link ExactNameClassLoader}); an {@code import_static} isn't checked.
          *
          * <p>
          * When the name is a class, MVEL also imports each public static field declared in it, none it inherits, or
@@ -840,10 +841,10 @@ final class Imports {
     }
 
     /**
-     * What the engine throws when an {@code import} in an expression's own text names a package too long, or with too
-     * many parts, to look up, or a class with a public static field whose value is {@code null}, which MVEL can't
-     * import, which the compiler reports as a compile error at the name. MVEL lets it through as it is, as it does any
-     * {@link RuntimeException} that isn't its own.
+     * What the engine throws when an {@code import} in an expression's own text names a package or a class too long,
+     * or with too many parts, to look up, or a class with a public static field whose value is {@code null}, which
+     * MVEL can't import, which the compiler reports as a compile error at the name. MVEL lets it through as it is, as
+     * it does any {@link RuntimeException} that isn't its own.
      */
     static final class ImportRejected extends IllegalArgumentException {
 
