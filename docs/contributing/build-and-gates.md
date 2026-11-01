@@ -145,16 +145,16 @@ so a second build reuses task outputs, including those of another branch, and th
 | JDK 25 and 26 on `ubuntu-latest` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=<version>` | Only the tests use them |
 | `native-image` on `ubuntu-latest`, GraalVM CE 21.0.2 | `./gradlew :native-smoke:installDist -PnullAway=false`, then `native-image` and the binary, twice, once [strict](../native-image.md#-strict-metadata) | The engine and MVEL work in both images with only the jar's and application's metadata; see [Native image](../native-image.md) |
 | `docs-and-hygiene` on `ubuntu-latest` | `docs/scripts/check_docs.py`, a line-ending check, actionlint, zizmor, `docs/scripts/check_style.py` on the pages a pull request changes, then `docs/scripts/check_fixtures.py` | Broken links and anchors, joined table rows, SVGs without `role="img"`, `<title>` or `<desc>`, stale copies of build values in `README.md` and `docs/native-image.md`, files stored with CRLF, the [style guide](style.md)'s mechanical rules, and mistakes in the workflows and their `run` blocks' shell, which actionlint checks with the runner's shellcheck |
-| `dependency-graph` on `ubuntu-latest`, on pushes to `main` only | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
+| `dependency-graph` on `ubuntu-latest`, on pushes to `main` | `gradle/actions/dependency-submission`, which resolves every configuration and submits the graph | Dependabot alerts then cover transitive dependencies too. The action turns dependency verification off, so this job checks nothing |
 | `ci-result` | Nothing | Passes only when `build`, `build-windows` and `native-image` succeeded, or skipped as allowed below, and `docs-and-hygiene` succeeded. Any other result fails, such as a job cancelled before a runner took it; `changes` isn't judged. It's the one check branch protection can require, because a skipped matrix job doesn't report its per-OS checks |
 
-A docs-only pull request (files under `docs/` or ending in `.md`, none under a `src/` directory) skips the build
-and `native-image`. A release PR, a new `version=` in `gradle.properties` plus documentation or
-`.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest` leg, coverage gate included, and skips
-`native-image`. `changes` decides; if it fails, everything runs, as on a push.
+A docs-only pull request or push (only `docs/` and `.md` files, none under a `src/` directory) skips the build,
+`native-image` and `dependency-graph`; a push, only if the previous push's run passed. A release PR, a new `version=`
+in `gradle.properties` plus documentation or `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest`
+leg, coverage gate included, and skips `native-image`. `changes` decides; if it fails, everything runs.
 
-A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started, and GitHub
-keeps one waiting run per branch, so a later push cancels a waiting one, whose commit gets no build.
+A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started, but GitHub
+keeps one waiting run per branch: a later push cancels a waiting one.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
 may have findings in lines you didn't touch. zizmor warns too, until #1328. Steps after a failed one still run.
