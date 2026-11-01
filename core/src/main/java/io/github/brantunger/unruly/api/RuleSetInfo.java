@@ -48,7 +48,8 @@ public final class RuleSetInfo {
      *
      * @param rules    The rules, in evaluation order; copied
      * @param checksum Their checksum, as {@link #checksum()} describes it
-     * @param loadedAt When they were loaded, or {@code null} if no rules have been loaded
+     * @param loadedAt When they finished compiling, as {@link #loadedAt()} describes it, or {@code null} if no rules
+     *                 have been loaded
      * @return The information
      * @throws NullPointerException if {@code rules}, one of its elements, or {@code checksum} is {@code null}
      */
@@ -92,9 +93,11 @@ public final class RuleSetInfo {
     }
 
     /**
-     * Returns when the rules were loaded.
+     * Returns when the rules finished compiling, by the system clock.
      *
-     * @return The time {@link RulesEngine#load(List)} finished, or {@code null} if no rules have been loaded
+     * @return When {@link RulesEngine#load(List)} finished compiling the rules, before it made any
+     *         {@link RulesEngineBuilder#copiesAtLoad(int) copies at load} and swapped the rules in; or {@code null} if
+     *         no rules have been loaded
      */
     public @Nullable Instant loadedAt() {
         return loadTime;

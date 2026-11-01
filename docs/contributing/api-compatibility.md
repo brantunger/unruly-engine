@@ -35,8 +35,8 @@ Each project writes its report to `<project>/build/reports/japicmp/report.html` 
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
 `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, and each project's `apiCheck { }` block in its `build.gradle.kts`
 says which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
-package, except the constructors the test kit calls: `:core:japicmpTestKitLinkage` checks those; see
-[The test kit's links into core](#-the-test-kits-links-into-core).
+and `internal` packages, except the `core` constructors and methods the test kit calls, which
+[The test kit's links into core](#-the-test-kits-links-into-core) covers.
 
 ## 🚫 What counts as a break
 
@@ -193,9 +193,8 @@ What fails although nothing broke:
 
 ## 📅 Baselines
 
-The baseline is the artifact's newest release on Maven Central that isn't higher than the version in
-`gradle.properties`. Because the baseline is never higher than the build's version, a branch is always checked
-against its own release line, and a release PR's version, not yet published, is compared with the release before it.
+Because the baseline is never higher than the build's version, a branch is always checked against its own release
+line, and a release PR's version, not yet published, is compared with the release before it.
 
 Every artifact the check compares now has its own release, so each is compared with its newest. For an
 artifact added later, the check tries three things in order, and its `apiCheck { }` block supplies the last two until
@@ -216,9 +215,8 @@ build instead of skipping the check.
 
 The check downloads the baseline, so `./gradlew build` needs access to Maven Central, or `--offline` with the
 baseline already in the Gradle cache. A local build keeps the lookup for 24 hours, so it may compare with a release
-up to a day old; pass `"-PapiCheck.refresh"` for the newest. CI and the release workflow pass it on every build, so they
-always compare with the newest. The build verifies the download like every other dependency: see
-[The API baseline](dependency-verification.md#-the-api-baseline).
+up to a day old; pass `"-PapiCheck.refresh"` for the newest. CI and the release workflow always pass it. The build
+verifies the download like every other dependency: see [The API baseline](dependency-verification.md#-the-api-baseline).
 
 ## 📋 Reference
 
@@ -235,5 +233,6 @@ always compare with the newest. The build verifies the download like every other
 | A new checked exception on a method | ❌ | Callers that don't handle it stop compiling |
 | A parameter made non-null, or a return value made `@Nullable` | ❌ | Kotlin sources stop compiling; japicmp doesn't see it |
 | Sealing an interface | ❌ | japicmp doesn't see it: add the `!` by hand |
-| A change to one of the `core` constructors the test kit calls | ❌ | A released test kit on a newer `core` stops linking; `:core:japicmpTestKitLinkage` checks them |
+| A change to one of the `core` members the test kit calls | ❌ | A released test kit on a newer `core` stops linking; `:core:japicmpTestKitLinkage` checks them |
 | Any other change to a class in the `core` package | ✅ | Internal: exported only to the test kit's module, and left out of the check |
+| Any change to a class in the `internal` package | ✅ | Internal: exported to no module, and left out of the check |

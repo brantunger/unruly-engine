@@ -486,8 +486,8 @@ public final class Rule {
          *
          * @return A new rule
          * @throws IllegalStateException if the name is {@code null} or blank, the condition or action is
-         *                               {@code null}, a tag is {@code null} or blank, or {@code validTo} isn't after
-         *                               {@code validFrom}. The message names the first such field, such as
+         *                               {@code null}, {@code validTo} isn't after {@code validFrom}, or a tag is
+         *                               {@code null} or blank. The message names the first such field, such as
          *                               {@code ruleName must not be null}.
          */
         public Rule build() {
