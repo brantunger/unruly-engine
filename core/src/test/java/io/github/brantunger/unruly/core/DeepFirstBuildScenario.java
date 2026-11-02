@@ -195,9 +195,9 @@ final class DeepFirstBuildScenario {
 
     /**
      * Names the check of {@link StackHeadroom} an overflow was thrown in: the method below the frames of the recursion
-     * every check shares. The longest check recurses 960 frames, fewer than the 1,024 the JVM keeps of a stack trace,
-     * so the method is in it. A mode whose check is renamed counts no failed check, which the settings and prepare
-     * tests fail on.
+     * every check shares. The longest check recurses 960 frames without {@code -Xcomp}, as here, fewer than the 1,024
+     * the JVM keeps of a stack trace, so the method is in it. A mode whose check is renamed counts no failed check,
+     * which the settings and prepare tests fail on.
      *
      * @param e The overflow
      * @return The check's name, or {@code null} if the overflow wasn't thrown in one

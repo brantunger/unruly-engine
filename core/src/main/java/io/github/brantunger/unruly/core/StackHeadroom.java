@@ -1,5 +1,7 @@
 package io.github.brantunger.unruly.core;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Checks that the caller's stack has room for what {@code run()}, {@code load()}, {@code validate()} and
  * {@code close()} count, borrow and give back, before any of them has taken anything. Each takes engine-wide state in
@@ -82,12 +84,13 @@ final class StackHeadroom {
      * with the engine's classes, as a build whose builder names MVEL does: made from each of the last 900 depths of a
      * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code MvelFactNames} unusable, at 6 depths on
      * JDK 21 and 2 on JDK 25, and 240 left nothing, on both, and twice on JDK 21; the engine's own classes were left
-     * unusable by no check, even of 80 frames. The JVM's first build runs it while it is still interpreted, at about
-     * 170 bytes a frame on x64, once for the engine's classes and, if it prepares a language, again for that: it
-     * reserves about 160 KB, which the JVM's first engine needs left on the stack it's built on. A later build, or a
-     * load or {@code validate()} that first uses a language, as a load does with MVEL found with
-     * {@link java.util.ServiceLoader} and not named, that prepares a language of a class no engine has prepared yet
-     * runs it again, compiled if runs have made it hot, at about 50 bytes a frame, so it reserves about 48 KB:
+     * unusable by no check, even of 80 frames. The JVM's first build runs it while it is still interpreted, unless the
+     * JVM compiles every method first (see {@link #COMPILED_INITIALIZING_FRAMES}), at about 170 bytes a frame on x64,
+     * once for the engine's classes and, if it prepares a language, again for that: it reserves about 160 KB, which
+     * the JVM's first engine needs left on the stack it's built on. A later build, or a load or {@code validate()}
+     * that first uses a language, as a load does with MVEL found with {@link java.util.ServiceLoader} and not named,
+     * that prepares a language of a class no engine has prepared yet runs it again, compiled if runs have made it
+     * hot, at about 50 bytes a frame, so it reserves about 48 KB:
      * measured with it compiled at the first build, 640 frames left {@code MvelFactNames} unusable at 29 of 1,500
      * depths, and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't
      * swept on its own: it prepares the language alone, without the engine's classes the measured build initialized
@@ -106,6 +109,27 @@ final class StackHeadroom {
      * {@code ErrorReporting} still need the most.
      */
     static final int INITIALIZING_FRAMES = 960;
+
+    /**
+     * How many frames {@link #checkInitializing()} recurses in place of {@link #INITIALIZING_FRAMES} when the JVM
+     * compiles every method before its first run, as HotSpot does under {@code -Xcomp}. The JVM's first build then runs
+     * the check compiled, at about 50 bytes a frame, where {@link #INITIALIZING_FRAMES} reserves about 48 KB, a third
+     * of what the initializing after it needs: a first build deep in a stack passed the check, then overflowed in the
+     * JDK clock's static initializer, which left it unusable for every later build (#1305). This reserves about the
+     * 160 KB the check reserves interpreted. Measured on JDK 21 and 26 on x64, each time at the first depth whose check
+     * passed, in a new JVM, with MVEL named: 2,400 and 2,600 frames left the engine's {@code FlightRecorderEvents}
+     * unusable on JDK 21, 1,800 the JDK's clock on both, and 2,800 left nothing on both, nor 3,300 on JDK 21, 25 and
+     * 26, so it has about a fifth more than the least. Under {@code -Xcomp} with only the JIT's first tier
+     * ({@code -XX:TieredStopAtLevel=1}), whose frames are about three times the size, 960 frames left a class unusable
+     * too, and this reserves about three times what it does with both tiers: a first build there needed more than
+     * 256 KB, and 512 KB was enough.
+     */
+    static final int COMPILED_INITIALIZING_FRAMES = 3300;
+
+    // The start of HotSpot's java.vm.info when it compiles every method before its first run, as under -Xcomp:
+    // "compiled mode", then ", sharing" with a class data archive, or ", emulated-client" when only the first JIT
+    // tier compiles. "mixed mode" by default, "interpreted mode" under -Xint.
+    private static final String COMPILED_MODE = "compiled mode";
 
     // Written by a check that finds them different, so the recursion has an effect the JIT can't drop. Each is the
     // same every time, so the checks of other threads only read it.
@@ -157,12 +181,46 @@ final class StackHeadroom {
     }
 
     /**
-     * Recurses {@link #INITIALIZING_FRAMES} frames.
+     * Recurses {@link #INITIALIZING_FRAMES} frames, or {@link #COMPILED_INITIALIZING_FRAMES} if the JVM compiles every
+     * method before its first run. The JVM's mode is read on every call, never into a field, so this class keeps no
+     * static initializer, which a first check deep in a stack could leave broken for the life of the JVM.
      *
      * @throws StackOverflowError if the stack can't hold them
      */
     static void checkInitializing() {
-        initializingSink = descend(INITIALIZING_FRAMES, 1, 2, 3, 4);
+        initializingSink = descend(compilesEverything(vmInfo()) ? COMPILED_INITIALIZING_FRAMES : INITIALIZING_FRAMES,
+                1, 2, 3, 4);
+    }
+
+    /**
+     * Tells whether the JVM compiles every method before its first run, from its {@code java.vm.info}: HotSpot's
+     * starts with {@code compiled mode} under {@code -Xcomp}, as {@code compiled mode, sharing}. Any other value, or
+     * none, as on a JVM that doesn't set it, is taken for a JVM that interprets a method's first runs. Compared a
+     * char at a time, not with {@link String#startsWith}, which on JDK 21 may initialize {@code java.lang.Long} (see
+     * {@code Lookups}).
+     *
+     * @param vmInfo The JVM's {@code java.vm.info}, or {@code null} if it has none or it can't be read
+     * @return {@code true} if it names the mode that compiles every method first
+     */
+    static boolean compilesEverything(@Nullable String vmInfo) {
+        if (vmInfo == null || vmInfo.length() < COMPILED_MODE.length()) {
+            return false;
+        }
+        for (int i = 0; i < COMPILED_MODE.length(); i++) {
+            if (vmInfo.charAt(i) != COMPILED_MODE.charAt(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // The JVM's java.vm.info, or null if it has none or a security manager won't let it be read.
+    private static @Nullable String vmInfo() {
+        try {
+            return System.getProperty("java.vm.info");
+        } catch (SecurityException e) {
+            return null;
+        }
     }
 
     // Each frame adds four values once the call below it returns, so it keeps them on the stack across that call,

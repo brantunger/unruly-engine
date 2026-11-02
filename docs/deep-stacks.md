@@ -51,20 +51,20 @@ own are its `prepare()`'s to load.
 
 **On JDK 21 and 22, outside a native image, it also initializes the JDK's
 `jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep
-in a stack, that read could leave every later one failing for the life of the JVM. It initializes `ForkJoinPool` too,
+in a stack, that read could leave every later one failing for the JVM's life. It initializes `ForkJoinPool` too,
 with [the common-pool cost](#-what-a-language-prepares).
 
-The check takes about 160 KB on x64, so a first build's thread needs about 200 KB on Windows x64, more on macOS,
-where 256 KB can be too small.
+The check takes about 160 KB on x64, `-Xcomp` included, so a first build's thread needs about 200 KB on Windows x64,
+more on macOS, where 256 KB can be too small. An AOT code cache (JDK 25 and later, #1293) is untested.
 
 **The first `build()` also warms up the JDK's reflection, outside a native image.** Over the public methods of
 `Object`, `Class`, `Math`, `String`, `Thread`, `System` and `Iterable`, it reads the generic return and parameter
-types, the annotations, and the class or method that declares each type variable among those types. Then it calls
-`Object.hashCode` reflectively.
+types, the annotations, and each type variable's declaring class or method. Then it calls `Object.hashCode`
+reflectively.
 
 So a deep first read of a generic type, as in MVEL's analysis of a method a rule calls or the default output writer's
 first write through a generic setter, finds the JDK's `sun.reflect.generics` classes for those methods' shapes
-initialized already. Nor can a deep first reflective call of a JDK method leave the proxy class of an annotation those
+initialized. Nor can a deep first reflective call of a JDK method leave the proxy class of an annotation those
 methods carry, such as `@IntrinsicCandidate`, unusable.
 
 ## 🧩 What a language prepares
@@ -149,7 +149,7 @@ names, skipping missing ones; a native image names none. Nothing prepares
 classes a first logged message initializes: with `slf4j-simple`, SLF4J's `Level` and `FormattingTuple`; with
 Logback, some of its own and the `java.time` classes it formats dates with.
 
-`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, one UTF-16 string read and its arguments made,
+`FacadeFirstUseInitializationTest`, in a new JVM with no engine built, one UTF-16 string read,
 calls every public method of `Throwables`, `ImportLimits` and `MessageText`, `MessageText`'s with text from several
 Unicode planes, builds a tagged rule, declares a fact, facts and language, and sets run tags, all starting above
 U+00FF (#1292), and makes compile contexts declaring facts (#1322). It fails if they initialize a class with a static
@@ -162,7 +162,7 @@ JDK's (#1286).
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
 exception, can overflow while the provider loads those classes. The engine catches that overflow in its ERROR and
 WARN log calls, all but a few last-resort ones made only while a fatal error, or a failure it never expects, is
-already being handled.
+being handled.
 
 The call then ends as it would have near the top: `load()` throws its `RuleCompilationException`, or succeeds
 past a language's warning; a run fails the rule, throws its failure or what stopped it, or goes on past a warning or
