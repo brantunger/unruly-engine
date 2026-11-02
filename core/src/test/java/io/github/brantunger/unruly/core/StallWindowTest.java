@@ -91,6 +91,9 @@ class StallWindowTest {
                 assertEquals(Map.of("ok", true), output.get(), "the run that found the only copy held never ended");
                 assertTrue(logs.contains("All 1 compiled copies of the rules were in use for 1 ms without one being"
                         + " given back, so this run made an extra copy"), logs);
+                assertTrue(logs.contains("so does a rule slower than the wait; and so does a language's"
+                        + " Session.close() that is slow, when a run of a rule list a reload replaced closes its copy"
+                        + " before it gives its permit back."), logs);
             } finally {
                 held.release();
                 end(overflowing);
