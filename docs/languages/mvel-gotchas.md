@@ -79,10 +79,10 @@ MVEL's compile time about doubles with each level of `new` nested in `new`, or `
 MVEL 2.5.4.Final, a condition of 17 nested `new Integer(` took about 400 ms to load, and one of 17 nested `(1 in [`
 about 700 ms. Nothing bounds the time: only a stack overflow fails `load()`.
 
-A stack overflow reads `the expression is too long or too deeply nested to compile`. With under about 48 KB of stack
-left where the engine caught it, or 160 KB before the JVM's JIT compiles the engine's check, it reads
-`the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small`
-instead. A long expression on a small thread, such as 256 KB on macOS, can get it too.
+A stack overflow reads `the expression is too long or too deeply nested to compile`. Under about 48 KB of stack left
+where the engine caught it, or 160 KB under `-Xcomp` or before the JIT compiles the engine's check, it reads
+`the stack ran out: it was compiled too deep in the stack, or on a thread whose stack is too small`.
+A long expression on a small thread, such as 256 KB on macOS, can get it too.
 
 Who pays it:
 
