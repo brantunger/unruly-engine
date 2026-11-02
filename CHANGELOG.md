@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.33.14](https://github.com/brantunger/unruly-engine/compare/v2.33.13...v2.33.14) (2026-11-02)
+
+
+### Bug Fixes
+
+* the copy-limit stall WARN and compiled-copies.md name a slow Session.close() of a replaced rule list's copy as a cause ([#1309](https://github.com/brantunger/unruly-engine/issues/1309)) ([#1355](https://github.com/brantunger/unruly-engine/issues/1355)) ([54f1489](https://github.com/brantunger/unruly-engine/commit/54f148935d30641ae9e859699826cd9c879637af))
+
 ## [2.33.13](https://github.com/brantunger/unruly-engine/compare/v2.33.12...v2.33.13) (2026-11-01)
 
 
