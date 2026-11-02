@@ -58,14 +58,13 @@ reload releases them, and the next runs build copies again.
 
 ## 🔧 Limiting the copies
 
-A copy isn't free: in MVEL each expression is compiled again the first time that copy runs it, and the copy builds
-accessors of its own. A thread pool bounds the number of copies, because runs can't overlap more than its
-threads. Virtual threads don't bound anything: when each request runs on its own virtual thread, thousands of runs
-overlap, and without a limit the copies grow with them.
+A copy isn't free: in MVEL it compiles each expression again and builds accessors of its own. A thread pool bounds
+the number of copies, because runs can't overlap more than its threads. Virtual threads don't bound anything: when
+each request runs on its own virtual thread, thousands of runs overlap, and without a limit the copies grow with them.
 
-So an engine limits **runs on virtual threads** to one copy for every two processors, and at least one. The number of
-processors is read once, by `build()`, so an engine's limit doesn't change while it runs. Runs on platform threads
-aren't limited: their pool already bounds the copies. Set your own limit, or turn the default off:
+So an engine limits **runs on virtual threads** to one copy for every two processors, and at least one. `build()`
+reads the number of processors once, so the engine's limit never changes. Runs on platform threads aren't
+limited: their pool already bounds the copies. Set your own limit, or turn the default off:
 
 ```java
 // A limit on runs from every kind of thread, virtual and platform
@@ -86,8 +85,11 @@ RulesEngine<LoanDecision> unlimited = RulesEngineBuilder.firstMatch(LoanDecision
 
 The limit belongs to the **engine**, not to one rule list: while `load()` swaps in a new list (see
 [Reloading rules while running](thread-safety.md#-reloading-rules-while-running)), runs still using the old list
-count against the same limit as runs on the new one, so a reload never raises it. Right after a reload, a run on
-the new rules may wait for runs on the old rules to finish, when together they already hold every copy.
+count against the same limit as runs on the new one, so a reload never raises it.
+
+Right after a reload, a run on the new rules may wait for runs on the old rules to finish, when together they already
+hold every copy, and for a language's `Session.close()` to finish when a run of the old rules closes its copy: a run
+gives its permit back only after it has kept or closed the copy.
 
 `maxCopies(n)` therefore bounds the runs that make progress, not the copies that exist: stalled runs, and runs started
 on a thread that holds or is getting a copy, take extra copies (below), and the list a reload replaced keeps idle
@@ -120,8 +122,7 @@ What it doesn't change:
 
 - **The limit.** A limited run still waits for a place; it just finds a copy ready. `build()` throws
   `IllegalArgumentException` when `n` is more than `maxCopies(...)`. The default limit and `unlimitedCopies()` accept
-  any `n`. Any run can borrow any idle copy, but with the default limit no more runs on virtual threads than the limit
-  hold one at once, so the copies above it are used only while runs on platform threads hold copies too.
+  any `n`. Copies above the default limit are used only while runs on platform threads hold copies too.
 
 - **Copies made during a run.** A copy a run makes because none is idle, and the extra copy of a stalled run, or of
   one started on a thread that holds or is getting a copy, are made as before, and not warmed up.

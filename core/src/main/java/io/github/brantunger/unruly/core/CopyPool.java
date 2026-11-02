@@ -938,8 +938,10 @@ final class CopyPool {
             Failures.logWarn(log, "All {} compiled copies of the rules were in use for {} ms without one being given"
                             + " back, so this run made an extra copy instead of waiting for ever. A rule or listener"
                             + " that waits for a run of this engine on another thread causes that; so does a rule"
-                            + " slower than the wait. If runs are meant to wait for each other, build the engine with a"
-                            + " larger maxCopies(n), or with unlimitedCopies() if it runs on a thread pool.",
+                            + " slower than the wait; and so does a language's Session.close() that is slow, when a run"
+                            + " of a rule list a reload replaced closes its copy before it gives its permit back. If"
+                            + " runs are meant to wait for each other, build the engine with a larger maxCopies(n), or"
+                            + " with unlimitedCopies() if it runs on a thread pool.",
                     copyLimit.maxCopies(), stallWindow);
         }
     }
