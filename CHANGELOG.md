@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.34.1](https://github.com/brantunger/unruly-engine/compare/v2.34.0...v2.34.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* under -Xcomp, the JVM's first build() checks for about the same stack room as it does interpreted, so a deep first build can't break java.time.Clock for the life of the JVM ([#1305](https://github.com/brantunger/unruly-engine/issues/1305)) ([#1360](https://github.com/brantunger/unruly-engine/issues/1360)) ([fca1ce8](https://github.com/brantunger/unruly-engine/commit/fca1ce82b683a13aa16a28ffad49bef01e1d717f))
+
 ## [2.34.0](https://github.com/brantunger/unruly-engine/compare/v2.33.14...v2.34.0) (2026-11-02)
 
 
