@@ -251,6 +251,34 @@ class ContractKitChecksTest {
         };
     }
 
+    /**
+     * Wraps a language so that what its actions throw reaches the engine inside an exception of the language's own,
+     * whose message puts {@code words} before the message of what it wraps, as an adapter that lets its runtime's
+     * exception through, such as SpEL's {@code SpelEvaluationException}, does (#1307). With no words, the wrapper has
+     * exactly the message of what it wraps.
+     */
+    private static ExpressionLanguage wrappingActionFailures(ExpressionLanguage language, String words) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> {
+                            try {
+                                return action.execute(actionContext, session);
+                            } catch (RuntimeException e) {
+                                throw new IllegalStateException(words + e.getMessage(), e);
+                            }
+                        };
+                    }
+                };
+            }
+        };
+    }
+
     /** Wraps a language so that its compiler's newSession() returns what {@code sessions} supplies. */
     static ExpressionLanguage withSessions(ExpressionLanguage language, Supplier<Session> sessions) {
         return new ForwardingExpressionLanguage(language) {
@@ -3541,13 +3569,97 @@ class ContractKitChecksTest {
     }
 
     @Test
+    @DisplayName("a language that throws a nested run's failure on inside an exception of its own, with words of its"
+            + " own, fails only the check whose getter throws the nested failure on, which the engine would log twice"
+            + " (#1307)")
+    void wrappedNestedFailureFails() {
+        ExpressionLanguage language = wrappingActionFailures(new ToyExpressionLanguage(), "toy action failed: ");
+
+        assertEquals(List.of("nestedRunFailureRethrownAsIs"), failedChecks(new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        }));
+    }
+
+    @Test
+    @DisplayName("the failure of a language that throws a nested run's failure on with words of its own says to throw"
+            + " what reached the expression, and quotes the action's failure (#1307)")
+    void wrappedNestedFailureReported() {
+        ExpressionLanguage language = wrappingActionFailures(new ToyExpressionLanguage(), "toy action failed: ");
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "nestedRunFailureRethrownAsIs"));
+
+        assertTrue(failure.getMessage().startsWith("the action whose getter threw the nested run's failure on failed"
+                + " with words of the language's own around that failure, which the engine logs a second time: throw"
+                + " what reached the expression, or a wrapper with exactly its message, so that the failure starts"
+                + " \"Failed to execute action for rule 'outer': a nested run() failed: \", but it was: Failed to"
+                + " execute action for rule 'outer': toy action failed: "), failure.getMessage());
+        assertTrue(failure.getMessage().contains("(after a nested run() failed: "), failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("a language whose action goes on when the getter it read throws the nested run's failure fails the"
+            + " check, since the outer run must fail (#1307)")
+    void swallowedNestedFailureFails() {
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = new ToyExpressionLanguage().newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> {
+                            try {
+                                return action.execute(actionContext, session);
+                            } catch (RuntimeException e) {
+                                // Only the outer action's: what the nested run's own action throws still fails it.
+                                if (Throwables.causeChain(e).stream()
+                                        .anyMatch(RuleExecutionException.class::isInstance)) {
+                                    return ActionResult.done();
+                                }
+                                throw e;
+                            }
+                        };
+                    }
+                };
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "nestedRunFailureRethrownAsIs"));
+
+        assertEquals("the run around the run that failed inside its action didn't fail, though the getter its action"
+                + " read threw the nested run's failure: it returned {}", failure.getMessage());
+        assertInstanceOf(RuleExecutionException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("a language that throws a nested run's failure on inside a wrapper with exactly its message passes"
+            + " every check (#1307)")
+    void sameMessageWrapperPasses() {
+        ExpressionLanguage language = wrappingActionFailures(new ToyExpressionLanguage(), "");
+
+        assertEquals(List.of(), failedChecks(new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        }));
+    }
+
+    @Test
     @DisplayName("a language that keeps a run's state on the stack or in its sessions passes the checks that start a"
             + " run inside a condition, and make a nested run fail (#843)")
     void ownRunStatePassesNestedRunChecks() {
         ExpressionLanguage withSessions = withSessions(new ToyExpressionLanguage(), () -> new Session() {
         });
         for (String check : List.of("nestedRunInsideACondition", "nestedRunFailsInsideACondition",
-                "nestedRunFailsInsideAnAction")) {
+                "nestedRunFailsInsideAnAction", "nestedRunFailureRethrownAsIs")) {
             assertDoesNotThrow(() -> runCheck(new ToyConjunctionsContractTest(), check), check);
             assertDoesNotThrow(() -> runConjunctionsCheck(ToyConjunctionsContractTest.conjunctions(withSessions),
                     check), check);
@@ -3564,7 +3676,7 @@ class ContractKitChecksTest {
 
         List<Thread> earlier = new ArrayList<>();
         for (String check : List.of("nestedRunInsideAnAction", "nestedRunInsideACondition",
-                "nestedRunFailsInsideACondition", "nestedRunFailsInsideAnAction")) {
+                "nestedRunFailsInsideACondition", "nestedRunFailsInsideAnAction", "nestedRunFailureRethrownAsIs")) {
             threads.clear();
             assertDoesNotThrow(() -> runConjunctionsCheck(language, check), check);
             // The run around and the one nested in it evaluate conditions, and on one thread.
@@ -3578,8 +3690,8 @@ class ContractKitChecksTest {
 
     @Test
     @DisplayName("a contract test whose bothConditions() returns null skips the checks that start a run inside a"
-            + " condition, and one whose putFactProperty() returns null the check whose nested run fails inside an"
-            + " action (#843)")
+            + " condition, and one whose putFactProperty() returns null the checks whose nested run fails inside an"
+            + " action (#843, #1307)")
     void noBothConditionsSkipped() {
         for (String check : List.of("nestedRunInsideACondition", "nestedRunFailsInsideACondition")) {
             TestAbortedException skipped = assertThrows(TestAbortedException.class,
@@ -3593,9 +3705,12 @@ class ContractKitChecksTest {
                 return null;
             }
         };
-        TestAbortedException skipped = assertThrows(TestAbortedException.class,
-                () -> runCheck(test, "nestedRunFailsInsideAnAction"));
-        assertEquals("Assumption failed: the language's actions can't read a fact's property", skipped.getMessage());
+        for (String check : List.of("nestedRunFailsInsideAnAction", "nestedRunFailureRethrownAsIs")) {
+            TestAbortedException skipped = assertThrows(TestAbortedException.class, () -> runCheck(test, check),
+                    check);
+            assertEquals("Assumption failed: the language's actions can't read a fact's property",
+                    skipped.getMessage());
+        }
     }
 
     @Test
@@ -3639,10 +3754,12 @@ class ContractKitChecksTest {
                 return "put " + key + " 7";
             }
         };
-        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
-                () -> runCheck(actions, "nestedRunFailsInsideAnAction"));
-        assertTrue(failure.getMessage().startsWith("the action didn't read nest.value, so no run was started inside"
-                + " it"), failure.getMessage());
+        for (String check : List.of("nestedRunFailsInsideAnAction", "nestedRunFailureRethrownAsIs")) {
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(actions, check),
+                    check);
+            assertTrue(failure.getMessage().startsWith("the action didn't read nest.value, so no run was started"
+                    + " inside it"), failure.getMessage());
+        }
     }
 
     @Test

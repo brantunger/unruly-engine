@@ -21,6 +21,7 @@ import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
+import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.test.KitResources.ClosedQuietly;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -457,8 +458,9 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns an action that puts one property of a fact, read through its getter, into the output map under a key.
-     * {@code nestedRunInsideAnAction} and {@code nestedRunFailsInsideAnAction} run it against a {@link Nesting} fact,
-     * whose getter starts a run nested inside the action, on the action's own thread. By default, {@code null}.
+     * {@code nestedRunInsideAnAction}, {@code nestedRunFailsInsideAnAction} and {@code nestedRunFailureRethrownAsIs}
+     * run it against a {@link Nesting} fact, whose getter starts a run nested inside the action, on the action's own
+     * thread. By default, {@code null}.
      *
      * @param key      The key to put the value under
      * @param fact     The fact's name
@@ -597,8 +599,9 @@ public abstract class ExpressionLanguageContractTest {
      * sessions, that the run before it used: with two copies made when the rules load, a later run would get the other
      * one. Listeners that don't change the output may be added: the engine only logs what a listener throws, unless
      * it's a fatal {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks
-     * compare. {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead:
-     * a language that overrides both keeps them consistent.
+     * compare. {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead,
+     * as {@code outputUnconvertibleValueFailsTheRule} does for a language whose actions change the output in place: a
+     * language that overrides both keeps them consistent.
      * </p>
      *
      * @param builder The builder of an engine a check is about to build
@@ -608,7 +611,9 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Returns the context {@code evaluateAgreesWithDetail} compiles its condition with, since that check compiles it
-     * with the language's compiler, outside an engine. By default, {@link LanguageTestContexts#compile()}, which has
+     * with the language's compiler, outside an engine, and the context of the compiler
+     * {@code outputUnconvertibleValueFailsTheRule} asks to convert a value when the language's actions change the
+     * output in place. By default, {@link LanguageTestContexts#compile()}, which has
      * no imports, options or declared facts.
      *
      * <p>
@@ -623,6 +628,20 @@ public abstract class ExpressionLanguageContractTest {
     protected CompileContext compileContext() {
         return LanguageTestContexts.compile();
     }
+
+    /** What {@code outputUnconvertibleValueFailsTheRule} names its customer, and the property it writes. */
+    private static final String UNSET_NAME = "unset";
+    private static final String NAME = "name";
+
+    /**
+     * The value {@code outputUnconvertibleValueFailsTheRule} returns for a property taking a {@link String}, and what
+     * its failures call it.
+     */
+    private static final Double UNCONVERTIBLE = 1.5;
+    private static final String UNCONVERTIBLE_TEXT = "the Double 1.5";
+
+    /** Where the nested-run checks that read {@code nest.value} in an action start the nested run, as they say. */
+    private static final String IN_AN_ACTION = "action";
 
     /** The fact name and property the property checks use. */
     private static final String APPLICANT = "applicant";
@@ -771,29 +790,71 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * A customer as a JavaBean with a setter taking a {@link String}, the output
+     * {@code outputUnconvertibleValueFailsTheRule} writes a {@link Double} to, which no language converts to a
+     * {@code String}. It's public, with a public setter, so that the default writer can call it: one it couldn't reach
+     * would fail the write, and pass the check, for that reason.
+     */
+    public static final class Customer {
+
+        // Volatile, so that the check sees a write a language made on another thread.
+        private volatile @Nullable String name;
+
+        /**
+         * Creates the customer.
+         *
+         * @param name The customer's name, the property the contract test writes
+         */
+        public Customer(@Nullable String name) {
+            this.name = name;
+        }
+
+        /**
+         * Returns the customer's name.
+         *
+         * @return The name
+         */
+        public @Nullable String getName() {
+            return name;
+        }
+
+        /**
+         * Sets the customer's name.
+         *
+         * @param name The name
+         */
+        public void setName(@Nullable String name) {
+            this.name = name;
+        }
+    }
+
+    /**
      * The fact the nested-run checks run their rules against: its {@code value} property starts a run nested inside
      * the run that reads it, on the same thread, as a getter a condition or an action reads, or a function it calls,
      * does when it runs rules. Only {@code nestedRunInsideAnAction}, {@code nestedRunInsideACondition},
-     * {@code nestedRunFailsInsideACondition} and {@code nestedRunFailsInsideAnAction} create one. It's public, with a
-     * public getter, so that a language can read the property, by reflection or however else it reads a JavaBean's.
-     * It keeps what the nested run returned, or the exception it threw, which the checks and {@link NestedRuns} read.
+     * {@code nestedRunFailsInsideACondition}, {@code nestedRunFailsInsideAnAction} and
+     * {@code nestedRunFailureRethrownAsIs} create one. It's public, with a public getter, so that a language can read
+     * the property, by reflection or however else it reads a JavaBean's. It keeps what the nested run returned, or the
+     * exception it threw, which the checks and {@link NestedRuns} read.
      */
     public static final class Nesting {
 
         private final Supplier<@Nullable Map<String, Object>> nestedRun;
         private final boolean fails;
+        private final boolean rethrows;
         boolean started;
         @Nullable Map<String, Object> nestedOutput;
         @Nullable RuntimeException nestedFailure;
         final List<IllegalStateException> thrown = new ArrayList<>();
 
         Nesting(Supplier<@Nullable Map<String, Object>> nestedRun) {
-            this(nestedRun, false);
+            this(nestedRun, false, false);
         }
 
-        private Nesting(Supplier<@Nullable Map<String, Object>> nestedRun, boolean fails) {
+        private Nesting(Supplier<@Nullable Map<String, Object>> nestedRun, boolean fails, boolean rethrows) {
             this.nestedRun = nestedRun;
             this.fails = fails;
+            this.rethrows = rethrows;
         }
 
         /**
@@ -801,14 +862,24 @@ public abstract class ExpressionLanguageContractTest {
          * throws carries {@link NestedRuns#PLANNED_FAILURE} in its message, and it keeps every instance it throws.
          */
         static Nesting failing() {
-            return new Nesting(() -> null, true);
+            return new Nesting(() -> null, true, false);
         }
 
         /**
-         * Starts the nested run, and returns 7 whether the run returned or threw an exception; an {@link Error} it
-         * threw is thrown on. The one a check gives the nested run itself, so that the nested run fails, throws an
-         * {@link IllegalStateException} instead, and starts nothing. The check looks for it among the causes and
-         * suppressed exceptions of the nested run's failure, or for its message there.
+         * The fact whose getter starts the nested run and throws on, unchanged, the exception the run threw, as code a
+         * rule calls does when it lets a nested run's failure through, so that what the engine gets is what the
+         * language made of it.
+         */
+        static Nesting rethrowing(Supplier<@Nullable Map<String, Object>> nestedRun) {
+            return new Nesting(nestedRun, false, true);
+        }
+
+        /**
+         * Starts the nested run, and returns 7 whether the run returned or threw an exception, unless it's the one
+         * {@code nestedRunFailureRethrownAsIs} gives the outer run, which throws on, unchanged, the exception the run
+         * threw; an {@link Error} it threw is thrown on. The one a check gives the nested run itself, so that the
+         * nested run fails, throws an {@link IllegalStateException} instead, and starts nothing. The check looks for it
+         * among the causes and suppressed exceptions of the nested run's failure, or for its message there.
          *
          * @return 7
          */
@@ -825,6 +896,9 @@ public abstract class ExpressionLanguageContractTest {
             } catch (RuntimeException e) {
                 // Kept for the check: the engine would report it as the outer action's failure.
                 nestedFailure = e;
+                if (rethrows) {
+                    throw e;
+                }
             }
             return 7;
         }
@@ -1227,6 +1301,74 @@ public abstract class ExpressionLanguageContractTest {
                 () -> engine.run(new FactMap<>(new Fact<>("x", value))), what + " was set on " + setter);
         assertEquals("r", ex.getRuleName(), describe(ex));
         assertEquals(before, read.get().longValue(), what + " changed what " + setter + " had set");
+    }
+
+    /**
+     * Has an action return a {@link Double} for a property whose only setter takes a {@link String}, which no
+     * language converts a number to: the writer asks the language's {@code convertOutput}, which must return the value
+     * unchanged, or refuse it, so that the write fails the rule, naming the property, and the property keeps what it
+     * held. A {@code convertOutput} that returns {@code null} for a conversion it doesn't have sets the property to
+     * {@code null}, since {@code null} is a value every setter taking a reference accepts, and fails nothing. Unlike
+     * {@code outputNumbersConverted}, no hook skips it, since the default {@code convertOutput}, which returns the
+     * value, passes. The writer is asked only for a property an action returns, so for a language whose actions
+     * change the output in place, which never reach it, the check asks the language's compiler, made with
+     * {@link #compileContext()}, to convert the {@code Double} to a {@code String} itself, and fails it when that
+     * returns {@code null}, or a {@code String}, which the setter would take. A refusal, or any other exception it
+     * throws, passes there, as either fails the write.
+     */
+    @Test
+    @DisplayName("a Double an action returns for a setter taking a String fails the rule, naming the property, and"
+            + " leaves the property as it was, rather than set to null")
+    void outputUnconvertibleValueFailsTheRule() throws Exception {
+        // The writer is set after configure(), so configure() can't replace it: the customer, not the map, is written.
+        Customer customer = new Customer(UNSET_NAME);
+        BeanWriter writer = new BeanWriter(customer);
+        AtomicReference<@Nullable RuntimeException> thrown = new AtomicReference<>();
+        closing(builder(language()).outputWriter(writer).build(), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(NAME, "x"))));
+            try {
+                engine.run(new FactMap<>(new Fact<>("x", UNCONVERTIBLE)));
+            } catch (RuntimeException e) {
+                thrown.set(e);
+            }
+        });
+        RuntimeException failure = thrown.get();
+        if (writer.asked()) {
+            if (!(failure instanceof RuleExecutionException ruleFailure)) {
+                throw new AssertionFailedError(UNCONVERTIBLE_TEXT + " was set on setName(String), as "
+                        + describe(customer.getName()) + ", or the run failed for another reason: convertOutput must"
+                        + " return a value it has no conversion for unchanged, not null or a String"
+                        + (failure == null ? "" : ": " + describe(failure)), failure);
+            }
+            assertEquals("r", ruleFailure.getRuleName(), () -> describe(ruleFailure));
+            String expected = "Failed to set '" + NAME + "' on the output for rule 'r': ";
+            assertTrue(message(ruleFailure).startsWith(expected), () -> "the rule failed, but not as a write of '"
+                    + NAME + "' that failed, which starts \"" + expected + "\": " + describe(ruleFailure));
+            assertEquals(UNSET_NAME, customer.getName(), UNCONVERTIBLE_TEXT + " changed the name");
+            return;
+        }
+        if (failure != null) {
+            throw new AssertionFailedError("the action that puts " + UNCONVERTIBLE_TEXT + " failed before the"
+                    + " writer was asked to set it: " + describe(failure), failure);
+        }
+        assertEquals(UNSET_NAME, customer.getName(), "the action changed the name without the writer");
+        // An action that changes the output in place: the language's conversion is asked directly.
+        closing(new ClosedQuietly<>(language().newCompiler(compileContext())), compiler -> {
+            Object converted;
+            try {
+                converted = compiler.resource().convertOutput(UNCONVERTIBLE, String.class);
+            } catch (Exception e) {
+                // A refusal, or any other failure, fails the write, and the rule, as the writer would.
+                return;
+            }
+            if (converted == null || converted instanceof String) {
+                throw new AssertionFailedError("the language's actions change the output in place, so the writer"
+                        + " never asks its convertOutput, but asked to convert " + UNCONVERTIBLE_TEXT + " for"
+                        + " setName(String) it returned " + describe(converted) + ", which the setter would take:"
+                        + " convertOutput must return a value it has no conversion for unchanged, not null or a"
+                        + " String");
+            }
+        });
     }
 
     @Test
@@ -2283,7 +2425,7 @@ public abstract class ExpressionLanguageContractTest {
                     rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
             Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 2))));
 
-            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "action", null), RUN_BOUND);
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, IN_AN_ACTION, null), RUN_BOUND);
             assertTrue(nest.started, "the action didn't read nest.value, so no run was started inside it");
             RuntimeException failure = nest.nestedFailure;
             if (failure != null) {
@@ -2378,10 +2520,76 @@ public abstract class ExpressionLanguageContractTest {
             Nesting nest = new Nesting(() -> engine.run(new FactMap<>(new Fact<>("x", 1),
                     new Fact<>(NEST, failing))));
 
-            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, "action", failing),
+            Map<String, Object> output = onItsOwnThread(() -> runAround(engine, nest, IN_AN_ACTION, failing),
                     RUN_BOUND);
-            assertNestedRunFailed(nest, failing, "action");
+            assertNestedRunFailed(nest, failing, IN_AN_ACTION);
             assertSameOutput(Map.of(SEEN, 7), output, "the run around the run that failed inside its action");
+        });
+    }
+
+    /**
+     * Starts a run from inside an action, as {@code nestedRunFailsInsideAnAction} does, and makes that run fail, but
+     * the getter that started it throws the nested run's failure on, unchanged, as code a rule calls does when it
+     * lets the failure through, so that the action fails with it. The nested run logged its failure already, so the
+     * engine reports the action's failure as {@code a nested run() failed: } and that failure's text, and doesn't log
+     * it again, when the language throws what reached it, or a wrapper with exactly its message. A language that
+     * throws an exception of its own, with words of its own around the message, such as SpEL's
+     * {@code EL1021E: A problem occurred whilst attempting to access the property 'value': ...}, has the engine log
+     * that exception's message, with the nested failure in a note after it: the failure is logged twice. So the check
+     * requires the outer run's failure to start with the engine's own form, and to carry the nested run's failure in
+     * its cause chain. Its message contains {@code a nested run() failed: } in the second case too, inside the note.
+     * As in {@code nestedRunFailsInsideAnAction}, the check is skipped when the nested run neither fails nor reads the
+     * getter that throws, and fails when it reads it and doesn't fail, or fails for another reason.
+     */
+    @Test
+    @DisplayName("a run that fails inside an action, and whose failure the getter that started it throws on, fails the"
+            + " action with the engine's own message, not words of the language's around it, which log the failure"
+            + " twice")
+    // By identity: the instance the nested run threw is what the failure must carry.
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
+    void nestedRunFailureRethrownAsIs() throws Exception {
+        String action = putFactProperty(SEEN, NEST, NEST_VALUE);
+        assumeTrue(action != null, "the language's actions can't read a fact's property");
+        closing(engine(), engine -> {
+            engine.load(List.of(rule(OUTER, 2, factEquals("x", 1), action),
+                    rule(INNER, 1, factEquals("x", 2), putFact(INNER, "x"))));
+            // x is 1, so that the nested run's own outer action reads its nest.value, and fails.
+            Nesting failing = Nesting.failing();
+            Nesting nest = Nesting.rethrowing(() -> engine.run(new FactMap<>(new Fact<>("x", 1),
+                    new Fact<>(NEST, failing))));
+
+            AtomicReference<@Nullable Map<String, Object>> output = new AtomicReference<>();
+            @Nullable RuntimeException failure = onItsOwnThread(() -> {
+                try {
+                    output.set(engine.run(new FactMap<>(new Fact<>("x", 1), new Fact<>(NEST, nest))));
+                    return null;
+                } catch (RuntimeException e) {
+                    return e;
+                }
+            }, RUN_BOUND);
+            assertNestedRunFailed(nest, failing, IN_AN_ACTION);
+            RuntimeException nested = Objects.requireNonNull(nest.nestedFailure);
+            if (failure == null) {
+                throw new AssertionFailedError("the run around the run that failed inside its action didn't fail,"
+                        + " though the getter its action read threw the nested run's failure: it returned "
+                        + describe(output.get()), nested);
+            }
+            if (!(failure instanceof RuleExecutionException ruleFailure) || !OUTER.equals(ruleFailure.getRuleName())) {
+                throw new AssertionFailedError("the run around the run that failed inside its action failed, but not"
+                        + " with a RuleExecutionException naming rule outer: " + describe(failure), failure);
+            }
+            String expected = "Failed to execute action for rule 'outer': a nested run() failed: ";
+            String message = message(failure);
+            if (!message.startsWith(expected)) {
+                throw new AssertionFailedError("the action whose getter threw the nested run's failure on failed with"
+                        + " words of the language's own around that failure, which the engine logs a second time:"
+                        + " throw what reached the expression, or a wrapper with exactly its message, so that the"
+                        + " failure starts \"" + expected + "\", but it was: " + message, failure);
+            }
+            if (Throwables.causeChain(failure).stream().noneMatch(cause -> cause == nested)) {
+                throw new AssertionFailedError("the action whose getter threw the nested run's failure on failed"
+                        + " without that failure in its cause chain: " + describe(failure), failure);
+            }
         });
     }
 

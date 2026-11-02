@@ -4,8 +4,8 @@ What changed in the contract kit's checks up to 2.15.0, and what a new failure m
 
 **Who it's for:** language authors.
 **You'll be able to:** tell why a language that passed a 2.14 or earlier kit fails a newer one, and what to fix.
-**Before you start:** [The contract test kit](contract-kit.md). For 2.15 and later, see
-[Upgrading the contract test kit](contract-kit-upgrading.md).
+**Before you start:** [The contract test kit](contract-kit.md). For 2.15 to 2.22, see
+[Upgrading from 2.22 or earlier](contract-kit-upgrading-2.22.md).
 
 [← Documentation index](../README.md)
 

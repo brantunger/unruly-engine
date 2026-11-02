@@ -36,8 +36,8 @@ default, so a language that ignores imports, options, declared facts and the out
 
 ## 🔧 A language that needs declared facts, imports or options
 
-Override `configure` to add them to the checks' engines, and `compileContext()` to give `evaluateAgreesWithDetail`
-the same. For `languageImports(...)`, use the
+Override `configure` to add them to the checks' engines, and `compileContext()` to the checks without
+one. For `languageImports(...)`, use the
 [`compile(...)` overload](#-testing-a-compiler-without-an-engine) that takes them.
 
 The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
@@ -80,8 +80,8 @@ checks table, and where each falls short.
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
 closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, `compilerClosed`
-adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two, each setting every property on a bean with the default
-writer.
+adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two and `outputUnconvertibleValueFailsTheRule` one, each
+writing a bean with the default writer.
 
 `concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
 `configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
@@ -281,8 +281,8 @@ On the module path, the kit is the module `io.github.brantunger.unruly.test`; se
 
 When your main code has a `module-info.java`, Surefire 3.5.4 runs the tests on the module path: it patches the test
 classes into your module and leaves the kit and JUnit on the class path. Core exports the package whose contexts
-`LanguageTestContexts` creates only to the kit's module, so every `LanguageTestContexts` call, and the
-`evaluateAgreesWithDetail` check, throws `IllegalAccessError`:
+`LanguageTestContexts` creates only to the kit's module, so every `LanguageTestContexts` call, and checks using
+`compileContext()`, throw `IllegalAccessError`:
 
 ```text
 ... does not export io.github.brantunger.unruly.core to unnamed module ...
