@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.34.0](https://github.com/brantunger/unruly-engine/compare/v2.33.14...v2.34.0) (2026-11-02)
+
+
+### Features
+
+* the contract kit fails a language that wraps a nested run's failure in words of its own, or whose convertOutput returns null for a value it can't convert ([#1307](https://github.com/brantunger/unruly-engine/issues/1307)) ([#1358](https://github.com/brantunger/unruly-engine/issues/1358)) ([1fd14ba](https://github.com/brantunger/unruly-engine/commit/1fd14baabb0dedf90e073054ff867e98d6c6c146))
+
 ## [2.33.14](https://github.com/brantunger/unruly-engine/compare/v2.33.13...v2.33.14) (2026-11-02)
 
 
