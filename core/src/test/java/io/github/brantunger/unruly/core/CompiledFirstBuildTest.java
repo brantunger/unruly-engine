@@ -36,6 +36,7 @@ class CompiledFirstBuildTest {
         assertTrue(StackHeadroom.compilesEverything("compiled mode"));
         assertTrue(StackHeadroom.compilesEverything("compiled mode, sharing"));
         assertTrue(StackHeadroom.compilesEverything("compiled mode, emulated-client, sharing"));
+        assertEquals(3300, StackHeadroom.initializingFrames("compiled mode, sharing"));
     }
 
     @Test
@@ -48,6 +49,8 @@ class CompiledFirstBuildTest {
         assertFalse(StackHeadroom.compilesEverything("mixed mode, sharing"));
         assertFalse(StackHeadroom.compilesEverything("interpreted mode, sharing"));
         assertFalse(StackHeadroom.compilesEverything("mixed mode, compiled mode"));
+        assertEquals(960, StackHeadroom.initializingFrames("mixed mode, sharing"));
+        assertEquals(960, StackHeadroom.initializingFrames(null));
     }
 
     @Test

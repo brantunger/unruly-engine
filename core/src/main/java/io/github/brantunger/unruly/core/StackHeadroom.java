@@ -188,8 +188,19 @@ final class StackHeadroom {
      * @throws StackOverflowError if the stack can't hold them
      */
     static void checkInitializing() {
-        initializingSink = descend(compilesEverything(vmInfo()) ? COMPILED_INITIALIZING_FRAMES : INITIALIZING_FRAMES,
-                1, 2, 3, 4);
+        initializingSink = descend(initializingFrames(System.getProperty("java.vm.info")), 1, 2, 3, 4);
+    }
+
+    /**
+     * Returns how many frames {@link #checkInitializing()} recurses on a JVM whose {@code java.vm.info} is the one
+     * given.
+     *
+     * @param vmInfo The JVM's {@code java.vm.info}, or {@code null} if it has none
+     * @return {@link #COMPILED_INITIALIZING_FRAMES} if it names the mode that compiles every method first, otherwise
+     *         {@link #INITIALIZING_FRAMES}
+     */
+    static int initializingFrames(@Nullable String vmInfo) {
+        return compilesEverything(vmInfo) ? COMPILED_INITIALIZING_FRAMES : INITIALIZING_FRAMES;
     }
 
     /**
@@ -199,7 +210,7 @@ final class StackHeadroom {
      * char at a time, not with {@link String#startsWith}, which on JDK 21 may initialize {@code java.lang.Long} (see
      * {@code Lookups}).
      *
-     * @param vmInfo The JVM's {@code java.vm.info}, or {@code null} if it has none or it can't be read
+     * @param vmInfo The JVM's {@code java.vm.info}, or {@code null} if it has none
      * @return {@code true} if it names the mode that compiles every method first
      */
     static boolean compilesEverything(@Nullable String vmInfo) {
@@ -212,15 +223,6 @@ final class StackHeadroom {
             }
         }
         return true;
-    }
-
-    // The JVM's java.vm.info, or null if it has none or a security manager won't let it be read.
-    private static @Nullable String vmInfo() {
-        try {
-            return System.getProperty("java.vm.info");
-        } catch (SecurityException e) {
-            return null;
-        }
     }
 
     // Each frame adds four values once the call below it returns, so it keeps them on the stack across that call,
