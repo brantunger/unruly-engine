@@ -55,6 +55,8 @@ What each engine method throws, and when.
 | `new Fact<>(...)` | `NullPointerException` | The name is `null`, or the fact to copy or its name is `null` |
 | `FactMap` methods | `IllegalArgumentException` | A `null` name given to `getValue()` or any way of adding a fact, a key that differs from the fact's name, or a duplicate name in the constructor. As in `Map`, `get()`, `containsKey()` and `remove()` return `null` or `false` instead |
 | | `NullPointerException` | A `null` map, array, array element, fact or function passed to a constructor or method |
+| `FactProperties.read()` / `has()` / `propertyNames()` / `toData()` | `StackOverflowError` | Under about 160 KB of stack is left, with no engine built, at the JVM's first read of the properties of a class, or of a value `toData()` reaches, with a getter whose asked character is above U+00FF: the second after `get` or `is`, if any, and the first unless the second is upper case, as `İ` in `getİsim()`. It's thrown unchanged before the JDK's case table, `java.lang.CharacterData00`, is touched, and the next call checks again. Once the JVM's first `build()` has run, or one such read or a write below has succeeded, nothing checks; a name of U+00FF and below never does. See [What isn't covered](deep-stacks.md#-what-isnt-covered) |
+| `OutputWriter.beansAndMaps()`'s `set()` | `StackOverflowError` | As `FactProperties.read()`, when it writes a bean's property, not a `Map`'s, whose first character is above U+00FF, before any setter is called |
 
 What the engine does with a message's text, how `load()` reports several failures, and how to find the failing rule
 without parsing the message are in [Reading exception messages](exception-messages.md).

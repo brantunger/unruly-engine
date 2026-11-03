@@ -25,7 +25,9 @@ import org.jspecify.annotations.Nullable;
  * the engine's, SLF4J's and those of the JDK that {@link RunClasses} names or reaches, are initialized when the JVM's
  * first engine is built, after {@link #checkInitializing()} has made room for them, before anything else the build
  * does, not by the first call that uses them; and a language's own by its {@code prepare()}, after the same check,
- * when an engine built to use it is built, or else when a rule list first uses it.
+ * when an engine built to use it is built, or else when a rule list first uses it. With no engine built, the JDK's
+ * case table of the first plane is built after the same check by {@link Accessors}' first case read of a name above
+ * U+00FF, a fact's getter or a bean output's property (#1297).
  * {@code FirstRunClassInitializationTest} fails if the first loads and runs of its scenario, which takes the paths
  * that {@code RunClasses} lists, initialize any class with a static initializer other than the JDK's hidden ones, or
  * if its first build initializes any but the application's own before {@code RunClasses}; a path it doesn't take may
@@ -78,8 +80,10 @@ final class StackHeadroom {
 
     /**
      * How many frames {@link #checkInitializing()} recurses: room for initializing the classes {@link RunClasses}
-     * names or reaches, SLF4J's and the JDK's security settings among them, or the classes a language's
-     * {@code prepare()} initializes, of which MVEL's take most. Four times as many as the fewest that left nothing
+     * names or reaches, SLF4J's and the JDK's security settings among them, the classes a language's
+     * {@code prepare()} initializes, of which MVEL's take most, or the JDK's case table of the first plane, which
+     * {@link Accessors}' first case read of a name above U+00FF builds with no engine built (#1297), one class among
+     * those {@link RunClasses} reaches, not measured on its own. Four times as many as the fewest that left nothing
      * behind when measured. It was measured with SLF4J not yet started and the JVM's first build preparing MVEL along
      * with the engine's classes, as a build whose builder names MVEL does: made from each of the last 900 depths of a
      * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code MvelFactNames} unusable, at 6 depths on

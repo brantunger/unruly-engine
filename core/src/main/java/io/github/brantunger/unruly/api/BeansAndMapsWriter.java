@@ -188,6 +188,9 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      *                                      make it reachable
      * @throws ReflectiveOperationException if the setter throws, which it reports as the cause of an
      *                                      {@link java.lang.reflect.InvocationTargetException}
+     * @throws StackOverflowError           if the output isn't a map, the property's first character is above U+00FF,
+     *                                      the JDK's case table isn't known to be built yet, and the stack has too
+     *                                      little room left to build it, before it's touched (#1297)
      */
     @Override
     public void set(Object output, String property, @Nullable Object value) throws ReflectiveOperationException {
@@ -210,6 +213,9 @@ final class BeansAndMapsWriter implements OutputWriter<Object> {
      *                                      make it reachable
      * @throws ReflectiveOperationException if the setter throws, which it reports as the cause of an
      *                                      {@link java.lang.reflect.InvocationTargetException}
+     * @throws StackOverflowError           if the output isn't a map, the property's first character is above U+00FF,
+     *                                      the JDK's case table isn't known to be built yet, and the stack has too
+     *                                      little room left to build it, before it's touched (#1297)
      */
     @Override
     public void set(Object output, String property, @Nullable Object value, OutputConverter converter)

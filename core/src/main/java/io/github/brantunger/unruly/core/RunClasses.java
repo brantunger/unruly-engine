@@ -159,6 +159,9 @@ final class RunClasses {
             Character.getType(0x40000);
             Character.getType(0xE0001);
             Character.getType(0xF0000);
+            // So the case of a fact's getter or an output's property above U+00FF is read with no check of the room
+            // from now on, as the table it reads is built (#1297).
+            Accessors.markCaseTableBuilt();
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
             initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's

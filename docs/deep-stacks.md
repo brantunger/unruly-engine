@@ -101,8 +101,6 @@ above names; on JDK 21 and 22, before the JVM's first `build()`.
 
 ## 🚧 What isn't covered
 
-Not covered:
-
 - A name `language(...)`, `fact(...)` or `facts(...)` rejects, initializing the small class naming the problem before
   any check.
 - Another instance of a prepared language class, such as a wrapper around another language, which gets no check, nor
@@ -112,9 +110,9 @@ Not covered:
 - The JDK's reflection beyond what the warm-up reaches, listed below.
 - [The JDK classes rules use](#the-jdk-classes-a-rule-names-or-calls).
 
-Nor, with no engine built, are the JDK's case tables: `FactProperties`' first read of a fact class reads them for a
-getter with a character above U+00FF first or second after `get`/`is`, as does `OutputWriter.beansAndMaps()` for a
-bean property starting with one (#1297).
+With no engine built, a first getter read or bean property write above U+00FF checks the room, else throws
+`StackOverflowError`, before building the JDK's case table (#1297), but on Linux and macOS can still break
+[`java.lang.StringUTF16`](exception-messages.md#-shortening-and-escaping) (#1295).
 
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
@@ -154,6 +152,9 @@ calls every public method of `Throwables`, `ImportLimits` and `MessageText`, `Me
 Unicode planes, builds a tagged rule, declares a fact, facts and language, and sets run tags, all starting above
 U+00FF (#1292), and makes compile contexts declaring facts (#1322). It fails if they initialize a class with a static
 initializer, other than the JDK's hidden classes and one measured safe, `java.util.IdentityHashMap` (#1260).
+
+`CaseTableFirstUseTest`, in new JVMs, fails if a name above U+00FF builds the case table before the check, or one at
+or below checks (#1297).
 
 Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping), not the
 JDK's (#1286).
@@ -201,8 +202,6 @@ Examples, measured on JDK 25, of a deep first load or run leaving a class unusab
 
 **The class then stays unusable for the JVM's life,** for your code too: `String.format` of a number needs
 `LocaleProviderAdapter`.
-
-An application that has already called `LocalDate.now()`, or formatted a number, isn't exposed for those classes.
 
 **Use those JDK APIs once at startup, near the top of a stack,** before any load or run can be nested deep:
 
