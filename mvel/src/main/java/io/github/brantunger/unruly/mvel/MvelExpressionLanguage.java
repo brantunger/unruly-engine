@@ -326,14 +326,31 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
     }
 
     /**
-     * Initializes {@link ErrorReporting}, after resolving ErrorUtil. Without mvel2, resolving it fails with
-     * {@link NoClassDefFoundError} naming the missing class, and the JVM fails every later resolution the same way, so
-     * every call names it. Initializing the holder first would name it only the first time: the holder's failed static
-     * initializer leaves it unusable, and every later call would only say that it couldn't be initialized.
+     * Initializes MVEL's ErrorUtil and installs {@link MvelWarningFilter}, after resolving ErrorUtil. Without mvel2,
+     * resolving it fails with {@link NoClassDefFoundError} naming the missing class, and the JVM fails every later
+     * resolution the same way, so every call names it.
+     *
+     * <p>
+     * MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first error
+     * in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails for lack of
+     * stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then throws
+     * NoClassDefFoundError. So this initializes it in {@link #prepare()}, and again, for a compiler created without an
+     * engine, when a rule list starts loading, before any rule is compiled, so an overflow only fails the rule that
+     * caused it. It isn't done when the language is created: an application may create it anywhere, maybe deep in a
+     * stack, before any engine has made room for it, and an engine that finds it with {@link java.util.ServiceLoader}
+     * may never use it. The filter is installed on MVEL's loggers, once for each class loader that loads this module,
+     * before any rule compiles or runs, for the same reason: a compile or a run would otherwise initialize it first,
+     * possibly deep in the stack of a run nested in an action, where a stack overflow would leave it unusable and fail
+     * every later compile and run. Neither is done by a static initializer of this module's own: an overflow in
+     * ErrorUtil's would leave that class unusable too, and {@link MvelWarningFilter}'s is one every compile, run and
+     * copy goes through. The JVM does each once, however often this is called: a later call allocates one ErrorUtil
+     * and finds the filter's class initialized.
+     * </p>
      */
     private static void initializeErrorReporting() {
         Objects.requireNonNull(ErrorUtil.class);
-        ErrorReporting.initialize();
+        new ErrorUtil();
+        MvelWarningFilter.initialize();
     }
 
     /**
@@ -348,38 +365,6 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         if (!languageImports.isEmpty()) {
             throw new IllegalArgumentException(MessageQuotes.quotedAllWithin("MVEL takes no language imports; give "
                     + "Java imports with imports(...): ", languageImports));
-        }
-    }
-
-    /**
-     * MVEL formats every compile error with ErrorUtil, whose static initializer creates a logger. When the first error
-     * in the JVM is a stack overflow, such as a deeply nested rule on a small stack, that initializer fails for lack of
-     * stack, and the JVM marks the class unusable: every later MVEL compile error in the JVM then throws
-     * NoClassDefFoundError. This holder initializes it in {@link #prepare()}, and again, for a compiler created
-     * without an engine, when a rule list starts loading, before any rule is compiled, so an overflow only fails the
-     * rule that caused it. It isn't done when the language is created: an application may create it anywhere, maybe
-     * deep in a stack, before any engine has made room for it, and an engine that finds it with
-     * {@link java.util.ServiceLoader} may never use it. It also installs
-     * {@link MvelWarningFilter} on MVEL's loggers, once for each class loader that loads this module, before any rule
-     * compiles or runs, for the same reason: a compile or a run would otherwise initialize it first, possibly deep in
-     * the stack of a run nested in an action, where a stack overflow would leave it unusable and fail every later
-     * compile and run. It's only initialized
-     * through {@link #initializeErrorReporting()}, which resolves ErrorUtil first, so a missing mvel2 is named on every
-     * call rather than only the first.
-     */
-    private static final class ErrorReporting {
-
-        static {
-            new ErrorUtil();
-            MvelWarningFilter.initialize();
-        }
-
-        private ErrorReporting() {
-        }
-
-        /** Initializes ErrorUtil and the filter, the first time it's called, by initializing this class. */
-        static void initialize() {
-            // The static initializer does the work.
         }
     }
 }

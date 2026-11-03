@@ -24,7 +24,8 @@ import java.util.zip.ZipFile;
  * fails or waits must have none. A class whose code is all such code is checked whole, by {@link #namesLambdaFactory};
  * a class whose other code links lambdas on paths every run takes is checked method by method, by
  * {@link #invokeDynamicMethods}, which walks each method's bytecode, as a byte of {@code 0xBA}, the opcode, can also be
- * an operand or a constant. {@link #fieldRefs} lists the fields a class's code uses, so a test can check which classes
+ * an operand or a constant; {@link #invokeDynamicCount} counts them the same way, so a test can pin how many a class
+ * has. {@link #fieldRefs} lists the fields a class's code uses, so a test can check which classes
  * touch a field, as #1244 needs. There is no class-file library on the test class path, so this reads the format itself
  * (JVMS chapter 4).
  */
@@ -142,6 +143,37 @@ public final class ClassFiles {
      * @throws IOException if the class file is malformed
      */
     public static Methods invokeDynamicMethods(byte[] classFile) throws IOException {
+        List<String> names = new ArrayList<>();
+        List<String> linking = new ArrayList<>();
+        for (Method method : methods(classFile)) {
+            names.add(method.name());
+            if (method.invokeDynamics() > 0) {
+                linking.add(method.name() + method.descriptor());
+            }
+        }
+        return new Methods(names, linking);
+    }
+
+    /**
+     * Counts the {@code invokedynamic} instructions in a class file's methods, as {@code javap -c} shows them: one for
+     * each lambda, method reference, string concatenation compiled with the JDK's default or other call site the JVM
+     * links when it first runs. A class whose code has none counts 0.
+     *
+     * @param classFile The class file's bytes
+     * @return How many there are, in all of its methods
+     * @throws IOException if the class file is malformed
+     */
+    public static int invokeDynamicCount(byte[] classFile) throws IOException {
+        int count = 0;
+        for (Method method : methods(classFile)) {
+            count += method.invokeDynamics();
+        }
+        return count;
+    }
+
+    // Reads a class file's methods: each one's name and descriptor, and how many invokedynamic instructions its code
+    // has, 0 for one without code.
+    private static List<Method> methods(byte[] classFile) throws IOException {
         DataInputStream in = new DataInputStream(new ByteArrayInputStream(classFile));
         if (in.readInt() != 0xCAFEBABE) {
             throw new IOException("not a class file");
@@ -159,29 +191,25 @@ public final class ClassFiles {
             in.skipNBytes(6);
             skipAttributes(in);
         }
-        List<String> names = new ArrayList<>();
-        List<String> linking = new ArrayList<>();
+        List<Method> read = new ArrayList<>();
         int methods = in.readUnsignedShort();
         for (int i = 0; i < methods; i++) {
             in.readUnsignedShort();
             String name = utf8[in.readUnsignedShort()];
             String descriptor = utf8[in.readUnsignedShort()];
-            names.add(name);
-            boolean links = false;
+            int invokeDynamics = 0;
             int attributes = in.readUnsignedShort();
             for (int a = 0; a < attributes; a++) {
                 String attribute = utf8[in.readUnsignedShort()];
                 byte[] content = new byte[in.readInt()];
                 in.readFully(content);
                 if ("Code".equals(attribute)) {
-                    links = hasInvokeDynamic(content);
+                    invokeDynamics = countInvokeDynamic(content);
                 }
             }
-            if (links) {
-                linking.add(name + descriptor);
-            }
+            read.add(new Method(name, descriptor, invokeDynamics));
         }
-        return new Methods(names, linking);
+        return read;
     }
 
     /**
@@ -279,6 +307,10 @@ public final class ClassFiles {
     private record ConstantPool(int[] tags, String[] utf8, int[] first, int[] second) {
     }
 
+    // A method of a class file: its name, its descriptor, and how many invokedynamic instructions its code has.
+    private record Method(String name, String descriptor, int invokeDynamics) {
+    }
+
     private static void skipAttributes(DataInputStream in) throws IOException {
         int attributes = in.readUnsignedShort();
         for (int i = 0; i < attributes; i++) {
@@ -287,20 +319,21 @@ public final class ClassFiles {
         }
     }
 
-    // Walks a Code attribute's instructions, from its code_length, and tells whether one is an invokedynamic.
-    private static boolean hasInvokeDynamic(byte[] attribute) throws IOException {
+    // Walks a Code attribute's instructions, from its code_length, and counts those that are an invokedynamic.
+    private static int countInvokeDynamic(byte[] attribute) throws IOException {
         int length = ((attribute[4] & 0xFF) << 24) | ((attribute[5] & 0xFF) << 16) | ((attribute[6] & 0xFF) << 8)
                 | (attribute[7] & 0xFF);
         int start = 8;
         int pc = 0;
+        int count = 0;
         while (pc < length) {
             int opcode = attribute[start + pc] & 0xFF;
             if (opcode == INVOKEDYNAMIC) {
-                return true;
+                count++;
             }
             pc += instructionLength(attribute, start, pc, opcode);
         }
-        return false;
+        return count;
     }
 
     // The length of the instruction at pc, its opcode and operands (JVMS 6.5).
