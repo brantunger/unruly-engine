@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.35.2](https://github.com/brantunger/unruly-engine/compare/v2.35.1...v2.35.2) (2026-11-03)
+
+
+### Bug Fixes
+
+* with no engine built, a compile context's first package import above U+00FF checks the stack's room before the JVM builds its character tables, so a deep first one can't break java.lang.CharacterData00 for the life of the JVM ([#1366](https://github.com/brantunger/unruly-engine/issues/1366)) ([#1368](https://github.com/brantunger/unruly-engine/issues/1368)) ([1e5d097](https://github.com/brantunger/unruly-engine/commit/1e5d097046f811fc450375f696a1a07dd93532e1))
+
 ## [2.35.1](https://github.com/brantunger/unruly-engine/compare/v2.35.0...v2.35.1) (2026-11-03)
 
 
