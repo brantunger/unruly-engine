@@ -68,7 +68,9 @@ final class NestedRuns {
      * Checks that {@code nest} started its nested run, and that the run failed because it read {@code failing}, as
      * {@link #failedAsPlanned} decides. The check is skipped when the nested run neither failed nor read
      * {@code failing}, since it can't be made to fail then; a nested run that read it and didn't fail, or failed for
-     * another reason, proves nothing about what a failed one leaves, and fails the check.
+     * another reason, proves nothing about what a failed one leaves, and fails the check. One that read it and failed
+     * with something other than a {@link RuleExecutionException} fails it by that, which the failure says, whether or
+     * not what it threw carries the getter's exception (#1373).
      *
      * @param where Where the nested run starts, {@code "condition"} or {@code "action"}, which the failure says
      */
@@ -81,6 +83,10 @@ final class NestedRuns {
                     + " language that reads the right side of a condition first may not");
             throw new AssertionFailedError(nested + " didn't fail, though a getter its rule read threw: it returned "
                     + describe(nest.nestedOutput));
+        }
+        if (failing.started && !(failure instanceof RuleExecutionException)) {
+            throw new AssertionFailedError(nested + " failed, but not with a RuleExecutionException, which the engine"
+                    + " throws for a rule that fails: " + describe(failure), failure);
         }
         if (!failedAsPlanned(failure, failing)) {
             throw new AssertionFailedError(nested + (failing.started

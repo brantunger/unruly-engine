@@ -7,9 +7,9 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -72,10 +72,13 @@ final class CallSites {
     static final int MAX_SITES = 50_000;
     // How many frames from the top of the stack tell a call site in a run, with the stack's depth. With the depth,
     // the most calls a valid expression made from one site hardly changed from 1 frame to 32 (113 to 111 for calls
-    // nested 450 deep), and each loop at run time asked from one site whatever the frames. Without the depth, 4 were
-    // the fewest that told apart the three places MVEL asks from in new java.lang.StringBuilder(java.lang.String.class
-    // (2)), so 8 leave a margin: counting the depth costs the walk, and hashing a few frames more hardly does.
-    static final int RUN_FRAMES = 8;
+    // nested 450 deep), and each loop at run time asked from one site whatever the frames. The walk's own first frames
+    // are the same on every call: hashOfTopAndDepth, TopAndDepth.getAsLong, countedAt, LoopGuard.counted,
+    // SharedLookupConfiguration.getClassLoader and MVEL's ParserContext.getClassLoader. Without the depth, 8 frames
+    // are the fewest that tell apart the three places MVEL asks from in new java.lang.StringBuilder(
+    // java.lang.String.class (2)), 7 before #1374 put the supplier's own frame among them, so 9 leave a margin of one:
+    // counting the depth costs the walk, and hashing a frame more hardly does.
+    static final int RUN_FRAMES = 9;
 
     // Reads each frame's class by its name, not as a class: a reference to it would need a permission a security
     // manager may refuse, on the JDKs that still have one. The name costs no more to read.
@@ -83,15 +86,17 @@ final class CallSites {
     // Counts the frames without reading their methods where the JVM allows it, from Java 22 (DROP_METHOD_INFO),
     // which halves what a deep stack costs to count. Java 21 reads each frame's method, at about 130 nanoseconds a
     // frame.
-    private static final StackWalker COUNTER = StackWalker.getInstance(EnumSet.allOf(StackWalker.Option.class)
-            .stream().filter(option -> "DROP_METHOD_INFO".equals(option.name())).collect(Collectors.toSet()));
+    private static final StackWalker COUNTER = StackWalker.getInstance(DropMethodInfo.options());
     private static final long PRIME = 0x9E37_79B9_7F4A_7C15L;
     // Where the gaps between walks start, the same for every pass and run, so a count can be repeated.
     private static final long FIRST_GAP_STATE = 0x2545_F491_4F6C_DD1DL;
-    // What tells the site of the call under way, which Imports.LoopGuard counts a call at too. Created here, so
-    // preparing MVEL, which initializes this class, links them.
-    static final LongSupplier WHOLE_STACK = CallSites::hashOfStack;
-    static final LongSupplier TOP_AND_DEPTH = CallSites::hashOfTopAndDepth;
+    // What tells the site of the call under way, which Imports.LoopGuard counts a call at too: classes of their own,
+    // not method references, which this class's static initializer would link, and a compiler created without an
+    // engine initializes this class as its first rule compiles, maybe deep in a stack, where an overflow linking one
+    // would leave the class unusable for the life of the JVM (#1374). Created here, so preparing MVEL, which
+    // initializes this class, loads them.
+    static final LongSupplier WHOLE_STACK = new WholeStack();
+    static final LongSupplier TOP_AND_DEPTH = new TopAndDepth();
     // What the walks read the stack with: classes of their own, not lambdas or method references, which the JVM links
     // the first time each runs, and linking one makes a class. The first walk may be deep in a stack, where that could
     // overflow (#1099). Created here, so preparing MVEL, which initializes this class, loads them.
@@ -339,6 +344,56 @@ final class CallSites {
                 count++;
             }
             return count;
+        }
+    }
+
+    /**
+     * The option that counts the frames without reading their methods, if this JVM has it: Java 22 added
+     * {@code DROP_METHOD_INFO}, and this is compiled on Java 21, so it is found by its name, with a loop rather than a
+     * stream's filter, a lambda, which the outer class's static initializer would link (#1374). A class of its own,
+     * with no static initializer, so the coverage gate can leave out just this: the branch that finds the option
+     * never runs on the Java 21 test JVM.
+     */
+    private static final class DropMethodInfo {
+
+        private static final String DROP_METHOD_INFO = "DROP_METHOD_INFO";
+
+        private DropMethodInfo() {
+        }
+
+        static Set<StackWalker.Option> options() {
+            Set<StackWalker.Option> options = EnumSet.noneOf(StackWalker.Option.class);
+            for (StackWalker.Option option : StackWalker.Option.values()) {
+                if (DROP_METHOD_INFO.equals(option.name())) {
+                    options.add(option);
+                }
+            }
+            return options;
+        }
+    }
+
+    /**
+     * The site of the call under way as MVEL's analysis tells it, by the whole stack: a class of its own rather than
+     * a method reference to {@link #hashOfStack}, which this class's static initializer would link (#1374).
+     */
+    private static final class WholeStack implements LongSupplier {
+
+        @Override
+        public long getAsLong() {
+            return hashOfStack();
+        }
+    }
+
+    /**
+     * The site of the call under way as a run tells it, by the {@value #RUN_FRAMES} frames at the top of the stack
+     * and its depth: a class of its own rather than a method reference to {@link #hashOfTopAndDepth}, which this
+     * class's static initializer would link (#1374).
+     */
+    private static final class TopAndDepth implements LongSupplier {
+
+        @Override
+        public long getAsLong() {
+            return hashOfTopAndDepth();
         }
     }
 }

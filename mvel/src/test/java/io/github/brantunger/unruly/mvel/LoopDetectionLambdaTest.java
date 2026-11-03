@@ -18,10 +18,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * analysis pass or a run has asked for the class loader more than {@value CallSites#UNCOUNTED_CALLS} times, which a
  * valid expression may do as well as a loop, and the rule list's class loader walks it only for a name with a {@code $}
  * and too many parts. So the JVM's first such walk, maybe deep in a stack, could overflow linking one, and the load or
- * run would fail as an overflow rather than as what happened. {@link CallSites} links lambdas when it is initialized,
- * which preparing MVEL does, and {@link ExactNameClassLoader} when a rule first compiles, so this reads their class
- * files, as {@link FailureMethodLambdaTest} reads {@link MvelAnalysis}', and checks the methods a walk goes through,
- * and the classes nested in them, whole. It checks whole the configuration that counts the calls and throws when MVEL
+ * run would fail as an overflow rather than as what happened. A compiler created without an engine initializes
+ * {@link CallSites} as its first rule compiles, maybe deep in a stack, where an overflow linking one in its static
+ * initializer would leave the class unusable for the life of the JVM (#1374), and {@link ExactNameClassLoader} is
+ * initialized when a rule first compiles, so this reads their class files, as {@link FailureMethodLambdaTest} reads
+ * {@link MvelAnalysis}', and checks the methods a walk goes through, the static initializer, and the classes nested in
+ * them, whole. It checks whole the configuration that counts the calls and throws when MVEL
  * went round in a loop, {@code Imports.SharedLookupConfiguration} and its {@code Imports.LoopGuard}, read by their
  * names, and the two errors they throw. The test fails too if a method or a class named here isn't there.
  * {@link FirstUseClassInitializationTest} checks that MVEL's first such steps link none. Every name MVEL looks up goes
@@ -33,9 +35,11 @@ class LoopDetectionLambdaTest {
 
     // The methods a call for the class loader goes through once it is counted, counted() in tests and countedAt for
     // MVEL's calls, which Imports.LoopGuard makes, those that draw the gap to the next walk, and those that tell its
-    // site.
+    // site; and the static initializer, which the first call of a compiler created without an engine runs (#1374).
+    // The loop that initializer picks a StackWalker option with is in the nested class CallSites.DropMethodInfo,
+    // which nestedClassesLinkNoLambda reads whole.
     private static final List<String> CALL_SITES_METHODS = List.of("counted", "countedAt", "nextGap",
-            "hashOfStack", "hashOfTopAndDepth", "frame");
+            "hashOfStack", "hashOfTopAndDepth", "frame", "<clinit>");
     // The method that refuses a name with a '$' and too many parts, and the one that walks the stack for it, and the
     // method that rejects a class import too large for an import, and the one that walks the stack for it (#1263).
     private static final List<String> CLASS_LOADER_METHODS = List.of("checkSize", "inNestedLookup", "checkImportSize",

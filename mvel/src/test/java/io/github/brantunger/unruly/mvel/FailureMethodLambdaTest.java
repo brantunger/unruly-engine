@@ -17,17 +17,20 @@ import static org.junit.jupiter.api.Assertions.*;
  * which takes more stack than the engine's checks make room for, so code that runs only when compiling fails must link
  * none, or the JVM's first compile error, maybe deep in a stack, could overflow there, and the error would be reported
  * as the overflow, without MVEL's description, line or column. {@link ExceptionReadsLambdaTest} checks
- * {@link MvelCompileErrors} whole. {@link MvelAnalysis} links a lambda when it's initialized, which preparing MVEL
- * does, so this reads its class file, as core's {@code ClassFiles} does, and checks only the methods a compile error
- * goes through: that none has an {@code invokedynamic} instruction. It checks {@link MvelCompileErrors#translate}, the
- * one method every compile error goes through, the same way, by name. The test fails too if a method named here isn't
- * there.
+ * {@link MvelCompileErrors} whole, and {@link InvokeDynamicCountTest} pins {@link MvelAnalysis} at none. This reads
+ * the analysis' class file, as core's {@code ClassFiles} does, and checks the methods a compile error goes through by
+ * name, so a lambda added to one of them is named rather than counted: that none has an {@code invokedynamic}
+ * instruction. It checks its static initializer and the method that fills the set of type words for it the same way:
+ * a compiler created without an engine initializes the class as its first rule compiles, maybe deep in a stack, where
+ * an overflow linking one would leave the class unusable for the life of the JVM (#1374). It checks
+ * {@link MvelCompileErrors#translate}, the one method every compile error goes through, the same way, by name. The
+ * test fails too if a method named here isn't there.
  */
 @DisplayName("MVEL's analysis and its compile-error translator link no lambda when compiling fails (#1097)")
 class FailureMethodLambdaTest {
 
     private static final Map<Class<?>, List<String>> FAILURE_METHODS = Map.of(
-            MvelAnalysis.class, List.of("compile", "typeNamed", "throwIfLooped"),
+            MvelAnalysis.class, List.of("compile", "typeNamed", "throwIfLooped", "<clinit>", "typeWords"),
             MvelCompileErrors.class, List.of("translate"));
 
     @Test
