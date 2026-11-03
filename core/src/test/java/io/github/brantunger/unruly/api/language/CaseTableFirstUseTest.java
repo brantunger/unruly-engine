@@ -26,17 +26,32 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code StackHeadroom}, which holds the check and which nothing else in the scenario initializes, must be initialized
  * between the markers before the table is, and neither may be before the first marker, where the scenario reads and
  * writes names of U+00FF and below.
+ *
+ * <p>
+ * #1366: the check of a compile context's package import, made with no engine built as a language's tests make one,
+ * reads the JDK's table of the plane of each code point it asks about, so its first code point above U+00FF must check
+ * the room first too, then build every plane's table, so a later one outside the first plane can't be the first read of
+ * its own: for a package import above U+00FF in the first plane, and for one outside it, every plane's table must be
+ * initialized between the markers after the check, and a context made before the first marker with a package import
+ * of U+00FF and below must initialize none of them.
+ * </p>
  */
-@DisplayName("#1297: the first case read of a name above U+00FF checks the stack's room before the JDK builds the"
-        + " table")
+@DisplayName("#1297, #1366: the first case read of a name, or check of a package import, above U+00FF checks the"
+        + " stack's room before the JDK builds the table")
 class CaseTableFirstUseTest {
 
     private static final String STACK_HEADROOM = "Initializing 'io/github/brantunger/unruly/core/StackHeadroom'";
     private static final String CASE_TABLE = "Initializing 'java/lang/CharacterData00'";
+    // The JDK's tables of the other planes, which the check of a package import's name builds with the first's.
+    private static final List<String> OTHER_PLANES = List.of("Initializing 'java/lang/CharacterData01'",
+            "Initializing 'java/lang/CharacterData02'", "Initializing 'java/lang/CharacterData03'",
+            "Initializing 'java/lang/CharacterDataUndefined'", "Initializing 'java/lang/CharacterData0E'",
+            "Initializing 'java/lang/CharacterDataPrivateUse'");
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {CaseTableFirstUseScenario.FIRST_CHARACTER, CaseTableFirstUseScenario.SECOND_CHARACTER,
-            CaseTableFirstUseScenario.SETTER})
+            CaseTableFirstUseScenario.SETTER, CaseTableFirstUseScenario.PACKAGE_IMPORT,
+            CaseTableFirstUseScenario.WIDE_PACKAGE_IMPORT})
     @DisplayName("the room is checked before the table is built, and not for names of U+00FF and below")
     void checksTheRoomBeforeTheTable(String first, @TempDir Path dir) throws IOException, InterruptedException {
         String output = ChildJvm.run(dir, CaseTableFirstUseScenario.class, "-Xlog:class+init=info:stdout",
@@ -54,10 +69,21 @@ class CaseTableFirstUseTest {
         assertTrue(table >= 0, "the call didn't read the table:\n" + output);
         int check = find(lines, STACK_HEADROOM, before, after);
         assertTrue(check >= 0 && check < table, "the table was built before the room was checked:\n" + output);
+        boolean packageImport = CaseTableFirstUseScenario.PACKAGE_IMPORT.equals(first)
+                || CaseTableFirstUseScenario.WIDE_PACKAGE_IMPORT.equals(first);
+        for (String plane : OTHER_PLANES) {
+            assertEquals(-1, find(lines, plane, 0, before), "a table was built before the calls:\n" + output);
+            if (packageImport) {
+                int built = find(lines, plane, before, after);
+                assertTrue(built > check, "the import's check didn't build " + plane + " after the room was checked:\n"
+                        + output);
+            }
+        }
 
         List<String> expected = List.of("école", "ÿx", "aÿ", "latin", "boundary",
                 CaseTableFirstUseScenario.FIRST_CHARACTER.equals(first) ? "pi-x"
-                        : CaseTableFirstUseScenario.SECOND_CHARACTER.equals(first) ? "x-pi" : "wide",
+                        : CaseTableFirstUseScenario.SECOND_CHARACTER.equals(first) ? "x-pi"
+                        : packageImport ? "imported" : "wide",
                 String.valueOf(Character.LOWERCASE_LETTER));
         assertEquals(expected, answers(lines), output);
     }

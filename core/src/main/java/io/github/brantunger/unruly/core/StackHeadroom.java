@@ -27,7 +27,8 @@ import org.jspecify.annotations.Nullable;
  * does, not by the first call that uses them; and a language's own by its {@code prepare()}, after the same check,
  * when an engine built to use it is built, or else when a rule list first uses it. With no engine built, the JDK's
  * case table of the first plane is built after the same check by {@link Accessors}' first case read of a name above
- * U+00FF, a fact's getter or a bean output's property (#1297).
+ * U+00FF, a fact's getter or a bean output's property (#1297), and every plane's table by a compile context's first
+ * package import above U+00FF, through {@link CharacterTables} (#1366).
  * {@code FirstRunClassInitializationTest} fails if the first loads and runs of its scenario, which takes the paths
  * that {@code RunClasses} lists, initialize any class with a static initializer other than the JDK's hidden ones, or
  * if its first build initializes any but the application's own before {@code RunClasses}; a path it doesn't take may
@@ -82,25 +83,26 @@ final class StackHeadroom {
      * How many frames {@link #checkInitializing()} recurses: room for initializing the classes {@link RunClasses}
      * names or reaches, SLF4J's and the JDK's security settings among them, the classes a language's
      * {@code prepare()} initializes, of which MVEL's take most, or the JDK's case table of the first plane, which
-     * {@link Accessors}' first case read of a name above U+00FF builds with no engine built (#1297), one class among
-     * those {@link RunClasses} reaches, not measured on its own. Four times as many as the fewest that left nothing
-     * behind when measured. It was measured with SLF4J not yet started and the JVM's first build preparing MVEL along
-     * with the engine's classes, as a build whose builder names MVEL does: made from each of the last 900 depths of a
-     * 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code MvelFactNames} unusable, at 6 depths on
-     * JDK 21 and 2 on JDK 25, and 240 left nothing, on both, and twice on JDK 21; the engine's own classes were left
-     * unusable by no check, even of 80 frames. The JVM's first build runs it while it is still interpreted, unless the
-     * JVM compiles every method first (see {@link #COMPILED_INITIALIZING_FRAMES}), at about 170 bytes a frame on x64,
-     * once for the engine's classes and, if it prepares a language, again for that: it reserves about 160 KB, which
-     * the JVM's first engine needs left on the stack it's built on. A later build, or a load or {@code validate()}
-     * that first uses a language, as a load does with MVEL found with {@link java.util.ServiceLoader} and not named,
-     * that prepares a language of a class no engine has prepared yet runs it again, compiled if runs have made it
-     * hot, at about 50 bytes a frame, so it reserves about 48 KB:
-     * measured with it compiled at the first build, 640 frames left {@code MvelFactNames} unusable at 29 of 1,500
-     * depths, and 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't
-     * swept on its own: it prepares the language alone, without the engine's classes the measured build initialized
-     * too. The reserve was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after
-     * them that, when the engine prepares the language, at {@code build()} or a first load, initializes no class with a
-     * static initializer that it hasn't, as MVEL's evaluation of a property read, two method calls, one with a literal
+     * {@link Accessors}' first case read of a name above U+00FF builds with no engine built (#1297), or every plane's,
+     * which {@link CharacterTables} builds for a compile context's first package import above U+00FF with no engine
+     * built (#1366), classes among those {@link RunClasses} reaches, not measured on their own. Four times as many as
+     * the fewest that left nothing behind when measured. It was measured with SLF4J not yet started and the JVM's first
+     * build preparing MVEL along with the engine's classes, as a build whose builder names MVEL does: made from each of
+     * the last 900 depths of a 512 KB stack, each in a new JVM, a check of 220 frames left MVEL's {@code MvelFactNames}
+     * unusable, at 6 depths on JDK 21 and 2 on JDK 25, and 240 left nothing, on both, and twice on JDK 21; the engine's
+     * own classes were left unusable by no check, even of 80 frames. The JVM's first build runs it while it is still
+     * interpreted, unless the JVM compiles every method first (see {@link #COMPILED_INITIALIZING_FRAMES}), at about 170
+     * bytes a frame on x64, once for the engine's classes and, if it prepares a language, again for that: it reserves
+     * about 160 KB, which the JVM's first engine needs left on the stack it's built on. A later build, or a load or
+     * {@code validate()} that first uses a language, as a load does with MVEL found with
+     * {@link java.util.ServiceLoader} and not named, that prepares a language of a class no engine has prepared yet
+     * runs it again, compiled if runs have made it hot, at about 50 bytes a frame, so it reserves about 48 KB: measured
+     * with it compiled at the first build, 640 frames left {@code MvelFactNames} unusable at 29 of 1,500 depths, and
+     * 800 left nothing, so compiled it has a fifth more than the least, not four times. A first use wasn't swept on its
+     * own: it prepares the language alone, without the engine's classes the measured build initialized too. The reserve
+     * was measured for the classes a language's {@code prepare()} initializes, not for a warm-up after them that, when
+     * the engine prepares the language, at {@code build()} or a first load, initializes no class with a static
+     * initializer that it hasn't, as MVEL's evaluation of a property read, two method calls, one with a literal
      * argument, a comparison with {@code null} and an assignment, and its compile of a call of a method the value
      * doesn't have, does: that may still overflow, and the MVEL language's {@code prepare()} catches the overflow and
      * skips the warm-up. A bare {@code prepare()} call in an otherwise empty JVM may also initialize JDK classes the

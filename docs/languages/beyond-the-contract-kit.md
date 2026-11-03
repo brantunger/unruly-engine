@@ -15,7 +15,7 @@ Maven.
 
 ## 🔍 What the kit doesn't check
 
-Two things no check exercises, so passing the kit says nothing about them.
+Two things no check exercises.
 
 **Cancellation.** No check interrupts a run, and only `endlessActionStopsAtTimeout`, which a language opts into, gives
 one a timeout. A runtime that clears the thread's interrupt status when it cancels, as JEXL's `cancellable(true)` does,
@@ -192,20 +192,22 @@ A `null` argument other than `deadline` throws `NullPointerException` with `<par
 import, option name or option value throws `<parameter> must not contain null`. A `null` declared fact name or type
 throws `name must not be null` or `type must not be null`. A fact's value may be `null`.
 
-As a run does, the evaluation and action contexts reject a `null` or blank fact name with `IllegalArgumentException`
-and the run's message, `fact name must not be null` or `fact name must not be blank`. They don't reject a reserved
+As a run does, the evaluation and action contexts reject a `null` or blank fact name with `IllegalArgumentException`:
+`fact name must not be null` or `fact name must not be blank`. They don't reject a reserved
 name: they have no engine's languages to ask.
 
 Like `build()`, `compile()` rejects a fact declared with a blank or reserved name, a package import over the
 [size limits](mvel.md#-classes-and-imports) or with a part that isn't a Java identifier, and a language import over
-1,000 characters. It looks no name up: the class `"java.util.Map.Entry"` passes as a package.
+1,000 characters. It looks no name up: the class `"java.util.Map.Entry"` passes as a package. With no engine built,
+a first package import above U+00FF [checks the stack's room](../deep-stacks.md#-what-isnt-covered), else throws
+`StackOverflowError`.
 
 As in a run, each evaluation or action context equals only itself, and its `hashCode()` never reads the facts or, for
 an action context, the output object. A run passes the same evaluation context to every condition, and a new action
 context to each action.
 
 A [session](custom.md#-thread-safety) serves one run at a time and later runs reuse it, and no call marks where a
-run starts or ends, so state a run leaves in a session is still there for the next run. State for one run belongs in
+run starts or ends, so state a run leaves in a session is still there for the next. State for one run belongs in
 [`runScoped`](custom.md#-reading-facts), or `runScopedClosing` for a resource. A map keyed on contexts must not keep
 them alive, as a `WeakHashMap` doesn't.
 
@@ -301,9 +303,8 @@ your module is still tested on the module path:
 ```
 
 If your POM already sets an `argLine`, such as JaCoCo's `@{argLine}`, keep it and add the flag after it:
-`<argLine>@{argLine} --add-exports ...</argLine>`. Or run the tests on the class path instead, with
-`<useModulePath>false</useModulePath>` in the same `<configuration>`, but then your `module-info.java` isn't in force
-during the tests.
+`<argLine>@{argLine} --add-exports ...</argLine>`. Or run the tests on the class path, with
+`<useModulePath>false</useModulePath>` in the same `<configuration>`, but then the tests ignore your `module-info.java`.
 
 Gradle isn't affected: it runs these tests on the class path. Surefire gives JUnit access to your test classes, so
 this layout needs no `opens` clause; a test module of its own, one that `requires` the kit, does.

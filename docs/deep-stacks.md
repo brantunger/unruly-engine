@@ -110,10 +110,11 @@ above names; on JDK 21 and 22, before the JVM's first `build()`.
 - The JDK's reflection beyond what the warm-up reaches, listed below.
 - [The JDK classes rules use](#the-jdk-classes-a-rule-names-or-calls).
 
-With no engine built, a first getter read or bean property write above U+00FF checks the room, else throws
-`StackOverflowError`, before building the JDK's case table (#1297), but on Linux and macOS a deep first use of text
-above U+00FF, in `MessageText`, a rule, tag, fact, language, getter or property name, can break
-`java.lang.StringUTF16` (#1295): [build the first engine near the top](#-build-the-first-engine-near-the-top).
+With no engine built, a first getter read, bean property write or compile context's package import above U+00FF
+checks the room, else throws `StackOverflowError`, before building the JDK's character tables (#1297, #1366), but on
+Linux and macOS a deep first use of text above U+00FF, in `MessageText`, a rule, tag, fact, language, getter,
+property or package import name, can break `java.lang.StringUTF16` (#1295):
+[build the first engine near the top](#-build-the-first-engine-near-the-top).
 
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
@@ -154,8 +155,8 @@ Unicode planes, builds a tagged rule, declares a fact, facts and language, and s
 U+00FF (#1292), and makes compile contexts declaring facts (#1322). It fails if they initialize a class with a static
 initializer, other than the JDK's hidden classes and one measured safe, `java.util.IdentityHashMap` (#1260).
 
-`CaseTableFirstUseTest`, in new JVMs, fails if a name above U+00FF builds the case table before the check, or one at
-or below checks (#1297).
+`CaseTableFirstUseTest`, in new JVMs, fails if a name or package import above U+00FF builds a table before the
+check, an import leaves a plane's unbuilt, or one at or below checks (#1297, #1366).
 
 Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping) (#1286).
 
@@ -168,11 +169,11 @@ being handled.
 The call then ends as it would have near the top: `load()` throws its `RuleCompilationException`, or succeeds
 past a language's warning; a run fails the rule, throws its failure or what stopped it, or goes on past a warning or
 a listener's exception; a rejected fact throws its `IllegalArgumentException`; and a fatal error is still thrown.
-Nothing logs the lost line later, not even a `load()` or `run()` around a nested one.
+Nothing logs the lost line later, not even an outer `load()` or `run()`.
 
 Measured with `slf4j-simple` 2.0.20 and Logback 1.5.38, on JDK 21 and 25, none of those overflows left a class
 unusable: each struck while loading a class, not in its static initializer. Other paths and providers aren't
-measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing overflowed.
+measured. With `slf4j-api` alone, nothing is logged or overflowed.
 
 > [!NOTE]
 > Up to 2.30.12, or 2.30.14 for the WARN lines on keeping an idle copy or retiring rules after a failed load, the
@@ -211,7 +212,7 @@ String.format("%d", 1);                    // LocaleProviderAdapter, which Numbe
 ```
 
 Those calls read JDK system properties, such as `java.time.zone.DefaultZoneRulesProvider`, `java.util.currency.data`
-and `java.locale.providers`: set any you need before making them, as a value set later is ignored.
+and `java.locale.providers`: set any you need first, as a value set later is ignored.
 
 Or load and run your rules, or same-shaped ones, near the top first. An application that loads rules from its users
 can't know which APIs they'll call: give their deep loads and runs [more room](exceptions-by-method.md).
@@ -225,7 +226,7 @@ use initializes an MVEL class, such as an inline list or map, `new` or `soundsli
 unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
 
 Deep in a stack, a form's first use can need up to about 16 KB more than the about 8 KB that `load()` and `run()`
-[check for](exceptions-by-method.md). The rule then fails just past the check, where the same rule passes once
+[check for](exceptions-by-method.md). The rule then fails just past the check, though it passes once
 warmed:
 
 - A load throws a `RuleCompilationException` reading `the stack ran out`.
@@ -233,7 +234,7 @@ warmed:
 
 Measured on JDK 21 and 25, on Windows x64, a single first use in a new JVM needed this much more than the check
 leaves. Hundreds of failed attempts at one, measured for a ternary on JDK 21, raised what a later one needed. A second
-use needed about none: at most about 1 KB, for a load.
+use needed at most about 1 KB, for a load.
 
 | Form | Deep first | About |
 | --- | --- | --- |
@@ -248,8 +249,8 @@ use needed about none: at most about 1 KB, for a load.
 **A language's first-run check doesn't close the gap.** A run checks about 13 KB while a language class its rules use
 hasn't [finished a run](exceptions-by-method.md) in the JVM. Once it has, in any engine, every other rule list's
 first run gets only the 8 KB check. No load gets that larger check. Even while it applies, a first
-`def`, projection, filter or `foreach` still failed past it, needing at least about 2-5 KB more.
+`def`, projection, filter or `foreach` failed past it, needing at least about 2-5 KB more.
 
 **Load and run your rules, or rules of the same forms, near the top first.** Measured on JDK 21, a form's deep use
-then needed about none, even when the rule used near the top was a different one. Trivial rules aren't enough: a form
+then needed about none, even with a different rule used near the top. Trivial rules aren't enough: a form
 warms another only when they share classes, as a projection and a filter do; a unary minus doesn't warm a `for` loop.

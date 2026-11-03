@@ -65,6 +65,10 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      *                                  dot-separated parts, or isn't a valid package name, with the message
      *                                  {@code build()} gives; if a language import has more than 1,000 characters; or
      *                                  if a fact is declared with a blank name
+     * @throws StackOverflowError       if a package import has a code point above U+00FF, the JDK's tables of such
+     *                                  characters aren't known to be built yet, as no engine has been built and no
+     *                                  such import checked yet, and the stack has too little room left to
+     *                                  build them, before any is touched (#1366); the next call checks again
      */
     public EngineCompileContext {
         Objects.requireNonNull(packageImports, "packageImports must not be null");
@@ -78,6 +82,9 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         for (String packageName : packageImports) {
             Objects.requireNonNull(packageName, "packageImports must not contain null");
             ImportSize.checkSize(packageName);
+            // The check of its name reads the JDK's table of the plane of each code point, which for one above U+00FF
+            // the JVM builds on its first use, and a context may be made deep in a stack with no engine built (#1366).
+            CharacterTables.checkRoom(packageName);
             ImportSize.checkPackageName(packageName);
         }
         for (Class<?> importedClass : classImports) {
@@ -171,6 +178,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws NullPointerException     if an argument, or an element of a set, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name
+     * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader) {
         this(packageImports, classImports, classLoader, Object.class, Map.of(), Map.of(), false);
@@ -193,6 +201,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      *                                  dot-separated parts, or isn't a valid package name, or a fact is declared with
      *                                  a blank name or the name {@value ActionContext#OUTPUT_NAME}, which the default
      *                                  reserves
+     * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
@@ -221,6 +230,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      *                                  dot-separated parts, or isn't a valid package name, a language import has more
      *                                  than 1,000 characters, or a fact is declared with a blank name or the name
      *                                  {@value ActionContext#OUTPUT_NAME}
+     * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                 Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
@@ -259,6 +269,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws IllegalStateException    if the language's
      *                                  {@link ExpressionLanguage#reservedFactNames()} returns {@code null} or a set
      *                                  holding {@code null}, as {@code build()} throws it
+     * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public static EngineCompileContext forLanguage(ExpressionLanguage language, Set<String> packageImports,
                                                    Set<Class<?>> classImports, ClassLoader classLoader,

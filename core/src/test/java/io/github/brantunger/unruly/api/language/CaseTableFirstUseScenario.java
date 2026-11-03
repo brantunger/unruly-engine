@@ -1,6 +1,9 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.api.OutputWriter;
+import io.github.brantunger.unruly.core.EngineCompileContext;
+
+import java.util.Set;
 
 /**
  * Run by {@link CaseTableFirstUseTest} in a JVM that logs every class it initializes, and builds no engine. Before it
@@ -15,6 +18,14 @@ import io.github.brantunger.unruly.api.OutputWriter;
  * initialized before the calls, as it is at startup on Windows but not on Linux or macOS (#1295). Between the markers
  * it concatenates no string, and it keeps the answers in an array. Then it reads the type of a character above
  * U+00FF, which a table left broken would fail, and prints each answer after {@link #ANSWER}.
+ *
+ * <p>
+ * #1366: before {@link #BEFORE} it also makes a compile context, as a language's tests do with no engine built, with
+ * a package import whose code points are U+00FF or below, U+00FF itself among them, and none of that may check the
+ * room or read a table above Latin-1 either. Two more paths may be taken between the markers: a context made with a
+ * package import that has a code point above U+00FF in the first plane, or one with a code point outside it, the
+ * check of whose name reads the JDK's table of its plane.
+ * </p>
  */
 final class CaseTableFirstUseScenario {
 
@@ -29,6 +40,10 @@ final class CaseTableFirstUseScenario {
     static final String SECOND_CHARACTER = "secondCharacter";
     /** A property, written with its setter, whose first character is above U+00FF. */
     static final String SETTER = "setter";
+    /** A compile context made with a package import that has a code point above U+00FF, in the first plane. */
+    static final String PACKAGE_IMPORT = "packageImport";
+    /** A compile context made with a package import that has a code point outside the first plane, U+10000. */
+    static final String WIDE_PACKAGE_IMPORT = "widePackageImport";
 
     private CaseTableFirstUseScenario() {
     }
@@ -105,11 +120,19 @@ final class CaseTableFirstUseScenario {
         // U+00FF upper-cases to U+0178, which the table the JVM builds at startup answers.
         writer.set(output, "ÿz", "boundary");
         answers[4] = output.getWritten();
+        ClassLoader loader = CaseTableFirstUseScenario.class.getClassLoader();
+        // U+00E9 and U+00FF, which the table the JVM builds at startup answers (#1366).
+        new EngineCompileContext(Set.of("caf\u00e9.\u00ffx"), Set.of(), loader);
         System.out.println(BEFORE);
         if (FIRST_CHARACTER.equals(first)) {
             answers[5] = FactProperties.read(firstWide, "πx");
         } else if (SECOND_CHARACTER.equals(first)) {
             answers[5] = FactProperties.read(secondWide, "xπ");
+        } else if (PACKAGE_IMPORT.equals(first)) {
+            answers[5] = imported(new EngineCompileContext(Set.of("com.\u03c0x"), Set.of(), loader));
+        } else if (WIDE_PACKAGE_IMPORT.equals(first)) {
+            // U+10000, a letter of the Linear B syllabary, written as its surrogate pair.
+            answers[5] = imported(new EngineCompileContext(Set.of("com.\ud800\udc00x"), Set.of(), loader));
         } else {
             writer.set(output, "πy", "wide");
             answers[5] = output.getWritten();
@@ -120,5 +143,9 @@ final class CaseTableFirstUseScenario {
         for (Object answer : answers) {
             System.out.println(ANSWER + answer);
         }
+    }
+
+    private static String imported(EngineCompileContext context) {
+        return context.packageImports().size() == 1 ? "imported" : "lost";
     }
 }

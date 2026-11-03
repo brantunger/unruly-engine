@@ -37,7 +37,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * bridge, which a language's first failure may be the first to call. #1244: nor {@link RetireQueue}, which retires
  * the rule sets an engine no longer uses, as a {@code load()} or {@code close()} deep in a stack may. #1292: nor
  * {@link Whitespace}, the blank check of a rule's, a fact's or a language's name, which runs before any engine is
- * built. This reads
+ * built. #1366: nor {@link CharacterTables}, which a compile context calls for each package import before any engine
+ * is built. This reads
  * their class files, and those of their nested classes, from the directory or jar each was loaded from, as
  * {@code StringConcatenationTest} reads the library's, and fails if one names {@code LambdaMetafactory}, as the
  * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
@@ -52,7 +53,7 @@ class FailureCodeLambdaTest {
     @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
             Closing.class, CopyPermits.class, RuleCompilationException.class,
             Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
-            ImportLimits.class, RetireQueue.class, Whitespace.class})
+            ImportLimits.class, RetireQueue.class, Whitespace.class, CharacterTables.class})
     @DisplayName("the class and its nested classes link no lambda or method reference to LambdaMetafactory, nor "
             + "any other invokedynamic call site")
     void noLambdaLinked(Class<?> type) throws IOException, URISyntaxException {
