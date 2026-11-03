@@ -44,10 +44,10 @@ It also loads the engine's classes a load or run uses, so a first load or run re
 own are its `prepare()`'s to load.
 
 > [!NOTE]
-> In 2.30.15 and 2.30.16 the first `build()` also ran a `ConcurrentLinkedQueue`, a stopgap so the JVM linked the call
-> sites that change the JDK queue a rule set then kept its idle copies in. A rule set now keeps its idle copies and
-> open compilers in a stack of the engine's own whose every change is one compare-and-set, the last step of the call,
-> so a deep first run can't leave a copy lost or open (#1220).
+> In 2.30.15 and 2.30.16 the first `build()` also ran a `ConcurrentLinkedQueue`, so the JVM linked the call sites of
+> the queue a rule set then kept idle copies in. A rule set now keeps them, and open compilers, in a stack of the
+> engine's own whose every change is one compare-and-set, the call's last step, so a deep first run can't leave a copy
+> lost or open (#1220).
 
 **On JDK 21 and 22, outside a native image, it also initializes the JDK's
 `jdk.internal.misc.Blocker$ForkJoinPools`,** which a virtual thread's first file read would otherwise initialize. Deep
@@ -111,8 +111,9 @@ above names; on JDK 21 and 22, before the JVM's first `build()`.
 - [The JDK classes rules use](#the-jdk-classes-a-rule-names-or-calls).
 
 With no engine built, a first getter read or bean property write above U+00FF checks the room, else throws
-`StackOverflowError`, before building the JDK's case table (#1297), but on Linux and macOS can still break
-[`java.lang.StringUTF16`](exception-messages.md#-shortening-and-escaping) (#1295).
+`StackOverflowError`, before building the JDK's case table (#1297), but on Linux and macOS a deep first use of text
+above U+00FF, in `MessageText`, a rule, tag, fact, language, getter or property name, can break
+`java.lang.StringUTF16` (#1295): [build the first engine near the top](#-build-the-first-engine-near-the-top).
 
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
@@ -156,8 +157,7 @@ initializer, other than the JDK's hidden classes and one measured safe, `java.ut
 `CaseTableFirstUseTest`, in new JVMs, fails if a name above U+00FF builds the case table before the check, or one at
 or below checks (#1297).
 
-Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping), not the
-JDK's (#1286).
+Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping) (#1286).
 
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
 first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
@@ -176,7 +176,7 @@ measured. With no provider, `slf4j-api` alone, nothing is logged, and nothing ov
 
 > [!NOTE]
 > Up to 2.30.12, or 2.30.14 for the WARN lines on keeping an idle copy or retiring rules after a failed load, the
-> engine didn't catch it: the caller got a bare `StackOverflowError`, with no message or line.
+> engine didn't catch it: the caller got a bare `StackOverflowError`.
 
 ### The JDK classes a rule names or calls
 
@@ -200,8 +200,7 @@ Examples, measured on JDK 25, of a deep first load or run leaving a class unusab
 | `java.time.LocalDate.now().getYear() > 2000` | `run()` | `java.time.zone.ZoneRulesProvider` |
 | `java.text.NumberFormat.getInstance() != null` | `run()` | `sun.util.locale.provider.LocaleProviderAdapter` |
 
-**The class then stays unusable for the JVM's life,** for your code too: `String.format` of a number needs
-`LocaleProviderAdapter`.
+**Your code then fails too:** `String.format` of a number needs `LocaleProviderAdapter`.
 
 **Use those JDK APIs once at startup, near the top of a stack,** before any load or run can be nested deep:
 

@@ -81,15 +81,13 @@ Who closes a session depends on its copy. An extra copy: its run. A kept copy in
 retired: its run, or, while runs wait on those rules, a later run. An idle copy: the `load()` or `close()` that retires
 the rules, or a later one if that stopped part way.
 
-A copy shared by every run holds only `Session.none()`, whose `close()` does nothing.
-
 Two failures close things early. A session made for a copy that another language then fails to make is closed on the
 run's thread before it's used. A `load()` that fails closes the compilers it created at once, on the
 `load()` thread; when it fails while making its copies, it closes the sessions of the copies it made first, then each
 compiler once.
 
 A run holds its copy from before `checkFactName` until after its last expression, so the compiler's `close()` never
-overlaps them. A language no loaded rule uses gets no compiler, no session and no fact-name check.
+overlaps them.
 
 ## 🚀 Implementing the interfaces
 
@@ -288,11 +286,11 @@ compiles the same way but logs only a fatal error. Every row but the session one
 
 `Action for rule ...` replaces `Condition for rule ...` for an action, a `null` message reads `was rejected by its
 expression language`, and every failure is logged at ERROR. The engine shortens and escapes your message, and a
-warning's issue, and notes a root cause, as [Reading exception messages](../exception-messages.md) describes.
+warning's issue, and notes a root cause, as [Reading exception messages](../exception-messages.md) describes: leave
+them raw, or `(N more characters)` would count escapes.
 
 An [issue](../glossary.md#issue) has a severity, a line and a column counting from 1, with 0 for unknown, and a message.
-Leave raw a message the engine shortens and escapes: it would count escapes in `(N more characters)`. Text the engine
-shows as it came, such as the issues you throw, is yours to make safe with
+Text the engine shows as it came, such as the issues you throw, is yours to make safe with
 `io.github.brantunger.unruly.api.language.MessageText`. To keep a note after such text whole, give `escapeWithin` or
 `quoteWithin` the room left:
 
@@ -320,6 +318,10 @@ if (problem != null) {
             + problem);
 }
 ```
+
+With no engine built, on Linux and macOS, a first escape of text above U+00FF deep in a stack, as in a test,
+can break `java.lang.StringUTF16`:
+[build the first engine near the top](../deep-stacks.md#-build-the-first-engine-near-the-top).
 
 The `RuleCompilationException`'s name, kind and issues are the first failure's, and `failures()` has each rule's, in
 compile order: priority order, highest first, `null` last, equal priorities in list order.
