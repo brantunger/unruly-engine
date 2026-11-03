@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -336,5 +337,59 @@ class FailuresTest {
         assertSame(carried, lifted.result());
         assertArrayEquals(new Throwable[] {later}, wrapping.getSuppressed(), "the first failure carries the later");
         assertArrayEquals(new Throwable[0], carried.getSuppressed(), "what reaches the error isn't kept on it");
+    }
+
+    @Test
+    @DisplayName("#1268: a Teardown whose combining fails returns the first fatal Error a step threw, not the last")
+    void teardownReturnsTheFirstFatalErrorWhenCombiningFails() {
+        OutOfMemoryError first = new OutOfMemoryError("first");
+        OutOfMemoryError second = new OutOfMemoryError("second");
+        Failures.Teardown teardown = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        teardown.add(first);
+        teardown.add(second);
+        Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, new StackOverflowError("combining"));
+        try {
+            assertSame(first, teardown.result());
+        } finally {
+            Faults.clear();
+        }
+    }
+
+    @Test
+    @DisplayName("#1268: the note text of a nested run's stop is its message alone, with no note of its cause")
+    void noteTextOfAStopIsItsMessageAlone() {
+        ReportedFailure stop = NestedFailures.stop("nested run passed its deadline", new TimeoutException(),
+                Deadline.from(Duration.ofMillis(1)));
+
+        assertEquals("nested run passed its deadline", Failures.noteText(stop));
+    }
+
+    /** An exception whose message can't be read, as a broken language's may be, above a cause whose message can. */
+    private static final class UnreadableMessage extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+
+        UnreadableMessage(Throwable cause) {
+            super(cause);
+        }
+
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("unreadable message");
+        }
+    }
+
+    @Test
+    @DisplayName("#1268: loggedText doesn't repeat the note of a hidden root cause that the message already holds, as"
+            + " a message the engine wrote from a language's exception does")
+    void loggedTextHoldsTheCauseNoteOnce() {
+        // The root's message holds a line break, so its note is escaped as the message holds it already, and the
+        // unreadable link above it hides the root as the raw message, searched, doesn't hold its raw text.
+        IllegalStateException root = new IllegalStateException("one\ntwo");
+        String note = " (caused by java.lang.IllegalStateException: one\\ntwo)";
+        IllegalStateException logged = new IllegalStateException("the action failed" + note,
+                new UnreadableMessage(root));
+
+        assertEquals("the action failed" + note, Failures.loggedText(logged));
     }
 }

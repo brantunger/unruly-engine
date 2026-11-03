@@ -88,6 +88,28 @@ class LoggedFailuresTest {
         }
     }
 
+    @Test
+    @DisplayName("#1268: a failure the innermost run itself builds is recorded at that run's depth, so it isn't below"
+            + " the run, while one a nested run built is")
+    void ownReportedFailureIsNotBelow() {
+        LoggedFailures.enter();
+        try {
+            ReportedFailure own = NestedFailures.report("the run's own", null);
+            assertFalse(LoggedFailures.loggedBelow(own), "built by the innermost run");
+
+            LoggedFailures.enter();
+            ReportedFailure nested;
+            try {
+                nested = NestedFailures.report("a nested run's", null);
+            } finally {
+                LoggedFailures.leave();
+            }
+            assertTrue(LoggedFailures.loggedBelow(nested), "built by a nested run");
+        } finally {
+            LoggedFailures.leave();
+        }
+    }
+
     /** An exception equal to every other of its class, as a language that compares its exceptions by text might. */
     private static final class EqualToAll extends RuntimeException {
         private static final long serialVersionUID = 1L;

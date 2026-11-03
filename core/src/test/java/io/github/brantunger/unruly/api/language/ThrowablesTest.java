@@ -124,6 +124,15 @@ class ThrowablesTest {
         }
     }
 
+    /** Holds an error with the simple name of GraalVM's, in another package, which isn't GraalVM's. */
+    private static final class Elsewhere {
+
+        static final class MissingReflectionRegistrationError extends Error {
+
+            private static final long serialVersionUID = 1L;
+        }
+    }
+
     /** A {@code NoClassDefFoundError} whose {@code getMessage()} throws, as an application's class loader might. */
     private static final class UnreadableNoClassDefFoundError extends NoClassDefFoundError {
         private static final long serialVersionUID = 1L;
@@ -436,5 +445,21 @@ class ThrowablesTest {
         assertFalse(Throwables.isMissingRegistration(new StackOverflowError()), "a StackOverflowError");
         assertFalse(Throwables.isMissingRegistration(new ClassNotFoundException("p.A")), "an exception");
         assertFalse(Throwables.isMissingRegistration(null), "null");
+    }
+
+    @Test
+    @DisplayName("#1268: isWrongName with no name throws NullPointerException naming it, with no error to read too")
+    void wrongNameWithNoNameThrows() {
+        NullPointerException thrown = assertThrows(NullPointerException.class,
+                () -> Throwables.isWrongName(null, null));
+
+        assertEquals("name must not be null", thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("#1268: isMissingRegistration tells GraalVM's error by its whole name, so an error with the same"
+            + " simple name in another package isn't taken for it")
+    void missingRegistrationIsToldByTheWholeName() {
+        assertFalse(Throwables.isMissingRegistration(new Elsewhere.MissingReflectionRegistrationError()));
     }
 }

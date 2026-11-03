@@ -431,6 +431,51 @@ class CleanupStepFailureTest {
     }
 
     @Test
+    @DisplayName("#1278: a failed borrow whose own give-back fails still closes the sessions it took and leaves the"
+            + " rules, so a close() closes the compilers")
+    void aFailedBorrowWhoseGiveBackFailsStillClosesAndLeaves() {
+        Counting language = new Counting();
+        CoreRulesEngine<Object> engine = engine(language);
+        // Lending fails with the copy's sessions recorded in the loan, and the failed borrow's own give-back of the
+        // permit, the first reach of the step, fails too.
+        Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
+        Faults.injectThen(Faults.Step.GIVING_BACK, new StackOverflowError("giving back the permit again"));
+
+        TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
+
+        assertEquals(1, language.sessions.get(), "the run made its copy's session");
+        assertEquals(1, language.sessionsClosed.get(), "and closed it, though giving back the permit failed");
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#1278: a failed borrow that fails closing the sessions it took still leaves the rules, so a close()"
+            + " closes the compilers")
+    void aFailedBorrowThatFailsClosingItsSessionsStillLeaves() {
+        Counting language = new Counting();
+        CoreRulesEngine<Object> engine = engine(language);
+        // Lending fails with the copy's sessions recorded in the loan; closing the session throws, and logging that
+        // throws an InternalError that isn't an overflow, which the log call throws on.
+        language.onSessionClose = () -> {
+            throw new IllegalStateException("closing the session");
+        };
+        InternalError logging = new InternalError("logging the warning");
+        Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
+        Faults.injectThen(Faults.Step.FAILURE_LOGGED, logging);
+
+        AtomicReference<InternalError> thrown = new AtomicReference<>();
+        TestLogs.logsOf(() -> thrown.set(assertThrows(InternalError.class, () -> engine.run(new FactMap<>()))));
+
+        assertSame(logging, thrown.get());
+        assertEquals(1, language.sessionsClosed.get(), "the session's close() was called");
+        language.onSessionClose = () -> {
+        };
+        engine.close();
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
     @DisplayName("#839 retire: a retire() that fails before it marks the rule set retired retires it when called again")
     void aRetireThatFailsBeforeMarkingCanBeCalledAgain() {
         Counting language = new Counting();
@@ -921,6 +966,27 @@ class CleanupStepFailureTest {
     }
 
     @Test
+    @DisplayName("#1278: a run that fails closing the retired rules as it leaves has given back its permit before")
+    void aRunThatFailsClosingTheRulesAsItLeavesHasGivenBackItsPermit() throws InterruptedException,
+            TimeoutException {
+        Counting language = new Counting();
+        CopyPermits permits = new CopyPermits(1);
+        CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
+                .withLimit(CopyLimit.of(1)).withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
+        CopyPool.Copy copy = rules.borrow(Deadline.NONE);
+        assertEquals(CopyPool.Held.PERMIT, copy.held(), "the run holds the permit");
+        // Retired with the run in progress, so the run is the last to leave, and closing the idle copies as it leaves
+        // fails. Injected after retire(), which reaches the step itself.
+        assertNull(rules.retire(), "no fatal error");
+        Faults.inject(Faults.Step.COPIES_CLOSING, 1, new StackOverflowError("closing the idle copies"));
+
+        assertThrows(StackOverflowError.class, () -> rules.release(copy));
+
+        assertEquals(CopyPool.Held.NOTHING, copy.held(), "the permit was given back");
+        assertEquals(1, permits.available().availablePermits(), "and is free");
+    }
+
+    @Test
     @DisplayName("#839 close: a close() that fails before it retires the rules it detached leaves them for the next")
     void aCloseThatFailsBeforeRetiringLeavesTheRulesForTheNext() {
         Counting language = new Counting();
@@ -1018,5 +1084,57 @@ class CleanupStepFailureTest {
 
         engine.close();
         language.assertAllClosed("after close() again");
+    }
+
+    @Test
+    @DisplayName("#1280: rules retired for good are taken out of the engine's list, so a close() after a reload walks"
+            + " only the rules it detached")
+    void rulesRetiredForGoodLeaveTheList() {
+        Counting language = new Counting();
+        CoreRulesEngine<Object> engine = engine(language);
+        List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
+        engine.load(second);
+        assertEquals(1, language.compilersClosed.get(), "the first rules are retired");
+        // close() takes the second rules out of the list, which has only them: the step is reached once.
+        Faults.inject(Faults.Step.SETTLING, 2, new StackOverflowError("taking the rules out of the list"));
+
+        assertDoesNotThrow(engine::close);
+
+        language.assertAllClosed("after close()");
+    }
+
+    @Test
+    @DisplayName("#1280: a close() started while a load() retires the rules it replaced claims with a number of its"
+            + " own, so it retires only the rules it detached and leaves the load's to it")
+    void aNestedCloseClaimsWithItsOwnNumber() {
+        Counting language = new Counting();
+        CoreRulesEngine<Object> engine = engine(language);
+        engine.run(new FactMap<>());
+        List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
+        // The first rules' idle copy is closed as the second load retires them, and closing it closes the engine,
+        // while the second load still holds its claim on the first. The close() takes the second rules out of the
+        // list, reaching the step for them and for the first, which stay: a third reach is a rule set it retired
+        // with the load's number. The fault is taken back once close() returns: the load's own settling of the
+        // first rules, right after this hook returns, is the third reach on this thread otherwise.
+        AtomicBoolean nested = new AtomicBoolean();
+        AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+        language.onSessionClose = () -> {
+            if (nested.compareAndSet(false, true)) {
+                Faults.inject(Faults.Step.SETTLING, 3, new StackOverflowError("settling the load's rules"));
+                try {
+                    engine.close();
+                } catch (Throwable t) {
+                    closeFailure.set(t);
+                } finally {
+                    Faults.clear();
+                }
+            }
+        };
+
+        engine.load(second);
+
+        assertTrue(nested.get(), "a close ran while the first rules were retired");
+        assertNull(closeFailure.get(), "close() retired only the rules it detached");
+        language.assertAllClosed("after close()");
     }
 }

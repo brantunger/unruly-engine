@@ -11,8 +11,10 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -239,5 +241,19 @@ class ReportedFailureTest {
 
         assertTrue(NestedFailures.nestedRunStopped(new RuntimeException("wrapped", stopped), null));
         assertFalse(NestedFailures.nestedRunStopped(failed, null));
+    }
+
+    @Test
+    @DisplayName("#1268: a nested stop suppressed on what was thrown is the stop of the run around it only for the same"
+            + " deadline, not for another deadline or an interrupt")
+    void suppressedNestedStopIsForItsOwnDeadline() {
+        Deadline nested = Deadline.from(Duration.ofMillis(1));
+        Deadline outer = Deadline.from(Duration.ofMillis(2));
+        RuntimeException thrown = new RuntimeException("action failed");
+        thrown.addSuppressed(NestedFailures.stop("nested run passed its deadline", new TimeoutException(), nested));
+
+        assertTrue(NestedFailures.nestedRunStopped(thrown, nested), "the same deadline");
+        assertFalse(NestedFailures.nestedRunStopped(thrown, outer), "another deadline");
+        assertFalse(NestedFailures.nestedRunStopped(thrown, null), "an interrupt");
     }
 }
