@@ -124,6 +124,17 @@ public interface OutputWriter<O> {
      * specific generic setter is called.
      * </p>
      *
+     * <p>
+     * A bean's property whose first character is above U+00FF, such as {@code \u03c0x}, is upper-cased into its
+     * setter's name with the JDK's table of the first plane, {@code java.lang.CharacterData00}, which the JVM builds on
+     * its first use, maybe deep in a stack with no engine built. So until that table is known to be built, by such a
+     * write, by a read of such a getter through {@link io.github.brantunger.unruly.api.language.FactProperties} or by
+     * the JVM's first engine build, the write first checks that the stack has room for building it, as the engine's
+     * first build does, and throws {@link StackOverflowError} if it hasn't, before the table is touched, rather than
+     * leave it unusable for the life of the JVM (#1297). After that, no write checks. A map's key, and a property
+     * whose first character is U+00FF or below, take no check.
+     * </p>
+     *
      * @param <O> The type of the output objects
      * @return The writer
      */

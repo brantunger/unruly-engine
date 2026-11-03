@@ -93,11 +93,15 @@ public final class FactProperties {
      *     greatest in {@link String#compareTo} order wins, so {@code get\u0130sim()} beats {@code getIsim()}. Only
      *     the tie between two {@code getProperty()} is broken as {@code java.beans} breaks it; the other two rules
      *     are this class's own. The choice never depends on the order reflection reports methods in. Public fields
-     *     aren't read. A getter whose first or second letter after {@code get} or {@code is} is above U+00FF, such
-     *     as {@code get\u0130sim()}, is lower-cased with the JDK's table of the first plane,
-     *     {@code java.lang.CharacterData00}, which the JVM builds on its first use: the first read of any property of
-     *     a class reads all its getters, and a first read deep in a stack with no engine built can leave that table
-     *     unusable for the life of the JVM (#1297). The engine's first build initializes every such table.</li>
+     *     aren't read. A getter whose name after {@code get} or {@code is} has a letter above U+00FF where its case
+     *     decides the property's name, such as the {@code \u0130} of {@code get\u0130sim()}, is read with the JDK's
+     *     table of the first plane, {@code java.lang.CharacterData00}, which the JVM builds on its first use, and the
+     *     first read of any property of a class reads all its getters, maybe deep in a stack with no engine built. So
+     *     until the table is known to be built, by such a read, by a bean write through
+     *     {@code OutputWriter.beansAndMaps()} or by the JVM's first engine build, a read of such a getter first checks
+     *     that the stack has room for building it, as the engine's first build does, and throws
+     *     {@link StackOverflowError} if it hasn't, before the table is touched, rather than leave it unusable for the
+     *     life of the JVM (#1297). After that, no read checks.</li>
      * </ul>
      *
      * <p>

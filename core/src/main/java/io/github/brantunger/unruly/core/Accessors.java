@@ -23,6 +23,14 @@ import java.util.Set;
  */
 public final class Accessors {
 
+    // Set once the JDK's case table of the first plane, CharacterData00, is known to be built: by this class's own
+    // first read of it, after checking the room for building it (see roomForCaseTable), or by the JVM's first engine
+    // build, which builds it after the same check (see markCaseTableBuilt). It has no initializer, so this class
+    // still has no static initializer, which a first use deep in a stack could break. Not volatile: a thread that
+    // doesn't see it set yet only checks the room once more, and the JVM's own lock on the table's initialization
+    // makes any thread that uses it wait for it to be built.
+    private static boolean caseTableBuilt;
+
     private Accessors() {
     }
 
@@ -48,16 +56,22 @@ public final class Accessors {
      *
      * <p>
      * A getter whose {@code X} has a character above U+00FF first or second, such as {@code get\u0130sim()} or
-     * {@code get\u03a0x()}, still reads the JDK's case tables here, through {@link Character#isUpperCase(char)} and
+     * {@code get\u03a0x()}, reads the JDK's case table here, through {@link Character#isUpperCase(char)} and
      * {@link Character#toLowerCase(char)}: the JDK's table of the first plane, {@code java.lang.CharacterData00}, the
      * plane every {@code char} is in, which the JVM builds on its first use. A fact class's getters are read on the
      * first read of one of its properties, which may be deep in a stack with no engine built, and a first use that
-     * overflows there leaves the table unusable for the life of the JVM, the application's own code included (#1297).
-     * The engine's first build initializes every such table, so only a read before any build is exposed.
+     * overflowed there would leave the table unusable for the life of the JVM, the application's own code included.
+     * So before this class first asks the table about such a character, it checks that the stack has room for
+     * building it, as the engine's first build does, and throws {@link StackOverflowError} if it hasn't, before the
+     * table is touched (#1297). Once the table has been read here, or the engine's first build has built it, it
+     * checks no more. A getter whose characters asked about are U+00FF or below reads only the table the JVM builds at
+     * startup, and takes no check.
      * </p>
      *
      * @param method A public method of the object's class
      * @return The property's name, or {@code null}
+     * @throws StackOverflowError if a character asked about is above U+00FF, the table isn't known to be built yet,
+     *                            and the stack has too little room left to build it, before it's touched
      */
     public static @Nullable String property(Method method) {
         // Declared by Object or Enum, so getClass() and getDeclaringClass() are never properties.
@@ -82,16 +96,17 @@ public final class Accessors {
     }
 
     // Asks the JDK's case tables, which for a first or second character above U+00FF the JVM builds on their first
-    // use, as property()'s Javadoc says (#1297). Not decided by a table of the engine's own, as a blank check is
-    // (Whitespace): the case of every letter is a far larger table, and it changes with the JDK's Unicode version.
+    // use, once the room for that is checked, as property()'s Javadoc says (#1297). Not decided by a table of the
+    // engine's own, as a blank check is (Whitespace): the case of every letter is a far larger table, and it changes
+    // with the JDK's Unicode version. A character is checked for only when it's asked about: of getURL(), only R is.
     private static String decapitalize(String name) {
-        if (name.length() > 1 && Character.isUpperCase(name.charAt(1))) {
+        if (name.length() > 1 && Character.isUpperCase(roomForCaseTable(name.charAt(1)))) {
             // As java.beans does: URL stays URL, so getURL() is the property URL.
             return name;
         }
         // Character's rule, not String's: String lower-cases \u0130 to two characters, i and a combining dot above,
         // so get\u0130sim() would read a property no rule can name, and not java.beans' isim.
-        return Character.toLowerCase(name.charAt(0)) + name.substring(1);
+        return Character.toLowerCase(roomForCaseTable(name.charAt(0))) + name.substring(1);
     }
 
     /**
@@ -112,14 +127,43 @@ public final class Accessors {
      * upper-casing a letter doesn't give back the one {@link #property} lower-cased: {@code get\u0130sim()} reads
      * {@code isim}, but {@code isim} is written with {@code setIsim}, not {@code set\u0130sim}. A property whose
      * first character is above U+00FF reads the JDK's table of the first plane, {@code java.lang.CharacterData00},
-     * here, through {@link Character#toUpperCase(char)}; the JVM builds it on its first use, as {@link #property}
-     * says (#1297), and the default {@code api.OutputWriter} writes a bean's property this way with no engine built.
+     * here, through {@link Character#toUpperCase(char)}, which the JVM builds on its first use, and the default
+     * {@code api.OutputWriter} writes a bean's property this way with no engine built: so until the table is known to
+     * be built, it first checks that the stack has room for building it, as {@link #property} says (#1297).
      *
      * @param property The property's name, not empty
      * @return The setter's name
+     * @throws StackOverflowError if the property's first character is above U+00FF, the table isn't known to be built
+     *                            yet, and the stack has too little room left to build it, before it's touched
      */
     public static String setterName(String property) {
-        return "set" + Character.toUpperCase(property.charAt(0)) + property.substring(1);
+        return "set" + Character.toUpperCase(roomForCaseTable(property.charAt(0))) + property.substring(1);
+    }
+
+    // Returns the character the caller is about to ask a Character method about its case. If it is above U+00FF and
+    // the JDK's table of the first plane isn't known to be built yet, that read may be the JVM's first, which builds
+    // the table in its static initializer: so this first checks the room for initializing classes, as the JVM's first
+    // engine build does before it reads the same table (see RunClasses), then reads the table itself. The check for
+    // the engine's own steps, StackHeadroom.check(), isn't enough, as it makes no room for initializing a class. A
+    // failed check throws StackOverflowError before the table is touched, and leaves the next call to check again. A
+    // character of U+00FF or below is in the table the JVM builds at startup, and takes no check.
+    private static char roomForCaseTable(char c) {
+        if (c > '\u00ff' && !caseTableBuilt) {
+            StackHeadroom.checkInitializing();
+            Character.getType(c);
+            caseTableBuilt = true;
+        }
+        return c;
+    }
+
+    /**
+     * Says that the JDK's case table of the first plane, {@code java.lang.CharacterData00}, has been built, so this
+     * class checks no room before it reads it: called by {@link RunClasses} once the JVM's first engine build has read
+     * it, after checking the room for that. A name above U+00FF read after the first build then takes no check, as it
+     * took none before #1297.
+     */
+    static void markCaseTableBuilt() {
+        caseTableBuilt = true;
     }
 
     /**
