@@ -50,4 +50,13 @@ class ImportLimitsContractTest {
         }
         assertThrows(NullPointerException.class, () -> ImportLimits.importSizeProblem(null));
     }
+
+    @Test
+    @DisplayName("#1268: a null import is rejected with the message that names it, not the JVM's")
+    void nullImportIsNamed() {
+        NullPointerException thrown = assertThrows(NullPointerException.class,
+                () -> ImportLimits.importSizeProblem(null));
+
+        assertEquals("name must not be null", thrown.getMessage());
+    }
 }

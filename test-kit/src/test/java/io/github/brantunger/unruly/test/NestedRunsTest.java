@@ -113,6 +113,21 @@ class NestedRunsTest {
     }
 
     @Test
+    @DisplayName("#1268: a nested run that failed with an exception that isn't the engine's failed for another reason,"
+            + " even when it carries what the getter threw")
+    void notTheEnginesFailureEvenCarryingTheGetterException() {
+        Nesting failing = Nesting.failing();
+        IllegalStateException thrown = read(failing);
+        IllegalStateException notTheEngines = new IllegalStateException("not the engine's", thrown);
+        Nesting nest = nestThatFailedWith(notTheEngines);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> NestedRuns.assertNestedRunFailed(nest, failing, "action"));
+
+        assertSame(notTheEngines, failure.getCause(), "the check names the nested run's failure");
+    }
+
+    @Test
     @DisplayName("a nested run that didn't fail, though its getter threw, fails the check; one that never read the"
             + " getter skips it")
     void didNotFail() {
