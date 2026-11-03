@@ -31,10 +31,11 @@ public final class Main {
      * them without a sandbox, and that check doesn't cover it. MVEL reserves output, the name its actions bind the
      * output object to, so the engine rejects a fact by that name itself, and unreservedOutputReadAsFact has nothing to
      * check. MVEL can't stop an action part-way, so it has no endless action for endlessActionStopsAtTimeout. Its
-     * numbers are Java's, and its actions change the output in place, so it doesn't opt into outputNumbersConverted.
+     * numbers are Java's, and its actions change the output in place, so it doesn't opt into outputNumbersConverted or
+     * outputNumbersConvertedConcurrently.
      */
     private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "outputNumbersConverted",
-            "sharedStateStaysLocal", "unreservedOutputReadAsFact");
+            "outputNumbersConvertedConcurrently", "sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     private Main() {
     }

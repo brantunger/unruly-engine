@@ -54,7 +54,7 @@ class ModulePathTest {
      * a check that starts being skipped fails.
      */
     private static final Set<String> SKIPPED = Set.of("endlessActionStopsAtTimeout", "outputNumbersConverted",
-            "sharedStateStaysLocal", "unreservedOutputReadAsFact");
+            "outputNumbersConvertedConcurrently", "sharedStateStaysLocal", "unreservedOutputReadAsFact");
 
     @TempDir
     private Path work;

@@ -80,8 +80,8 @@ checks table, and where each falls short.
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
 closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, `compilerClosed`
-adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two and `outputUnconvertibleValueFailsTheRule` one, each
-writing a bean with the default writer.
+adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two, and `outputNumbersConvertedConcurrently` and
+`outputUnconvertibleValueFailsTheRule` one each, writing a bean with the default writer.
 
 `concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
 `configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
@@ -139,9 +139,8 @@ session.
 
 The variable `conditionWritesRejected` declares, `z`, isn't a fact: don't declare it in `configure`.
 
-`reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once a check, or
-anything earlier in the JVM, has prepared a language of that class, the check's first answers are already the
-prepared ones.
+`reservedFactNamesRejected` can miss a language that keeps whether it's prepared in a static field: once anything
+earlier in the JVM has prepared a language of that class, its first answers are already the prepared ones.
 
 `concurrentPrepares` has the same blind spot: a runtime your language sets up in a static field or initializer is
 checked only if nothing earlier in the JVM prepared a language of its class. And a race is likely, not
@@ -157,11 +156,11 @@ for another reason, such as `output` declared in `configure` with another type. 
 that reads `output`. If it fails to load, the failure says to reserve `output`, reject it in `checkFactName`, or
 declare it as `Object` in `configure`.
 
-`evaluateAgreesWithDetail` needs no engine: it compiles a condition with your compiler and `compileContext()`, and
-evaluates it in its own session, ending each fact's run with `LanguageTestContexts.endRun` before the session
-closes. The engine calls only `evaluateWithDetail`, so without this check an `evaluate` returning the wrong value
-would pass every other check, and a wrapping condition would still see it. A language that doesn't override
-`evaluateWithDetail` passes: the default returns what `evaluate` does.
+`evaluateAgreesWithDetail` needs no engine: it compiles each condition with your compiler and `compileContext()`, and
+evaluates it in its own session, ending each run with `LanguageTestContexts.endRun` before the session closes. The
+engine calls only `evaluateWithDetail`, so this is the one check of `evaluate`, and only for the conditions in its
+row: one wrong for another, such as a property read, passes. A language that doesn't override `evaluateWithDetail`
+passes: the default returns what `evaluate` does.
 
 In the `evaluateAgreesWithDetail` row of [the checks table](contract-kit.md#-testing-with-the-contract-kit), "both
 throw" means an exception or a non-fatal `Error` from each. A [fatal](../glossary.md#fatal-error) one is thrown

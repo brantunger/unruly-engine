@@ -86,6 +86,9 @@ Once `convertsOutputNumbers()` returns `true`, the [contract kit](contract-kit.m
 `Infinity`, 2^53 + 2, 1.5, `NaN`, `-Infinity` and -(2^53 + 2) and the `BigDecimal`s 1.5 and 1E19, which must each
 fail it.
 
+`outputNumbersConvertedConcurrently` then converts whole `Double`s for the `int` setter on 8 threads at once, each with
+its own number, so keep no state the threads share.
+
 So a conversion that checks only that the value is whole and then narrows it with `intValue()` or `longValue()` fails
 the check. So do a cast with no lower bound, which sets `Integer.MIN_VALUE` from -3.0E9 and a `long` the action may not
 have meant from -(2^53 + 2); `Math.round` for a `long`, which sets 2 from 1.5, 0 from `NaN` and `Long.MIN_VALUE` from

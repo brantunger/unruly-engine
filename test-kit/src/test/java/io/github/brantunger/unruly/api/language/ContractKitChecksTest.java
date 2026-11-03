@@ -1874,6 +1874,65 @@ class ContractKitChecksTest {
                         + " was interrupted, which the engine only logs at WARN", check.failure().getMessage()));
     }
 
+    /**
+     * Wraps a language so that each session it creates is new, and so warmed up when copies are made as the rules
+     * load, and its compilers' {@code warmUp()} throws an {@link IllegalStateException} caused by an
+     * {@link InterruptedException}, as a compiler interrupted while it waits for its runtime to start may. The engine
+     * puts the interrupt back on the thread that loaded the rules.
+     */
+    private static ExpressionLanguage interruptedWarmUp(ExpressionLanguage language) {
+        ExpressionLanguage stateful = withSessions(language, () -> new Session() {
+        });
+        return new ForwardingExpressionLanguage(stateful) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                return new ForwardingExpressionCompiler(stateful.newCompiler(context)) {
+                    @Override
+                    public void warmUp(Session session) {
+                        throw new IllegalStateException("the warm-up was interrupted",
+                                new InterruptedException("while the compiler waited for its runtime"));
+                    }
+                };
+            }
+        };
+    }
+
+    /**
+     * Runs {@code check}, one of the checks whose first {@code load()} makes copies and warms up their sessions, on a
+     * language whose warm-up fails with an {@link InterruptedException} in its cause, and requires it to fail with what
+     * {@code load()} threw and to leave the thread uninterrupted: the interrupt belongs to the check's engine, not to
+     * the code that runs on the thread after the check, such as a subclass's {@code @AfterEach} (#1265).
+     */
+    private static void assertWarmUpInterruptNotLeaked(String check) {
+        InterruptedCheck result = runInterruptedCheck(interruptedWarmUp(new ToyExpressionLanguage()), check);
+
+        assertAll(() -> assertFalse(result.interrupted(), check + " left the thread interrupted"),
+                () -> assertInstanceOf(RuleCompilationException.class, result.failure(), result.failure()::toString),
+                () -> assertEquals("The 'toy' expression language failed to warm up a session: the warm-up was"
+                        + " interrupted", result.failure().getMessage()));
+    }
+
+    @Test
+    @DisplayName("a warm-up that fails with an InterruptedException in its cause when the copies check's rules load"
+            + " fails the check and doesn't leave its thread interrupted (#1265)")
+    void interruptedWarmUpOfCopiesAtLoadNotLeaked() {
+        assertWarmUpInterruptNotLeaked("copiesAtLoad");
+    }
+
+    @Test
+    @DisplayName("a warm-up that fails with an InterruptedException in its cause when the compiler check's rules load"
+            + " fails the check and doesn't leave its thread interrupted (#1265)")
+    void interruptedWarmUpOfCompilerClosedNotLeaked() {
+        assertWarmUpInterruptNotLeaked("compilerClosed");
+    }
+
+    @Test
+    @DisplayName("a warm-up that fails with an InterruptedException in its cause when the session check's rules load"
+            + " fails the check and doesn't leave its thread interrupted (#1265)")
+    void interruptedWarmUpOfSessionsClosedNotLeaked() {
+        assertWarmUpInterruptNotLeaked("sessionsClosed");
+    }
+
     @Test
     @DisplayName("a session whose close() fails with an InterruptedException in its cause when the run nested in the"
             + " session check's run ends doesn't stop the check's run nor leave its thread interrupted, and the check"
@@ -2643,6 +2702,92 @@ class ContractKitChecksTest {
 
         assertTrue(failure.getMessage().startsWith("reservedFactNames() must return the same names after prepare() as"
                 + " before"), failure.getMessage());
+    }
+
+    /** Wraps a language so that {@code reservesForEveryRuleList()} answers what {@code answer} supplies. */
+    private static ExpressionLanguage reservingForEveryRuleList(ExpressionLanguage language,
+                                                                Supplier<Boolean> answer) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public boolean reservesForEveryRuleList() {
+                return answer.get();
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a language whose reservesForEveryRuleList() answers the same every time passes the reserved-name"
+            + " check, whichever its answer (#1265)")
+    void reservesForEveryRuleListConstantPasses() {
+        assertDoesNotThrow(() -> runCheck(reservingForEveryRuleList(new ToyExpressionLanguage(), () -> true),
+                "reservedFactNamesRejected"));
+        assertDoesNotThrow(() -> runCheck(reservingForEveryRuleList(new ToyExpressionLanguage(), () -> false),
+                "reservedFactNamesRejected"));
+    }
+
+    @Test
+    @DisplayName("a language whose reservesForEveryRuleList() changes its answer once it's prepared fails the"
+            + " reserved-name check (#1265)")
+    void reservesForEveryRuleListChangedByPrepareFails() {
+        // True before prepare() and false after: build() prepares the language, which the engine names, so a later
+        // engine built with this instance reserves the names only for the rule lists that use it, and the first for
+        // every rule list.
+        AtomicBoolean prepared = new AtomicBoolean();
+        ExpressionLanguage language = new ForwardingExpressionLanguage(
+                reservingForEveryRuleList(new ToyExpressionLanguage(), () -> !prepared.get())) {
+            @Override
+            public void prepare() {
+                super.prepare();
+                prepared.set(true);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "reservedFactNamesRejected"));
+
+        assertEquals("reservesForEveryRuleList() must give the same answer after prepare() as before: the engine asks"
+                + " once, when it's built, and may prepare the language before or after ==> expected: <true> but was:"
+                + " <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose reservesForEveryRuleList() changes its answer on every call fails the reserved-name"
+            + " check (#1265)")
+    void reservesForEveryRuleListChangedEveryCallFails() {
+        AtomicInteger calls = new AtomicInteger();
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                reservingForEveryRuleList(new ToyExpressionLanguage(), () -> calls.getAndIncrement() % 2 == 0),
+                "reservedFactNamesRejected"));
+
+        assertEquals("reservesForEveryRuleList() must give the same answer every time: the engine asks once, when it's"
+                + " built ==> expected: <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose reservesForEveryRuleList() throws before it's prepared fails the reserved-name check"
+            + " (#1265)")
+    void reservesForEveryRuleListThrowingBeforePrepareFails() {
+        // Throws until prepare() has run, as one that reads its answer from a runtime prepare() starts may.
+        AtomicBoolean prepared = new AtomicBoolean();
+        ExpressionLanguage language = new ForwardingExpressionLanguage(
+                reservingForEveryRuleList(new ToyExpressionLanguage(), () -> {
+                    if (!prepared.get()) {
+                        throw new IllegalStateException("the runtime isn't started");
+                    }
+                    return true;
+                })) {
+            @Override
+            public void prepare() {
+                super.prepare();
+                prepared.set(true);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(language, "reservedFactNamesRejected"));
+
+        assertTrue(failure.getMessage().startsWith("reservesForEveryRuleList() must answer before prepare() is called"),
+                failure.getMessage());
     }
 
     /**
