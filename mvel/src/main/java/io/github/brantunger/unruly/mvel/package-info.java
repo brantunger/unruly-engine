@@ -29,12 +29,8 @@
  * the class unusable for the life of the JVM. A string concatenation compiled with javac's default links the same way,
  * and on JDK 25 and later one whose first link overflows fails for good, so the module is compiled to build its strings
  * without it (#965). A path every compile or run takes may link one: an overflow while a lambda is set up isn't
- * remembered, and its next use tries again (see core's {@code StackHeadroom}). Two static initializers depart from
- * this, {@code CallSites}' with three call sites and {@code MvelAnalysis}' with one: they link theirs as the classes
- * initialize, which {@code prepare()} does before anything compiles, but a compiler created without an engine
- * initializes them as its first rule compiles or runs, where an overflow would leave them broken for the life of the
- * JVM (see #1374). {@code InvokeDynamicCountTest} pins how many each class links, and the lambda tests it names check
- * the paths above whole or method by method.
+ * remembered, and its next use tries again (see core's {@code StackHeadroom}). {@code InvokeDynamicCountTest} pins how
+ * many each class links, and the lambda tests it names check the paths above whole or method by method.
  * </p>
  *
  * <p>Types in this package are non-null unless annotated {@link org.jspecify.annotations.Nullable}.</p>

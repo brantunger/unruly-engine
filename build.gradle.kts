@@ -59,9 +59,13 @@ val coverageVerification = tasks.register<JacocoCoverageVerification>("jacocoTes
     }
     // The test kit's ExpressionLanguageContractTest is a test class. Its lambdas that always throw leave instructions
     // JaCoCo can't reach, and the tests run it for MVEL and for a test language, so it isn't gated.
+    // CallSites.DropMethodInfo picks StackWalker's DROP_METHOD_INFO option by name, which only JDK 22 and later have,
+    // and the test JVM is 21, so the branch that finds it never runs here; the loop is in that one small class so
+    // nothing else of CallSites is left out (#1374).
     classDirectories.from(coverageReport.map { report ->
         report.classDirectories.asFileTree.matching {
             exclude("io/github/brantunger/unruly/test/ExpressionLanguageContractTest*")
+            exclude("io/github/brantunger/unruly/mvel/CallSites\$DropMethodInfo.class")
         }
     })
     sourceDirectories.from(coverageReport.map { report -> report.sourceDirectories })

@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Pins how many {@code invokedynamic} instructions each class of this module has, by the rule on lambdas in this
  * package's {@code package-info}: none on a failure, loop-detection or class-lookup path, nor in a static initializer,
- * with the two departures it names, while a path every compile or run takes may link one. It reads every class file
+ * while a path every compile or run takes may link one. It reads every class file
  * under the directory this module's classes were loaded from, this package's, {@code warmup}'s and
  * {@code module-info}'s, so a class added later is counted without being named here, and counts the instructions in
  * each as {@code javap -c} shows them, through {@link ClassFiles#invokeDynamicCount}. The counts must equal
@@ -32,14 +32,12 @@ class InvokeDynamicCountTest {
 
     private static final String PACKAGE = "io/github/brantunger/unruly/mvel/";
     // The classes with one, and how many, by where they link it: MvelExpression as it compiles (three), takes a copy,
-    // warms up and makes a parser context; MvelExpressionLanguage in prepare(); CallSites and MvelAnalysis as they
-    // initialize, the two departures; MvelFactNames as it's created; Imports as it makes a lookup configuration;
-    // MvelExpressionCompiler as it warms a session up; and MvelSession as it takes a compiled copy.
+    // warms up and makes a parser context; MvelExpressionLanguage in prepare(); MvelFactNames as it's created; Imports
+    // as it makes a lookup configuration; MvelExpressionCompiler as it warms a session up; and MvelSession as it takes
+    // a compiled copy. CallSites and MvelAnalysis, whose static initializers had three and one, have none (#1374).
     private static final Map<String, Integer> EXPECTED = Map.of(
             PACKAGE + "MvelExpression.class", 6,
             PACKAGE + "MvelExpressionLanguage.class", 3,
-            PACKAGE + "CallSites.class", 3,
-            PACKAGE + "MvelAnalysis.class", 1,
             PACKAGE + "MvelFactNames.class", 1,
             PACKAGE + "Imports.class", 1,
             PACKAGE + "MvelExpressionCompiler.class", 1,

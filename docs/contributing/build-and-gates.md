@@ -50,10 +50,10 @@ by `build` without GraalVM, fails unless CI's [strict](../native-image.md#-stric
 
 - **Checkstyle's** `AvoidStarImport` allows static member imports, so `import static ...Assertions.*` is fine.
 - **PMD** excludes `GuardLogStatement` from best-practices, and `AvoidCatchingGenericException` from error-prone,
-  because the engine catches whatever a language, listener or setter throws and turns it into a failure.
-- **Coverage** excludes `io/github/brantunger/unruly/test/ExpressionLanguageContractTest*`: its always-throwing
-  lambdas leave instructions JaCoCo can't reach. `-x test` fails the gate with `No JaCoCo execution data`;
-  `./gradlew build -x check` only compiles and packages.
+  because the engine turns whatever a language, listener or setter throws into a failure.
+- **Coverage** excludes `io/github/brantunger/unruly/test/ExpressionLanguageContractTest*` (always-throwing lambdas,
+  unreachable) and `io/github/brantunger/unruly/mvel/CallSites$DropMethodInfo` (a JDK 22 option, unreachable on 21).
+  `-x test` fails it with `No JaCoCo execution data`; `./gradlew build -x check` only compiles and packages.
 - **The module-path applications** are `withMvel`, `withoutMvel`, `withTestKit` and `withJackson`, each compiled
   with `-Xlint:all -Werror` like the main sources.
 

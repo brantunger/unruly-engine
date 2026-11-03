@@ -124,7 +124,13 @@ class NestedRunsTest {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> NestedRuns.assertNestedRunFailed(nest, failing, "action"));
 
-        assertSame(notTheEngines, failure.getCause(), "the check names the nested run's failure");
+        assertAll(
+                () -> assertSame(notTheEngines, failure.getCause(), "the check names the nested run's failure"),
+                // #1373: the failure says why the check failed, the type, not that the getter's exception is missing.
+                () -> assertTrue(failure.getMessage().contains("failed, but not with a RuleExecutionException"),
+                        failure.getMessage()),
+                () -> assertFalse(failure.getMessage().contains("doesn't carry what its nest.value threw"),
+                        failure.getMessage()));
     }
 
     @Test

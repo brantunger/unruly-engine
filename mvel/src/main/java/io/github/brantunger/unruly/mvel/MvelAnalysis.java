@@ -10,6 +10,7 @@ import org.mvel2.compiler.ExpressionCompiler;
 import java.nio.CharBuffer;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -253,13 +254,16 @@ final class MvelAnalysis extends ExpressionCompiler {
         return TYPE_WORDS.contains(parts[parts.length - 1]) ? null : name;
     }
 
+    // A loop rather than forEach with a lambda: this runs as the class initializes, which a compiler created without
+    // an engine does as its first rule compiles, maybe deep in a stack, where an overflow linking the lambda would
+    // leave the class unusable for the life of the JVM (#1374).
     private static Set<String> typeWords() {
         Set<String> words = new HashSet<>(List.of("var", "yield", "record", "sealed", "permits"));
-        AbstractParser.LITERALS.forEach((word, value) -> {
-            if (!(value instanceof Class)) {
-                words.add(word);
+        for (Map.Entry<String, Object> literal : AbstractParser.LITERALS.entrySet()) {
+            if (!(literal.getValue() instanceof Class)) {
+                words.add(literal.getKey());
             }
-        });
+        }
         words.addAll(RuleText.wordOperators());
         return Set.copyOf(words);
     }
