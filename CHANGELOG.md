@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.35.0](https://github.com/brantunger/unruly-engine/compare/v2.34.1...v2.35.0) (2026-11-03)
+
+
+### Features
+
+* the contract kit checks evaluate against evaluateWithDetail for more than an equality, that reservesForEveryRuleList() never changes its answer, and convertOutput from eight threads at once ([#1265](https://github.com/brantunger/unruly-engine/issues/1265), [#1289](https://github.com/brantunger/unruly-engine/issues/1289)) ([#1362](https://github.com/brantunger/unruly-engine/issues/1362)) ([827d60c](https://github.com/brantunger/unruly-engine/commit/827d60cba692086417eb26b5708783a07f0b7487))
+
 ## [2.34.1](https://github.com/brantunger/unruly-engine/compare/v2.34.0...v2.34.1) (2026-11-02)
 
 
