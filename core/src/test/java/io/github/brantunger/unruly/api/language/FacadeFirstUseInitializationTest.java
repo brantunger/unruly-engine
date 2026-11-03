@@ -69,8 +69,8 @@ class FacadeFirstUseInitializationTest {
     private static final boolean ON_OPENJ9 = System.getProperty("java.vm.name", "").contains("OpenJ9");
 
     // The classes a first call may initialize, each measured safe: its first initialization, deep in a stack at
-    // every depth to the end, was clean on JDK 21 and 25 (#1260), as its static initializer is too small to overflow.
-    // Each may or may not appear, as a JDK may initialize it at startup.
+    // every depth to the end, was clean on JDK 21 and 25 with no AOT cache (#1260), as its static initializer is too
+    // small to overflow. Each may or may not appear, as a JDK may initialize it at startup.
     private static final Set<String> MEASURED_SAFE = Set.of(
             // A cause chain's set of the exceptions read is backed by one.
             "java.util.IdentityHashMap");

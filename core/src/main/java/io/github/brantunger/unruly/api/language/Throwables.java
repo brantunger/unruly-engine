@@ -79,12 +79,15 @@ public final class Throwables {
      * Finds the fatal error (see {@link #isFatal}) in what was caught, as the engine finds the one it rethrows: the
      * throwable itself, or one of its causes, or failing that one suppressed on any of them, or among the causes and
      * suppressed exceptions of those, at any depth, as a {@code try}-with-resources whose {@code close()} hits an
-     * {@link OutOfMemoryError} while its body throws leaves it. The cause chain is read first, as {@link #causeChain}
-     * reads it; then the direct suppressed exceptions of each link, from the top link down, before what any of them
-     * leads to, which is read the same way, depth first. Each exception is read once, by identity, and at most 10,000
-     * are, so a fatal error past that many is missed, as the engine misses it. A suppressed exception the engine
-     * itself added to a failure it reported, beside the one it rethrows, isn't read: the engine keeps there a fatal
-     * error a listener threw, and finding it again would take it for the failure's own.
+     * {@link OutOfMemoryError} while its body throws leaves it. The throwable's own cause chain is read first, as
+     * {@link #causeChain} reads it, at most 100 links, so a fatal error further down it, or suppressed on a link
+     * further down, is missed; then the direct suppressed exceptions of each of those links, from the top link down,
+     * before what any of them leads to, depth first: a suppressed exception's cause chain is read in full, link by
+     * link, with no limit of its own, then the suppressed exceptions of its links the same way. Each exception is
+     * read once, by identity, and at most 10,000 are, so a fatal error past that many is missed, as the engine misses
+     * it. A suppressed exception the engine itself added to a failure it reported, beside the one it rethrows, isn't
+     * read: the engine keeps there a fatal error a listener threw, and finding it again would take it for the
+     * failure's own.
      *
      * <p>
      * It allocates the list and the identity set of {@link #causeChain}, and a walk when any link has suppressed
@@ -141,8 +144,9 @@ public final class Throwables {
      * read as {@link #messageOf} reads a message, so a {@code getCause()} that throws ends the chain there. The chain
      * also stops before a link it holds already, by identity, as a chain that loops back on itself has one, and after
      * 100 links, as a {@code getCause()} of its own that returns a new exception every time would otherwise make a
-     * chain that never ends. The engine reads a cause chain this way wherever it describes a failure or looks for a
-     * fatal error in one.
+     * chain that never ends. The engine reads a throwable's own cause chain this way wherever it describes a failure
+     * or looks for a fatal error in one; a chain under a suppressed exception has no limit of its own (see
+     * {@link #fatalError}).
      *
      * <p>
      * It allocates a new list, which the caller owns and may change, and an identity set while it reads.
