@@ -42,6 +42,13 @@ import java.util.Objects;
  * later JDK escapes the same characters until a later 2.x release updates the table; below U+0100 the running JDK
  * decides, the same way on JDK 21 to 26. A later 2.x release may also escape more kinds of character.
  * </p>
+ *
+ * <p>
+ * On Linux and macOS, with no engine built, the JVM's first read of a character of a string holding one above U+00FF,
+ * such as {@code "\u03c0"}, initializes the JDK's {@code java.lang.StringUTF16}, and a first read deep in a stack
+ * can break that class for the life of the JVM (#1295). So make a first escape of such text near the top of a stack, or
+ * after an engine is built: the first build initializes the class.
+ * </p>
  */
 public final class MessageText {
 
