@@ -55,15 +55,14 @@ in a stack, that read could leave every later one failing for the JVM's life. It
 with [the common-pool cost](#-what-a-language-prepares).
 
 The check takes about 160 KB on x64, `-Xcomp` included, so a first build's thread needs about 200 KB on Windows x64,
-more on macOS, where 256 KB can be too small. An AOT code cache (JDK 25 and later, #1293) is untested.
+more on macOS, where 256 KB can be too small.
 
 **The first `build()` also warms up the JDK's reflection, outside a native image.** Over the public methods of
 `Object`, `Class`, `Math`, `String`, `Thread`, `System` and `Iterable`, it reads the generic return and parameter
 types, the annotations, and each type variable's declaring class or method. Then it calls `Object.hashCode`
 reflectively.
 
-So a deep first read of a generic type, as in MVEL's analysis of a method a rule calls or the default output writer's
-first write through a generic setter, finds the JDK's `sun.reflect.generics` classes for those methods' shapes
+So a deep first read of a generic type finds the JDK's `sun.reflect.generics` classes for those methods' shapes
 initialized. Nor can a deep first reflective call of a JDK method leave the proxy class of an annotation those
 methods carry, such as `@IntrinsicCandidate`, unusable.
 
@@ -116,6 +115,11 @@ Linux and macOS a deep first use of text above U+00FF, in `MessageText`, a rule,
 property or package import name, can break `java.lang.StringUTF16` (#1295):
 [build the first engine near the top](#-build-the-first-engine-near-the-top).
 
+> [!WARNING]
+> With an AppCDS archive, static or dynamic, or a JDK 24+ AOT cache, a deep first use of a class can lose the class
+> path for the JVM's life, or break a preloaded class's static initializer (#1293): build an engine, or make one
+> shallow first call, near the top at startup.
+
 Measured on JDK 21, 25 and 26, the reflection warm-up covers:
 
 - The annotation types `@Deprecated`, `@CallerSensitive` and `@IntrinsicCandidate`, with `@ForceInline` on JDK 21
@@ -153,7 +157,8 @@ Logback, some of its own and the `java.time` classes it formats dates with.
 calls every public method of `Throwables`, `ImportLimits` and `MessageText`, `MessageText`'s with text from several
 Unicode planes, builds a tagged rule, declares a fact, facts and language, and sets run tags, all starting above
 U+00FF (#1292), and makes compile contexts declaring facts (#1322). It fails if they initialize a class with a static
-initializer, other than the JDK's hidden classes and one measured safe, `java.util.IdentityHashMap` (#1260).
+initializer, other than the JDK's hidden classes and one measured safe with no AOT cache, `java.util.IdentityHashMap`
+(#1260, #1293).
 
 `CaseTableFirstUseTest`, in new JVMs, fails if a name or package import above U+00FF builds a table before the
 check, an import leaves a plane's unbuilt, or one at or below checks (#1297, #1366).
@@ -161,10 +166,9 @@ check, an import leaves a plane's unbuilt, or one at or below checks (#1297, #13
 Above U+00FF, `MessageText` escapes from [a table of its own](exception-messages.md#-shortening-and-escaping) (#1286).
 
 **An overflow in the engine's own log call loses that line, not what the call does.** Deep in a stack, the JVM's
-first logged message, such as the engine's ERROR line for a rule's failure or its WARN line for a listener's
-exception, can overflow while the provider loads those classes. The engine catches that overflow in its ERROR and
-WARN log calls, all but a few last-resort ones made only while a fatal error, or a failure it never expects, is
-being handled.
+first logged message can overflow while the provider loads those classes. The engine catches that overflow in its
+ERROR and WARN log calls, all but a few last-resort ones made only while a fatal error, or a failure it never expects,
+is being handled.
 
 The call then ends as it would have near the top: `load()` throws its `RuleCompilationException`, or succeeds
 past a language's warning; a run fails the rule, throws its failure or what stopped it, or goes on past a warning or
@@ -175,15 +179,13 @@ Measured with `slf4j-simple` 2.0.20 and Logback 1.5.38, on JDK 21 and 25, none o
 unusable: each struck while loading a class, not in its static initializer. Other paths and providers aren't
 measured. With `slf4j-api` alone, nothing is logged or overflowed.
 
-> [!NOTE]
-> Up to 2.30.12, or 2.30.14 for the WARN lines on keeping an idle copy or retiring rules after a failed load, the
-> engine didn't catch it: the caller got a bare `StackOverflowError`.
+Up to 2.30.12, or 2.30.14 for the WARN lines on keeping an idle copy or retiring rules after a failed load, the
+engine didn't catch it: the caller got a bare `StackOverflowError`.
 
 ### The JDK classes a rule names or calls
 
-**Beyond what the sections above prepare, the engine leaves the JDK classes a rule names or calls to their first
-load or run.** If the JVM's first use of one is deep in a stack, its static initializer can overflow, as
-[above](#-build-the-first-engine-near-the-top).
+**The engine leaves the JDK classes a rule names or calls to their first load or run.** If the JVM's first use of
+one is deep in a stack, its static initializer can overflow, as [above](#-build-the-first-engine-near-the-top).
 
 Two ways in:
 
@@ -223,7 +225,7 @@ can't know which APIs they'll call: give their deep loads and runs [more room](e
 linking classes. A form is a kind of expression, as in the table below.
 [MVEL's warm-up](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack) runs only a few. A form whose first
 use initializes an MVEL class, such as an inline list or map, `new` or `soundslike`, can instead leave that class
-unusable; see [MVEL deep in a stack](languages/mvel-gotchas.md#-a-first-load-or-run-deep-in-a-stack).
+unusable.
 
 Deep in a stack, a form's first use can need up to about 16 KB more than the about 8 KB that `load()` and `run()`
 [check for](exceptions-by-method.md). The rule then fails just past the check, though it passes once
