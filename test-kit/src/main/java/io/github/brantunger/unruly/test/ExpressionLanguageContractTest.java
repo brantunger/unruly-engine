@@ -18,6 +18,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
+import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
@@ -107,7 +108,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * one check with {@link #comparesWholeNumbersByValue()}. A language that converts the numbers its actions return for
  * the output's setters, so that a whole double sets an {@code int} or a {@code long} property, and a fraction, an
  * infinity, NaN or a whole number the setter's type doesn't hold exactly, as a {@code Double} or a {@code BigDecimal},
- * fails the rule, opts into one more check with {@link #convertsOutputNumbers()}.
+ * fails the rule, opts into two more checks with {@link #convertsOutputNumbers()}, one of which converts on several
+ * threads at once.
  * </p>
  *
  * @see <a href=
@@ -358,6 +360,11 @@ public abstract class ExpressionLanguageContractTest {
      * the {@code BigDecimal}s 1.5 and 1E19, which must each fail the rule and leave the balance: a language that
      * narrows one with {@code longValue()} sets 1 and the low 64 bits. Its engines are built as every other check's
      * is, so {@link #configure} applies.
+     * </p>
+     *
+     * <p>
+     * It opts into {@code outputNumbersConvertedConcurrently} too, which converts whole doubles for an {@code int}
+     * setter on eight threads at once, as {@code convertOutput} must be thread-safe.
      * </p>
      *
      * @return Whether the language converts the numbers its actions return for a setter
@@ -618,9 +625,11 @@ public abstract class ExpressionLanguageContractTest {
      *
      * <p>
      * A language that needs {@link #configure} to compile needs this too, with the same imports, options and declared
-     * facts, which the {@link LanguageTestContexts} {@code compile} methods take. The condition is
+     * facts, which the {@link LanguageTestContexts} {@code compile} methods take. The conditions are
      * {@link #factEquals factEquals("x", 1)}, evaluated for an {@code x} that is an {@code Integer}, a {@code Long}, a
-     * {@code Short} and a {@code BigDecimal}.
+     * {@code Short} and a {@code BigDecimal}, then {@link #alwaysTrue()}, {@link #factValue factValue("x")}, for a
+     * {@link Boolean} {@code x}, and {@link #bothConditions}: a context that declares {@code x} as a number may make
+     * the compiler refuse {@code factValue("x")}, which skips it.
      * </p>
      *
      * @return The context
@@ -1304,6 +1313,80 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
+     * Runs {@link #putFact putFact("creditScore", "x")} on eight threads at once, 200 runs each, as
+     * {@code outputNumbersConverted}'s first run does on one: each thread's {@code x} is a whole {@link Double} of its
+     * own, {@code 1000 * thread + run}, and each thread has a {@link WritableApplicant} of its own, which the writer
+     * sets through the default writer on the thread running the rule, and which the thread reads after each run. The
+     * engine calls {@code convertOutput} on that thread, possibly on many at once, so a {@code convertOutput} that
+     * keeps the value in state every thread shares, such as a field it writes the value to and reads it back from, or
+     * a cache that isn't thread-safe, sets another thread's number, and fails the check. Skipped, as
+     * {@code outputNumbersConverted} is, unless {@link #convertsOutputNumbers()} returns {@code true}.
+     *
+     * <p>
+     * A race is caught only when it happens: the threads are released together by a latch, which makes one likely,
+     * but a window of a few instructions may close before another thread reaches it. So the check raises the odds of
+     * catching a {@code convertOutput} that isn't thread-safe; passing it doesn't prove one is. A run that throws
+     * fails the check with the thread's {@link ExecutionException}, which wraps what the engine threw.
+     * </p>
+     */
+    @Test
+    @DisplayName("a whole Double an action returns reaches a setter taking an int as that run's own number, on several"
+            + " threads at once")
+    void outputNumbersConvertedConcurrently() throws Exception {
+        assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
+        // A bean for each thread, set on the thread running the rule, which is the thread that called run(). The
+        // writer is set after configure(), as outputNumbersConverted's is.
+        ThreadLocal<WritableApplicant> applicants = ThreadLocal.withInitial(() -> new WritableApplicant(0));
+        closing(builder(language()).outputWriter(new BeanWriter(applicants::get)).build(), engine -> {
+            engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(CREDIT_SCORE, "x"))));
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService workers = Executors.newFixedThreadPool(8);
+            try {
+                List<Future<Integer>> results = new ArrayList<>();
+                for (int t = 0; t < 8; t++) {
+                    int worker = t;
+                    results.add(workers.submit(() -> {
+                        start.await();
+                        for (int i = 0; i < 200; i++) {
+                            int score = worker * 1_000 + i;
+                            engine.run(new FactMap<>(new Fact<>("x", (double) score)));
+                            int set = applicants.get().getCreditScore();
+                            assertEquals(score, set, () -> "worker thread " + worker + "'s action returned the Double "
+                                    + score + ".0, and its run set the credit score to " + set + ": convertOutput must"
+                                    + " be thread-safe, as the engine calls it on the thread running the rule, possibly"
+                                    + " on many threads at once");
+                        }
+                        return worker;
+                    }));
+                }
+                start.countDown();
+
+                for (Future<Integer> result : results) {
+                    assertWorkerPassed(result);
+                }
+            } finally {
+                stop(workers);
+            }
+        });
+    }
+
+    /**
+     * Waits up to 30 seconds for one of {@code outputNumbersConvertedConcurrently}'s threads, and fails with what its
+     * own assertion said, its {@link ExecutionException} attached, if that failed, or throws the exception, which wraps
+     * what the engine threw, if its run did.
+     */
+    private static void assertWorkerPassed(Future<Integer> worker) throws Exception {
+        try {
+            worker.get(30, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof AssertionError failure) {
+                throw new AssertionFailedError(failure.getMessage(), e);
+            }
+            throw e;
+        }
+    }
+
+    /**
      * Has an action return a {@link Double} for a property whose only setter takes a {@link String}, which no
      * language converts a number to: the writer asks the language's {@code convertOutput}, which must return the value
      * unchanged, or refuse it, so that the write fails the rule, naming the property, and the property keeps what it
@@ -1693,7 +1776,8 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     @Test
-    @DisplayName("the fact names the language reserves are the same every time, and run() rejects each")
+    @DisplayName("the fact names the language reserves, and whether it reserves them for every rule list, are the same"
+            + " every time, and run() rejects each name")
     void reservedFactNamesRejected() throws Exception {
         ExpressionLanguage language = language();
         // Asked before the engine is built, so before the language is prepared: an engine asks every language it has
@@ -1709,6 +1793,12 @@ public abstract class ExpressionLanguageContractTest {
         Set<String> reserved = Set.copyOf(returned);
         assertEquals(reserved, language.reservedFactNames(), "reservedFactNames() must return the same names every"
                 + " time: the engine asks once, when it's built");
+        // Whether the names are reserved for every rule list is asked the same way: once, when the engine is built.
+        // A later engine built with an instance whose answer changed reserves the names for other rule lists (#1265).
+        boolean forEveryRuleList = assertDoesNotThrow(language::reservesForEveryRuleList,
+                "reservesForEveryRuleList() must answer before prepare() is called");
+        assertEquals(forEveryRuleList, language.reservesForEveryRuleList(), "reservesForEveryRuleList() must give the"
+                + " same answer every time: the engine asks once, when it's built");
         closing(engine(language), engine -> {
             engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
             // build() has prepared the language, which the engine names, so it's asked again now: a later engine built
@@ -1738,6 +1828,9 @@ public abstract class ExpressionLanguageContractTest {
                         "reservedFactNames() returned '" + name + "', but run() rejected a fact with that name for"
                                 + " another reason: " + thrown.getMessage());
             }
+            assertEquals(forEveryRuleList, language.reservesForEveryRuleList(), "reservesForEveryRuleList() must give"
+                    + " the same answer after prepare() as before: the engine asks once, when it's built, and may"
+                    + " prepare the language before or after");
         });
     }
 
@@ -1910,7 +2003,10 @@ public abstract class ExpressionLanguageContractTest {
     @DisplayName("copies made and warmed up when the rules load give the same results, one run or several at once")
     void copiesAtLoad() throws Exception {
         closing(builder(language()).copiesAtLoad(2).build(), engine -> {
-            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y"))));
+            // The load warms up the copies' sessions: an interrupt the engine puts back when warmUp() fails with one
+            // in its cause is cleared, so the thread isn't left interrupted after the check, which still fails with
+            // what load() threw (#1265).
+            keepingInterrupt(() -> engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "y")))));
             ExecutorService workers = Executors.newFixedThreadPool(2);
             try {
                 List<Future<Map<String, Object>>> results = new ArrayList<>();
@@ -1942,7 +2038,8 @@ public abstract class ExpressionLanguageContractTest {
         // close() fails only after a warm-up would pass otherwise.
         try {
             closing(builder(countingCloses(language, closes, closeFailures)).copiesAtLoad(1).build(), engine -> {
-                engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+                // The load warms up the copy's session, as copiesAtLoad's does, so its interrupt is cleared too.
+                keepingInterrupt(() -> engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")))));
                 assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
                 // The reload closes the replaced copy's sessions and compiler, and the closes below close the new
                 // one's, inside the check: an interrupt the engine puts back when one of those close() fails is
@@ -1980,7 +2077,8 @@ public abstract class ExpressionLanguageContractTest {
         // copy, and each session warmed up; one that returns Session.none() is asked once, and its copy is shared.
         // Closed however the check ends, so a failed run still closes the sessions.
         sessions.closing(builder(sessions.watching(language())).copiesAtLoad(2).build(), engine -> {
-            engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x"))));
+            // The load warms up the copies' sessions, as copiesAtLoad's does, so its interrupt is cleared too.
+            keepingInterrupt(() -> engine.load(List.of(rule("r", 1, factEquals("x", 1), putFact(SEEN, "x")))));
             assertSameOutput(Map.of(SEEN, 1), engine.run(new FactMap<>(new Fact<>("x", 1))));
         });
 
@@ -2138,9 +2236,13 @@ public abstract class ExpressionLanguageContractTest {
     }
 
     /**
-     * Compiles a condition with the language's compiler, outside an engine, and evaluates it against one session, with
-     * {@code evaluate} and with {@code evaluateWithDetail}, for a fact that is an {@code Integer} 1 or 2, a
-     * {@code Long} 1 or 2, a {@code Short} 1 and a {@code BigDecimal} 1. The engine calls only
+     * Compiles conditions with the language's compiler, outside an engine, and evaluates each against one session, with
+     * {@code evaluate} and with {@code evaluateWithDetail}: {@link #factEquals factEquals("x", 1)} for a fact that is
+     * an {@code Integer} 1 or 2, a {@code Long} 1 or 2, a {@code Short} 1 and a {@code BigDecimal} 1; then
+     * {@link #alwaysTrue()} for an {@code x} of 1, {@link #factValue factValue("x")} for {@link Boolean#TRUE} and
+     * {@link Boolean#FALSE}, and {@link #bothConditions bothConditions(factEquals("x", 1), alwaysTrue())} for 1 and 2,
+     * unless it returns {@code null}. A {@code factValue("x")} the compiler refuses is skipped, as a typed language
+     * whose {@link #compileContext()} declares {@code x} as a number may refuse it. The engine calls only
      * {@code evaluateWithDetail}, so a language whose {@code evaluate} disagrees with it passes every other check,
      * and fails whoever calls {@code evaluate} directly. A language that doesn't override {@code evaluateWithDetail}
      * passes: the default returns what {@code evaluate} does. So does one that throws from both for a fact, as a
@@ -2151,7 +2253,7 @@ public abstract class ExpressionLanguageContractTest {
      * exception, is thrown on, and fails the check by itself.
      *
      * <p>
-     * Each fact is evaluated as a run of its own, which {@link LanguageTestContexts#endRun} ends before the next, as
+     * Each evaluation is a run of its own, which {@link LanguageTestContexts#endRun} ends before the next, as
      * the engine ends a run: the values the language kept with {@link EvaluationContext#runScopedClosing} are closed
      * then, before the session. A language that keeps none sees no difference.
      * </p>
@@ -2169,8 +2271,7 @@ public abstract class ExpressionLanguageContractTest {
     void evaluateAgreesWithDetail() throws Exception {
         // Closed however the check ends, the session before its compiler, as the engine closes them.
         closing(new ClosedQuietly<>(language().newCompiler(compileContext())), compiler -> {
-            CompiledCondition condition = compiler.resource()
-                    .compileCondition(new Expression("r", ExpressionKind.CONDITION, factEquals("x", 1)));
+            CompiledCondition condition = compileForAgreement(compiler.resource(), factEquals("x", 1));
             // A session of the language's own, as a run gets one, not Session.none(), which a stateful language
             // couldn't evaluate with.
             Session created = compiler.resource().newSession();
@@ -2180,43 +2281,87 @@ public abstract class ExpressionLanguageContractTest {
                 // The whole numbers conditionReadsWholeNumbers runs against too: an evaluate that compares with
                 // Objects.equals, beside an evaluateWithDetail that compares by value, agrees with it on Integers only.
                 for (Object x : List.of(1, 2, 1L, 2L, (short) 1, BigDecimal.ONE)) {
-                    String forFact = "for x = " + x + " (" + x.getClass().getSimpleName() + "), ";
-                    EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
-                    // Each fact is a run of its own, which ends before the session is closed, as a run's does: the
-                    // values the language kept for it with runScopedClosing are closed, however the run ends.
-                    AutoCloseable run = () -> LanguageTestContexts.endRun(evaluation);
-                    closing(new ClosedQuietly<>(run), ended -> {
-                        ConditionResult detailed;
-                        try {
-                            detailed = condition.evaluateWithDetail(evaluation, session);
-                        } catch (Throwable e) {
-                            rethrowIfFatal(e);
-                            // A language that can't compare this type fails the rule either way, as long as evaluate
-                            // does too. The message is built only if it doesn't, since reading e can throw.
-                            rethrowIfFatal(assertThrows(Throwable.class, () -> condition.evaluate(evaluation, session),
-                                    () -> forFact + "evaluateWithDetail threw " + describe(e)
-                                            + ", but evaluate didn't"));
-                            return;
-                        }
-                        assertNotNull(detailed,
-                                forFact + "evaluateWithDetail returned null, which fails the rule");
-
-                        // Not assertDoesNotThrow, which would turn a fatal error into a failure of the check, and
-                        // reads the message of what evaluate threw, which can throw.
-                        Object value;
-                        try {
-                            value = condition.evaluate(evaluation, session);
-                        } catch (Throwable e) {
-                            rethrowIfFatal(e);
-                            throw new AssertionFailedError(forFact + "evaluate threw, but evaluateWithDetail returned "
-                                    + describe(detailed.value()) + " ==> Unexpected exception thrown: " + describe(e),
-                                    e);
-                        }
-                        assertEquals(detailed.value(), value,
-                                forFact + "evaluate returned a different value than evaluateWithDetail reported");
-                    });
+                    assertAgrees(condition, session, "for ", x);
+                }
+                // Then conditions that aren't an equality, after it, so that a language whose evaluate disagrees for
+                // every condition is reported for the equality: the engine calls only evaluateWithDetail, so this is
+                // the one check of evaluate for each of them (#1265).
+                assertAgrees(compileForAgreement(compiler.resource(), alwaysTrue()), session, "for alwaysTrue(), with ",
+                        1);
+                CompiledCondition value = compiledUnlessRefused(compiler.resource(), factValue("x"));
+                if (value != null) {
+                    for (Boolean x : List.of(Boolean.TRUE, Boolean.FALSE)) {
+                        assertAgrees(value, session, "for factValue(\"x\"), with ", x);
+                    }
+                }
+                String both = bothConditions(factEquals("x", 1), alwaysTrue());
+                if (both != null) {
+                    CompiledCondition joined = compileForAgreement(compiler.resource(), both);
+                    for (int x = 1; x <= 2; x++) {
+                        assertAgrees(joined, session, "for bothConditions(factEquals(\"x\", 1), alwaysTrue()), with ",
+                                x);
+                    }
                 }
             });
+        });
+    }
+
+    /** Compiles {@code text} as a condition of rule {@code r} with {@code compiler}, outside an engine. */
+    private static CompiledCondition compileForAgreement(ExpressionCompiler compiler, String text) {
+        return compiler.compileCondition(new Expression("r", ExpressionKind.CONDITION, text));
+    }
+
+    /**
+     * Compiles {@code text} as {@link #compileForAgreement} does, or returns {@code null} if the compiler refuses it: a
+     * typed language whose {@link #compileContext()} declares {@code x} as a number may refuse a bare {@code x} as a
+     * condition, which skips that condition. A fatal error the refusal is or carries is thrown on.
+     */
+    private static @Nullable CompiledCondition compiledUnlessRefused(ExpressionCompiler compiler, String text) {
+        try {
+            return compileForAgreement(compiler, text);
+        } catch (RuntimeException e) {
+            rethrowIfFatal(e);
+            return null;
+        }
+    }
+
+    /**
+     * Evaluates {@code condition} against {@code session} for the fact {@code x}, as a run of its own, with
+     * {@code evaluate} and with {@code evaluateWithDetail}, for {@code evaluateAgreesWithDetail}, and fails unless both
+     * return the same value or both throw. Its failures start with {@code prefix} and name {@code x} and its type.
+     */
+    private static void assertAgrees(CompiledCondition condition, Session session, String prefix, Object x)
+            throws Exception {
+        String forFact = prefix + "x = " + x + " (" + x.getClass().getSimpleName() + "), ";
+        EvaluationContext evaluation = LanguageTestContexts.evaluation(Map.of("x", x));
+        // Each fact is a run of its own, which ends before the session is closed, as a run's does: the values the
+        // language kept for it with runScopedClosing are closed, however the run ends.
+        closing(new ClosedQuietly<AutoCloseable>(() -> LanguageTestContexts.endRun(evaluation)), ended -> {
+            ConditionResult detailed;
+            try {
+                detailed = condition.evaluateWithDetail(evaluation, session);
+            } catch (Throwable e) {
+                rethrowIfFatal(e);
+                // A language that can't compare this type fails the rule either way, as long as evaluate does too. The
+                // message is built only if it doesn't, since reading e can throw.
+                rethrowIfFatal(assertThrows(Throwable.class, () -> condition.evaluate(evaluation, session),
+                        () -> forFact + "evaluateWithDetail threw " + describe(e) + ", but evaluate didn't"));
+                return;
+            }
+            assertNotNull(detailed, forFact + "evaluateWithDetail returned null, which fails the rule");
+
+            // Not assertDoesNotThrow, which would turn a fatal error into a failure of the check, and reads the message
+            // of what evaluate threw, which can throw.
+            Object value;
+            try {
+                value = condition.evaluate(evaluation, session);
+            } catch (Throwable e) {
+                rethrowIfFatal(e);
+                throw new AssertionFailedError(forFact + "evaluate threw, but evaluateWithDetail returned "
+                        + describe(detailed.value()) + " ==> Unexpected exception thrown: " + describe(e), e);
+            }
+            assertEquals(detailed.value(), value,
+                    forFact + "evaluate returned a different value than evaluateWithDetail reported");
         });
     }
 

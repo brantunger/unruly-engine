@@ -10,6 +10,24 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading from 2.34
+
+In 2.35.0 `outputNumbersConvertedConcurrently` was added, and `evaluateAgreesWithDetail` and
+`reservedFactNamesRejected` got stricter. The new check needs no new hook: `convertsOutputNumbers()` skips it, as it
+skips `outputNumbersConverted`, so a language that doesn't opt in sees nothing new. A language that passed the 2.34 kit
+may now fail any of the three. Each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `evaluateAgreesWithDetail` | Returns another value from `evaluate` than `evaluateWithDetail` reports, or throws from only one of them, for `alwaysTrue()`, `factValue("x")` given `true` or `false`, or `bothConditions(factEquals("x", 1), alwaysTrue())` given 1 or 2 | Code that calls `evaluate` directly gets another answer than the engine, which calls only `evaluateWithDetail` |
+| `reservedFactNamesRejected` | Changes its answer from `reservesForEveryRuleList()` on a second call or once prepared | An engine built later with the same instance reserves the names for other rule lists |
+| `outputNumbersConvertedConcurrently` | Returns `true` from `convertsOutputNumbers()`, and sets another run's number when 8 threads convert whole `Double`s for `setCreditScore(int)` at once | `convertOutput` keeps state the threads share, such as a field it writes the value to and reads back, though the engine calls it on many threads at once |
+
+A `factValue("x")` your compiler refuses, as a typed language whose `compileContext()` declares `x` as a number may,
+is left out rather than failed. Return a constant from `reservesForEveryRuleList()`: the engine asks once, when it's
+built. The new check makes a race likely, not certain, to show, so passing it doesn't prove `convertOutput`
+thread-safe.
+
 ## 🔼 Upgrading from 2.33
 
 In 2.34.0 `nestedRunFailureRethrownAsIs` and `outputUnconvertibleValueFailsTheRule` were added and no check got

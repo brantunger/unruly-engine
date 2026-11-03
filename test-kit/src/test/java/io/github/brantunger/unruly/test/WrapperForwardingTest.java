@@ -2,9 +2,12 @@ package io.github.brantunger.unruly.test;
 
 import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.CompileContext;
+import io.github.brantunger.unruly.api.language.CompiledAction;
+import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
+import io.github.brantunger.unruly.api.language.Session;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -31,9 +34,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * (#736, #1127). They extend {@link ForwardingLanguage} and {@link ForwardingCompiler}, which forward everything, so
  * those are checked to declare every method of their interface, enumerated by reflection rather than by hand, and to
  * forward each call with its arguments and return what the call returned: a method added to either interface fails
- * the kit's build here, not a language's.
+ * the kit's build here, not a language's. {@link SessionWatch} also wraps each {@link CompiledCondition},
+ * {@link CompiledAction} and {@link Session} by hand, so those wrappers are checked to override every method of their
+ * interface too (#1265).
  */
-@DisplayName("the kit's language wrappers forward every method of ExpressionLanguage and ExpressionCompiler")
+@DisplayName("the kit's wrappers forward every method of the interfaces they wrap")
 class WrapperForwardingTest {
 
     /** A call the delegate received: the method's name, and its arguments. */
@@ -113,6 +118,31 @@ class WrapperForwardingTest {
             }
         }
         return left;
+    }
+
+    @Test
+    @DisplayName("SessionWatch's condition, action and session wrappers override every method of their interface, so a"
+            + " default method added to one fails here rather than drop a language's override of it (#1265)")
+    void sessionWatchWrappersOverrideEveryMethod() {
+        // The language's own condition, action and session are samples, the session one that isn't Session.none(),
+        // which SessionWatch passes through unwrapped.
+        ExpressionCompiler delegate = (ExpressionCompiler) Proxy.newProxyInstance(
+                ExpressionCompiler.class.getClassLoader(), new Class<?>[] {ExpressionCompiler.class},
+                (proxy, method, arguments) -> sample(method.getReturnType()));
+        ExpressionCompiler watched = new SessionWatch().watching(languageOf(delegate))
+                .newCompiler(LanguageTestContexts.compile());
+
+        Class<?> condition = watched.compileCondition(new Expression("r", ExpressionKind.CONDITION, "x == 1"))
+                .getClass();
+        Class<?> action = watched.compileAction(new Expression("r", ExpressionKind.ACTION, "put seen x")).getClass();
+        Class<?> session = watched.newSession().getClass();
+        assertAll(
+                () -> assertEquals(List.of(), leftToDefault(CompiledCondition.class, condition),
+                        "SessionWatch's condition leaves these methods to CompiledCondition's defaults"),
+                () -> assertEquals(List.of(), leftToDefault(CompiledAction.class, action),
+                        "SessionWatch's action leaves these methods to CompiledAction's defaults"),
+                () -> assertEquals(List.of(), leftToDefault(Session.class, session),
+                        "SessionWatch's session leaves these methods to Session's defaults"));
     }
 
     @Test

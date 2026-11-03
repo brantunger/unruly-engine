@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,13 @@ import org.opentest4j.AssertionFailedError;
 import org.opentest4j.TestAbortedException;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -502,5 +510,78 @@ class OutputNumbersCheckTest {
 
         assertTrue(failure.getMessage().contains("has no public method setBalance that accepts a java.lang.Double"),
                 failure.getMessage());
+    }
+
+    /** The check that converts on several threads at once (#1289). */
+    private static final String CONCURRENT = "outputNumbersConvertedConcurrently";
+
+    /**
+     * A conversion that keeps the value it was given in a field every thread shares, and converts what the field holds
+     * when it reads it back, as {@link DoubleNumbers#convert} does (#1289). The race is forced, so that the check fails
+     * it every time, on any number of cores: the first two calls made on threads other than the one that made the
+     * conversion each write the field, then wait at a barrier for the other, so the first to write reads back the
+     * second's value. Calls on the thread that made it, as the single-threaded checks make them, and every call after
+     * those two, don't wait. A call that waits {@code RENDEZVOUS} in vain carries on, so the conversion never blocks
+     * for good.
+     */
+    private static OutputConversion racy() {
+        Thread maker = Thread.currentThread();
+        Object[] last = new Object[1];
+        AtomicInteger waiting = new AtomicInteger();
+        CyclicBarrier bothWritten = new CyclicBarrier(2);
+        return (value, target) -> {
+            last[0] = value;
+            if (Thread.currentThread() != maker && waiting.getAndIncrement() < 2) {
+                try {
+                    bothWritten.await(RENDEZVOUS.toMillis(), TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (BrokenBarrierException | TimeoutException e) {
+                    // The other call never came: carry on with whatever the field holds.
+                }
+            }
+            return DoubleNumbers.convert(last[0], target);
+        };
+    }
+
+    /** How long {@link #racy()}'s conversion waits for another thread's call before it carries on. */
+    private static final Duration RENDEZVOUS = Duration.ofSeconds(10);
+
+    @Test
+    @DisplayName("a language whose doubles are converted exactly, on any thread, passes the concurrent conversion check"
+            + " (#1289)")
+    void faithfulDoublesPassConcurrently() throws Throwable {
+        runCheck(optingIn(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true))), CONCURRENT);
+    }
+
+    @Test
+    @DisplayName("a language that doesn't opt in skips the concurrent conversion check (#1289)")
+    void concurrentSkippedWithoutOptingIn() {
+        assertThrows(TestAbortedException.class, () -> runCheck(new ToyExpressionLanguage("toy-properties", true),
+                CONCURRENT));
+    }
+
+    @Test
+    @DisplayName("a language whose convertOutput keeps the value in a field every thread shares fails the concurrent"
+            + " conversion check, with the race forced so it fails every time, and passes the single-threaded"
+            + " conversion check (#1289)")
+    void racyConversionFails() {
+        ExpressionLanguage racy = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)), racy());
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(racy), CONCURRENT));
+
+        assertTrue(failure.getMessage().contains("convertOutput must be thread-safe"), failure.getMessage());
+        assertDoesNotThrow(() -> runCheck(optingIn(racy), CHECK));
+    }
+
+    @Test
+    @DisplayName("a language that opts in and whose doubles never reach an int setter fails the concurrent conversion"
+            + " check with what the worker's run threw (#1289)")
+    void unconvertedDoublesFailConcurrently() {
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> runCheck(optingIn(new ToyExpressionLanguage("toy-properties", true)), CONCURRENT));
+
+        assertInstanceOf(RuleExecutionException.class, failure.getCause(), failure::toString);
     }
 }

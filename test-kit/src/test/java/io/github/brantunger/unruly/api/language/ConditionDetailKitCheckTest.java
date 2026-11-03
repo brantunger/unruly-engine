@@ -12,6 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import static io.github.brantunger.unruly.api.language.ContractKitChecksTest.UNAVAILABLE;
@@ -386,6 +387,104 @@ class ConditionDetailKitCheckTest {
                 "evaluateAgreesWithDetail"));
     }
 
+    /**
+     * Wraps a language so that the evaluate of each condition whose text {@code lies} accepts returns the opposite of
+     * what its evaluateWithDetail reports, and every other condition is the language's own: a language whose
+     * {@code evaluate} is wrong for some conditions only, which the engine never calls.
+     */
+    private static ExpressionLanguage lyingWhere(ExpressionLanguage language, Predicate<String> lies) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return lies.test(expression.text()) ? new CompiledCondition() {
+                            @Override
+                            public Object evaluate(EvaluationContext evaluation, Session session) throws Exception {
+                                return !Boolean.TRUE.equals(condition.evaluateWithDetail(evaluation, session).value());
+                            }
+
+                            @Override
+                            public ConditionResult evaluateWithDetail(EvaluationContext evaluation, Session session)
+                                    throws Exception {
+                                return condition.evaluateWithDetail(evaluation, session);
+                            }
+                        } : condition;
+                    }
+                };
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate is wrong only for a condition that isn't an equality fails the agreement"
+            + " check (#1265)")
+    void nonEqualityLiarFails() {
+        // Right for factEquals, which the check tried alone before, and wrong for alwaysTrue() and factValue("x").
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                lyingWhere(new ToyExpressionLanguage(), text -> !text.contains("==")), "evaluateAgreesWithDetail"));
+
+        assertEquals("for alwaysTrue(), with x = 1 (Integer), evaluate returned a different value than"
+                + " evaluateWithDetail reported ==> expected: <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate is wrong only for a condition that is a fact's value fails the agreement"
+            + " check (#1265)")
+    void factValueLiarFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                lyingWhere(new ToyExpressionLanguage(), "x"::equals), "evaluateAgreesWithDetail"));
+
+        assertEquals("for factValue(\"x\"), with x = true (Boolean), evaluate returned a different value than"
+                + " evaluateWithDetail reported ==> expected: <true> but was: <false>", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose evaluate is wrong only for a condition that requires both of two fails the agreement"
+            + " check, and an honest one passes it (#1265)")
+    void conjunctionLiarFails() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class, () -> runCheck(
+                new ToyConjunctionsContractTest() {
+                    @Override
+                    protected ExpressionLanguage language() {
+                        return lyingWhere(super.language(), text -> text.contains(" and "));
+                    }
+                }, "evaluateAgreesWithDetail"));
+
+        assertEquals("for bothConditions(factEquals(\"x\", 1), alwaysTrue()), with x = 1 (Integer), evaluate returned a"
+                + " different value than evaluateWithDetail reported ==> expected: <true> but was: <false>",
+                failure.getMessage());
+        // The same toy without the lie: its conditions that require both of two agree, so the check passes.
+        assertDoesNotThrow(() -> runCheck(new ToyConjunctionsContractTest(), "evaluateAgreesWithDetail"));
+    }
+
+    @Test
+    @DisplayName("a language that refuses to compile factValue(\"x\") with the check's compile context passes the"
+            + " agreement check, which skips that condition (#1265)")
+    void factValueRefusedAtCompileSkipped() {
+        // As a typed language may, whose compile context declares x as a number: a bare x isn't a condition then.
+        ExpressionLanguage language = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = super.newCompiler(context);
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        if ("x".equals(expression.text())) {
+                            throw new IllegalArgumentException("x is a number, not a condition");
+                        }
+                        return compiler.compileCondition(expression);
+                    }
+                };
+            }
+        };
+
+        assertDoesNotThrow(() -> runCheck(language, "evaluateAgreesWithDetail"));
+    }
+
     @Test
     @DisplayName("a language whose newSession() returns null fails the agreement check, which runs outside an engine"
             + " (#594)")
@@ -744,8 +843,10 @@ class ConditionDetailKitCheckTest {
 
     private static List<String> eachFactsValueThenTheSessionAndCompiler() {
         List<String> expected = new ArrayList<>();
-        // One run for each of the six facts, each closing its value before the next run starts.
-        for (int i = 0; i < 6; i++) {
+        // One run for each of the six facts factEquals is tried with, then one for alwaysTrue() and two for
+        // factValue("x"), each closing its value before the next run starts. The toy can't require both of two
+        // conditions, so bothConditions() adds none.
+        for (int i = 0; i < 9; i++) {
             expected.add("value made");
             expected.add("value");
         }
