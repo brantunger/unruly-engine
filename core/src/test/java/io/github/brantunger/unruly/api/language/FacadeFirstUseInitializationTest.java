@@ -78,15 +78,15 @@ class FacadeFirstUseInitializationTest {
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
     // initialized them already. Failures, FactNames and LanguageNames aren't public, or aren't reachable from here,
-    // and Whitespace and Sorting aren't on a release before their fixes, so they are named by their names (#1292,
-    // #1298).
+    // and Whitespace, Sorting and CharacterTables aren't on a release before their fixes, or aren't public, so they
+    // are named by their names (#1292, #1298, #1366).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
             MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
             ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
             Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
             "io.github.brantunger.unruly.core.FactNames", "io.github.brantunger.unruly.core.LanguageNames",
             "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting",
-            Widening.class.getName());
+            Widening.class.getName(), "io.github.brantunger.unruly.core.CharacterTables");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";
     // No JDK initializes TreeSet or TreeMap at startup, unless a multi-release jar is opened before the main class, so

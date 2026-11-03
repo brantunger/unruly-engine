@@ -68,6 +68,11 @@ public final class LanguageTestContexts {
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name, which an engine rejects
      *                                  too, with the same message
+     * @throws StackOverflowError       if an imported package has a code point above U+00FF, the JDK's tables of
+     *                                  such characters, which the check of its name reads, aren't known to be built
+     *                                  yet, as no engine has been built and no such import checked yet, and
+     *                                  the stack has too little room left to build them, before any is touched, as
+     *                                  {@code EngineCompileContext} says (#1366); the next call checks again
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader) {
@@ -88,6 +93,11 @@ public final class LanguageTestContexts {
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name, which an engine rejects
      *                                  too, with the same message
+     * @throws StackOverflowError       if an imported package has a code point above U+00FF, the JDK's tables of
+     *                                  such characters, which the check of its name reads, aren't known to be built
+     *                                  yet, as no engine has been built and no such import checked yet, and
+     *                                  the stack has too little room left to build them, before any is touched, as
+     *                                  {@code EngineCompileContext} says (#1366); the next call checks again
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options) {
@@ -115,6 +125,11 @@ public final class LanguageTestContexts {
      *                                  a blank name or the name {@code output}, which an engine rejects too when one
      *                                  of its languages reserves it, as the default
      *                                  {@code ExpressionLanguage.reservedFactNames()} does
+     * @throws StackOverflowError       if an imported package has a code point above U+00FF, the JDK's tables of
+     *                                  such characters, which the check of its name reads, aren't known to be built
+     *                                  yet, as no engine has been built and no such import checked yet, and
+     *                                  the stack has too little room left to build them, before any is touched, as
+     *                                  {@code EngineCompileContext} says (#1366); the next call checks again
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -146,6 +161,11 @@ public final class LanguageTestContexts {
      *                                  than 1,000 characters, or a fact is declared with a blank name or the name
      *                                  {@code output}, which an engine rejects too when one of its languages reserves
      *                                  it, as the default {@code ExpressionLanguage.reservedFactNames()} does
+     * @throws StackOverflowError       if an imported package has a code point above U+00FF, the JDK's tables of
+     *                                  such characters, which the check of its name reads, aren't known to be built
+     *                                  yet, as no engine has been built and no such import checked yet, and
+     *                                  the stack has too little room left to build them, before any is touched, as
+     *                                  {@code EngineCompileContext} says (#1366); the next call checks again
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
@@ -183,6 +203,11 @@ public final class LanguageTestContexts {
      *                                  language reserves, with the message {@code build()} gives
      * @throws IllegalStateException    if the language's {@code reservedFactNames()} returns {@code null} or a set
      *                                  holding {@code null}, as {@code build()} throws it
+     * @throws StackOverflowError       if an imported package has a code point above U+00FF, the JDK's tables of
+     *                                  such characters, which the check of its name reads, aren't known to be built
+     *                                  yet, as no engine has been built and no such import checked yet, and
+     *                                  the stack has too little room left to build them, before any is touched, as
+     *                                  {@code EngineCompileContext} says (#1366); the next call checks again
      */
     public static CompileContext compile(ExpressionLanguage language, Set<String> packageImports,
                                          Set<Class<?>> classImports, ClassLoader classLoader, Class<?> outputType,

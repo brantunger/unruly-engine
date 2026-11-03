@@ -145,20 +145,10 @@ final class RunClasses {
             // What a Character method does for a character above U+00FF, such as the engine's check of an import's
             // name, a converter's or a language's read of a name, or Character.getType itself in a rule: it reads
             // the JDK's table for the character's plane, one class for each, which the JVM builds on its first use;
-            // only the Latin-1 one is built at startup. So each is read here, by the type of one character of its
-            // plane: the Basic Multilingual Plane (CharacterData00), planes 1 to 3 (01, 02, 03), the unassigned
-            // planes 4 to 13 (Undefined), plane 14 (0E), and the private-use planes 15 and 16 (PrivateUse) (#1286).
-            // The first reads the character from a string, as the JDK's code for a string with such a character,
-            // StringUTF16, is initialized by the first read of a character of one, and nothing at startup does that
-            // on Linux or macOS; a JVM on Windows, and the read of the JDK's security settings above, initialize it
-            // before this, so this reads one in case.
-            Character.getType("\u03c0".codePointAt(0));
-            Character.getType(0x10000);
-            Character.getType(0x20000);
-            Character.getType(0x30000);
-            Character.getType(0x40000);
-            Character.getType(0xE0001);
-            Character.getType(0xF0000);
+            // only the Latin-1 one is built at startup. So each is read here (#1286), and the check of a package
+            // import's name above U+00FF with no engine built, which reads them all the same way, knows from now on
+            // that they are built and checks no room (#1366).
+            CharacterTables.warm();
             // So the case of a fact's getter or an output's property above U+00FF is read with no check of the room
             // from now on, as the table it reads is built (#1297).
             Accessors.markCaseTableBuilt();

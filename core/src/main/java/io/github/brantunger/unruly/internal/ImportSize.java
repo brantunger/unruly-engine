@@ -9,7 +9,9 @@ import org.jspecify.annotations.Nullable;
  * expression's own text the same way, with the same message, rather than keeping a copy that could drift.
  * <b>Internal:</b> this class may change in any release, and isn't part of the API: its package isn't exported, and
  * the {@code api} and {@code core} packages share it. It has no static initializer of its own, so its first use deep
- * in a stack, as when a language's tests make a compile context with no engine built, can't break it.
+ * in a stack, as when a language's tests make a compile context with no engine built, can't break it. That's not
+ * true of the JDK's tables of the characters above U+00FF, which {@link #checkPackageName} reads: so a caller that may
+ * run with no engine built, as {@code EngineCompileContext} may, checks the room for building them first (#1366).
  */
 public final class ImportSize {
 
@@ -94,6 +96,15 @@ public final class ImportSize {
      * after {@link #checkSize} and before any class loader sees it, so one it rejects leaves no lock object behind; a
      * class's name written as an import has the same shape. {@code EngineCompileContext} checks each package it is
      * given with it too, so a context made outside an engine rejects what {@code build()} does.
+     *
+     * <p>
+     * A code point above U+00FF, such as the {@code \u03c0} of {@code com.\u03c0x}, is read with the JDK's table of
+     * its plane, such as {@code java.lang.CharacterData00}, which the JVM builds on its first use, in its static
+     * initializer, and a first use that overflowed deep in a stack would leave the table unusable for the life of the
+     * JVM. This doesn't check the room for that, as this package uses nothing of the engine's: the engine's first
+     * build has built every table before it checks an import, and {@code EngineCompileContext}, which a language's
+     * tests make with no engine built, checks the room first, through {@code core.CharacterTables} (#1366).
+     * </p>
      *
      * @param name An import string
      * @throws IllegalArgumentException if {@code name} isn't a valid package name, with the message

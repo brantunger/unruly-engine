@@ -173,7 +173,7 @@ class FirstRunClassInitializationTest {
                     IsoInstant.class, RuleCompilationException.class, InvalidExpressionException.class,
                     InvalidExpressionException.Issue.class, MessageText.class, RunClasses.Ran.class, Text.class,
                     Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
-                    FatalErrors.class, Whitespace.class)
+                    FatalErrors.class, Whitespace.class, CharacterTables.class)
                     .map(Class::getName),
             Stream.of("io.github.brantunger.unruly.api.language.NoSession",
                     EngineCompileContext.class.getName() + "$Warnings", Failures.class.getName() + "$Log",
