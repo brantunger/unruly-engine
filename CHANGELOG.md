@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.35.3](https://github.com/brantunger/unruly-engine/compare/v2.35.2...v2.35.3) (2026-11-03)
+
+
+### Bug Fixes
+
+* the mvel CallSites and MvelAnalysis static initializers link no lambda, with the DROP_METHOD_INFO option found by a loop, the two site suppliers as named classes and RUN_FRAMES 9 for the frame a named supplier adds, and the test kit's NestedRuns names the RuleExecutionException gate when a nested run failed with something else ([#1376](https://github.com/brantunger/unruly-engine/issues/1376)) ([ddacd84](https://github.com/brantunger/unruly-engine/commit/ddacd84b51d1835751d30ab4fd4c3351a7d9d07b))
+
 ## [2.35.2](https://github.com/brantunger/unruly-engine/compare/v2.35.1...v2.35.2) (2026-11-03)
 
 
