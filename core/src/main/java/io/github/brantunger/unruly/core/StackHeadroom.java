@@ -111,8 +111,8 @@ final class StackHeadroom {
      * (#1115), on JDK 21, 25 and 26, each time at the first depth whose check passed, in a new JVM, which found more
      * than the sweep above: the fewest from which every larger reserve measured left nothing behind were the same with
      * them as without, 320 at a first build, interpreted, where 120 to 200 passed and 240 and 280 did not, and 720 at a
-     * first use, compiled, where 560 passed and 640 did not, as MVEL's own {@code MvelFactNames} and
-     * {@code ErrorReporting} still need the most.
+     * first use, compiled, where 560 passed and 640 did not, as MVEL's own {@code MvelFactNames} and its
+     * initialization of MVEL's {@code ErrorUtil} still need the most.
      */
     static final int INITIALIZING_FRAMES = 960;
 

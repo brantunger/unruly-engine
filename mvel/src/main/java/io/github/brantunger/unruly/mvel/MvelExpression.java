@@ -65,23 +65,7 @@ import java.util.function.Supplier;
 final class MvelExpression implements CompiledCondition, CompiledAction {
 
     static {
-        // MVEL's optimizer, as it sets up, makes a JVM-wide class loader whose parent is the thread's context class
-        // loader at that moment, and keeps it until an application makes MVEL's JIT the default again, which makes a
-        // new one whose parent is that caller's context class loader. Set up here, before any compilation sets the rule
-        // list's class loader as the context class loader, with MVEL's own class loader as the context class loader, it
-        // holds neither a rule list's nor the one the first thread to load rules happens to have. Then MVEL's
-        // reflective optimizer becomes its default, for the whole JVM, before the engine compiles anything: the code
-        // MVEL's JIT generates once an expression has run about 50 times in 100 ms fails every later run of a call of
-        // an interface's static method, such as List.of(1, 2) (#1161), and one run of a call given a class name, a 10B
-        // or a 10I literal as an Object argument (#1122). An application that makes the JIT the default again has to do
-        // it once the engine has loaded its first rules, as this overrides an earlier call. MVEL clears a thread's own
-        // optimizer after each use, so only a thread that an application gave one with
-        // OptimizerFactory.setThreadAccessorOptimizer, or that ran an MVEL compiled set expression, before the engine
-        // loaded keeps it for what MVEL optimizes that way, such as an inline list or new.
-        withClassLoader(ExceptionReads.MVEL_LOADER, () -> {
-            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
-            return OptimizerFactory.getDefaultAccessorCompiler();
-        });
+        useReflectiveOptimizer();
     }
 
     private final String source;
@@ -367,6 +351,41 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         thread.setContextClassLoader(loader);
         try {
             return call.get();
+        } finally {
+            thread.setContextClassLoader(previous);
+        }
+    }
+
+    /**
+     * Makes MVEL's reflective optimizer its default, for the whole JVM, as this class initializes, with MVEL's own
+     * class loader as the thread's context class loader while it does. MVEL's optimizer, as it sets up, makes a
+     * JVM-wide class loader whose parent is the thread's context class loader at that moment, and keeps it until an
+     * application makes MVEL's JIT the default again, which makes a new one whose parent is that caller's context
+     * class loader. Set up here, before any compilation sets the rule list's class loader as the context class loader,
+     * with MVEL's own class loader as the context class loader, it holds neither a rule list's nor the one the first
+     * thread to load rules happens to have. Then MVEL's reflective optimizer becomes its default, for the whole JVM,
+     * before the engine compiles anything: the code MVEL's JIT generates once an expression has run about 50 times in
+     * 100 ms fails every later run of a call of an interface's static method, such as {@code List.of(1, 2)} (#1161),
+     * and one run of a call given a class name, a 10B or a 10I literal as an Object argument (#1122). An application
+     * that makes the JIT the default again has to do it once the engine has loaded its first rules, as this overrides
+     * an earlier call. MVEL clears a thread's own optimizer after each use, so only a thread that an application gave
+     * one with {@code OptimizerFactory.setThreadAccessorOptimizer}, or that ran an MVEL compiled set expression, before
+     * the engine loaded keeps it for what MVEL optimizes that way, such as an inline list or {@code new}.
+     *
+     * <p>
+     * Sets and restores the context class loader as {@link #withClassLoader} does, written out rather than through it:
+     * a static initializer that links a lambda needs the stack that linking one takes, and a failure in it, such as an
+     * overflow where a rule list first compiles without {@code prepare()}, leaves the class unusable for the life of
+     * the JVM (see this package's rule on lambdas).
+     * </p>
+     */
+    private static void useReflectiveOptimizer() {
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        thread.setContextClassLoader(ExceptionReads.MVEL_LOADER);
+        try {
+            OptimizerFactory.setDefaultOptimizer(OptimizerFactory.SAFE_REFLECTIVE);
+            OptimizerFactory.getDefaultAccessorCompiler();
         } finally {
             thread.setContextClassLoader(previous);
         }
