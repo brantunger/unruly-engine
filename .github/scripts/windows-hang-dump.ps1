@@ -11,6 +11,8 @@
 # which is why windows-heartbeat.ps1 posts what it sees while the VM still runs (docs/contributing/windows-ci-hangs.md).
 #
 # ProcessId limits it to the JVMs given, for a trial beside other JVMs; several pids bind only when called in-process.
+# They're read once, at the start, and held open until the script ends, so a pid one of them frees can't pass to a
+# process the kill would hit; a given pid that isn't a running java process is skipped.
 param(
     [double]$AfterMinutes = 14,
     [int]$AgainAfterSeconds = 60,
@@ -19,12 +21,21 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# Reading a process's Handle keeps it open, and Windows doesn't give its pid to a new process while it is; pwsh returns
+# no Handle, and no error, for a process it can't open. Each later lookup reuses these objects, less the ones that have
+# exited. CI's lookup by name needs none of this: it's fresh each call.
+$held = @()
+if ($ProcessId.Count -gt 0) {
+    foreach ($jvm in Get-Process -Id $ProcessId -ErrorAction SilentlyContinue | Where-Object ProcessName -eq 'java') {
+        if ($jvm.Handle) { $held += $jvm } else { Write-Warning "can't open $($jvm.Id), so it's skipped" }
+    }
+}
 Start-Sleep -Seconds ([int]($AfterMinutes * 60))
 New-Item -ItemType Directory -Force $Out | Out-Null
 
 function Jvms {
     if ($ProcessId.Count -gt 0) {
-        Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+        $held | Where-Object { -not $_.HasExited }
     } else {
         Get-Process java -ErrorAction SilentlyContinue
     }

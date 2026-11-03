@@ -121,11 +121,12 @@ process list for memory pressure.
 dump ends with a `Found one Java-level deadlock` section when the JVM detects one.
 
 > [!TIP]
-> To try the watchdog on your machine, start a JVM that sleeps, then run it against that pid alone, so it leaves
-> your other JVMs alone: `pwsh -File .github/scripts/windows-hang-dump.ps1 -AfterMinutes 0.05 -AgainAfterSeconds 5
-> -ProcessId <pid> -Out build/reports/hang`. It kills the JVM when it's done. Give it one pid that way: through
-> `pwsh -File`, `-ProcessId 1234,5678` binds as the single pid `12345678`, so it finds no JVM and writes `0 JVM(s)`.
-> Several pids bind only in-process: `& .github/scripts/windows-hang-dump.ps1 -ProcessId 1234,5678 ...`.
+> To try the watchdog, start a JVM that sleeps, then run it against that pid alone:
+> `pwsh -File .github/scripts/windows-hang-dump.ps1 -AfterMinutes 0.05 -AgainAfterSeconds 5 -ProcessId <pid> -Out
+> build/reports/hang`. It reads the pids once at start, keeps only running `java` processes, and kills those when
+> it's done. Give it one pid: through `pwsh -File`, `-ProcessId 1234,5678` binds as the single pid `12345678`, which
+> it skips, writing `0 JVM(s)`. Several pids bind only in-process:
+> `& .github/scripts/windows-hang-dump.ps1 -ProcessId 1234,5678 ...`.
 
 ## 💓 The heartbeat
 
@@ -227,7 +228,7 @@ for the rest:
 | `-AfterMinutes` | `14` | Minutes to wait before the first round; a fraction is allowed |
 | `-AgainAfterSeconds` | `60` | Seconds between the first round's end and the second |
 | `-Out` | `build/reports/hang` | Where the files go; created if missing |
-| `-ProcessId` | none | Dump and kill only these pids, for a trial on a machine with other JVMs; one pid through `pwsh -File`, several only in-process |
+| `-ProcessId` | none | Dump and kill only these pids, read once at start, skipping one that isn't a running `java` process; one pid through `pwsh -File`, several only in-process |
 
 The files of a round, `first-` or `second-`:
 
