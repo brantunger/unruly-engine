@@ -1,6 +1,8 @@
 /**
- * The exceptions the engine throws, all unchecked and all extending
- * {@link io.github.brantunger.unruly.api.exception.UnrulyException}.
+ * The vocabulary of failure the engine and the expression language SPI share: the exceptions they throw, all
+ * unchecked and all extending {@link io.github.brantunger.unruly.api.exception.UnrulyException}, and
+ * {@link io.github.brantunger.unruly.api.exception.ExpressionKind}, which says which expression of a rule, its
+ * condition or its action, a failure or an {@link io.github.brantunger.unruly.api.language.Expression} concerns.
  *
  * <ul>
  *   <li>{@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} throws
