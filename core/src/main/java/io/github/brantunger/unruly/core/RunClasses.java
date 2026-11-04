@@ -25,6 +25,7 @@ import io.github.brantunger.unruly.api.language.Throwables;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
 import io.github.brantunger.unruly.internal.IsoInstant;
+import io.github.brantunger.unruly.internal.LanguageNames;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.internal.Widening;

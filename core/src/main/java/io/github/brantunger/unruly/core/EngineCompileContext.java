@@ -6,6 +6,7 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.LanguageNames;
 import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.internal.Widening;
 import org.slf4j.Logger;

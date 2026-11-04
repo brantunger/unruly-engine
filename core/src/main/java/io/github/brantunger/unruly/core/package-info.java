@@ -14,9 +14,11 @@
  * {@code api} and {@code api.language} permit; {@link io.github.brantunger.unruly.core.Accessors}, which the API's
  * default output writer and {@link io.github.brantunger.unruly.api.language.FactProperties} use; and
  * {@link io.github.brantunger.unruly.core.FatalErrors}, the search for a fatal error that
- * {@link io.github.brantunger.unruly.api.language.Throwables} publishes. What {@code api} and {@code core} share
- * without either depending on the other is in the unexported package {@code io.github.brantunger.unruly.internal}.
- * The module exports this package only to the test kit, {@code io.github.brantunger.unruly.test}. Rules are compiled
+ * {@link io.github.brantunger.unruly.api.language.Throwables} publishes. Those are the only uses of this package in
+ * {@code api} and {@code api.language}, each in the file that needs it, while this package uses both throughout. What
+ * {@code api} and {@code core} both use is in the unexported package {@code io.github.brantunger.unruly.internal},
+ * which uses nothing of the library's. The module exports this package only to the test kit,
+ * {@code io.github.brantunger.unruly.test}. Rules are compiled
  * when {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} loads them, each by the language it
  * names or by the engine's default language, and evaluated against a
  * {@link io.github.brantunger.unruly.api.FactStore} at run time.</p>

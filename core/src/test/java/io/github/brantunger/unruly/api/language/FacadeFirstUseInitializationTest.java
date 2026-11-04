@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.ChildJvm;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.internal.Causes;
 import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.internal.LanguageNames;
 import io.github.brantunger.unruly.internal.Lookups;
 import io.github.brantunger.unruly.internal.Text;
 import io.github.brantunger.unruly.internal.Widening;
@@ -77,14 +78,14 @@ class FacadeFirstUseInitializationTest {
 
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
-    // initialized them already. Failures, FactNames and LanguageNames aren't public, or aren't reachable from here,
-    // and Whitespace, Sorting and CharacterTables aren't on a release before their fixes, or aren't public, so they
-    // are named by their names (#1292, #1298, #1366).
+    // initialized them already. Failures and FactNames aren't public, or aren't reachable from here, and Whitespace,
+    // Sorting and CharacterTables aren't on a release before their fixes, or aren't public, so they are named by
+    // their names (#1292, #1298, #1366).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
             MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
             ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
             Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
-            "io.github.brantunger.unruly.core.FactNames", "io.github.brantunger.unruly.core.LanguageNames",
+            "io.github.brantunger.unruly.core.FactNames", LanguageNames.class.getName(),
             "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting",
             Widening.class.getName(), "io.github.brantunger.unruly.core.CharacterTables");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
