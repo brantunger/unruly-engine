@@ -5,7 +5,7 @@ import io.github.brantunger.unruly.core.CopyLimit;
 import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
-import io.github.brantunger.unruly.core.LanguageNames;
+import io.github.brantunger.unruly.internal.LanguageNames;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Clock;

@@ -1,15 +1,16 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.internal;
 
-import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 
 /**
- * Checks an expression language's name: the builder checks each language it's given, and the engine each one it
- * finds with {@link java.util.ServiceLoader}. <b>Internal:</b> this class may change in any release. It's public only
- * so that {@code api.RulesEngineBuilder}, in another package, and {@link LanguageRegistry} share the rule, while each
- * says what's wrong in its own words, with its own exception.
+ * Checks an expression language's name: the builder checks each language it's given, the engine each one it finds
+ * with {@link java.util.ServiceLoader}, and a compile context the language it's made for. <b>Internal:</b> this class
+ * may change in any release, and isn't part of the API: its package isn't exported, and the {@code api} and
+ * {@code core} packages share it, so that {@code api.RulesEngineBuilder}, {@code core.LanguageRegistry} and
+ * {@code core.EngineCompileContext} share the rule, while the builder and the registry each say what's wrong in their
+ * own words, with their own exception.
  */
 public final class LanguageNames {
 
