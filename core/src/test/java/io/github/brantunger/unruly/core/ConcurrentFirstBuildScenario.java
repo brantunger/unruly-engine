@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <ul>
  *     <li>{@code concurrent}: a first thread initializes, and its provider holds the thread in its lookup until a
- *     second thread, started then, has either finished initializing too or is blocked on RunClasses' lock, held by
+ *     second thread, started then, has either finished initializing too or is blocked on FirstUseClasses' lock, held by
  *     the first. It prints {@link #SECOND_WHILE_HELD} and which of the two, {@link #BLOCKED_ON_FIRST} or the second
  *     thread's state when it finished or the deadline passed, then lets the first go on and prints
  *     {@link #FIRST_LOOKUPS} and {@link #SECOND_LOOKUPS}, how many times each looked the digest up, and
@@ -40,7 +40,7 @@ final class ConcurrentFirstBuildScenario {
     /** The system property that chooses what the scenario does. */
     static final String MODE = "concurrent.build";
     static final String SECOND_WHILE_HELD = "SCENARIO second while the first is held: ";
-    static final String BLOCKED_ON_FIRST = "blocked on RunClasses, held by the first";
+    static final String BLOCKED_ON_FIRST = "blocked on FirstUseClasses, held by the first";
     static final String FIRST_LOOKUPS = "SCENARIO first's lookups: ";
     static final String SECOND_LOOKUPS = "SCENARIO second's lookups: ";
     static final String FIRST_THREW = "SCENARIO first threw: ";
@@ -97,7 +97,8 @@ final class ConcurrentFirstBuildScenario {
     }
 
     /**
-     * Waits until the second thread has finished, or is blocked on RunClasses' lock with the first thread holding it.
+     * Waits until the second thread has finished, or is blocked on FirstUseClasses' lock with the first thread holding
+     * it.
      *
      * @return {@link #BLOCKED_ON_FIRST}, or the second thread's state when it finished or the deadline passed
      */
@@ -107,7 +108,7 @@ final class ConcurrentFirstBuildScenario {
             ThreadInfo info = threads.getThreadInfo(second.threadId());
             if (info != null && info.getThreadState() == Thread.State.BLOCKED
                     && info.getLockOwnerId() == first.threadId() && info.getLockInfo() != null
-                    && info.getLockInfo().getIdentityHashCode() == System.identityHashCode(RunClasses.class)) {
+                    && info.getLockInfo().getIdentityHashCode() == System.identityHashCode(FirstUseClasses.class)) {
                 return BLOCKED_ON_FIRST;
             }
             second.join(1);
@@ -194,7 +195,7 @@ final class ConcurrentFirstBuildScenario {
 
         @Override
         public Service getService(String type, String algorithm) {
-            if (!DIGEST.equals(type) || !Checksums.SHA_256.equals(algorithm)) {
+            if (!DIGEST.equals(type) || !RuleListChecksum.SHA_256.equals(algorithm)) {
                 return null;
             }
             Thread current = Thread.currentThread();

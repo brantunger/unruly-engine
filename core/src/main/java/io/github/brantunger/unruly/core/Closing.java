@@ -15,10 +15,10 @@ import java.util.Map;
  * run with {@link io.github.brantunger.unruly.api.language.EvaluationContext#runScopedClosing}. Whatever a
  * {@code close()} throws, any {@link Throwable}, is logged at WARN, and the rest are still closed; unless it's the
  * failure of a {@code run()} or a {@code load()} the {@code close()} started, or a fatal {@link Error} that run logged,
- * which that run or load logged already (see {@link NestedFailures#logged}). A fatal error (see
- * {@link Failures#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once it
- * has closed the rest of what it closes: the first, if several were thrown, carrying the others as suppressed
- * exceptions (see {@link Failures#first}). Nothing else a {@code close()} throws reaches the caller.
+ * which that run or load logged already (see {@link CauseChains#logged}). A fatal error (see
+ * {@link FailurePolicy#fatalError}) is returned unchanged once everything has been closed, for the caller to throw once
+ * it has closed the rest of what it closes: the first, if several were thrown, carrying the others as suppressed
+ * exceptions (see {@link FailurePolicy#first}). Nothing else a {@code close()} throws reaches the caller.
  */
 final class Closing {
 
@@ -63,7 +63,7 @@ final class Closing {
      * Closes the values the languages kept for a run, the last made first. Each is closed whatever was thrown while
      * the one before was closed, even by handling what its {@code close()} threw, as describing it can throw when it
      * runs out of stack, or by keeping what that threw, as that can when it runs out of memory. An overflow inside the
-     * log call itself only loses the line (see {@link Failures#logWarn}); anything else handling it throws isn't
+     * log call itself only loses the line (see {@link FailurePolicy#logWarn}); anything else handling it throws isn't
      * logged: it reaches the caller, carrying what the {@code close()} threw as a suppressed exception. What a
      * {@code close()} threw is never lost when handling it fails: it's held, by assignment only, and added once every
      * value has been closed. Only combining what was thrown, then, can throw.
@@ -72,7 +72,7 @@ final class Closing {
      * @return What the caller throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error} met,
      *         in the order the values were closed, whether it was logged or logging it failed; or else the first
      *         other throwable that escaped handling a value's failure. Either carries the rest as suppressed
-     *         exceptions (see {@link Failures#fatalFirst}), except those that escaped handling after the first: of
+     *         exceptions (see {@link FailurePolicy#fatalFirst}), except those that escaped handling after the first: of
      *         them only the first is kept, and of what the values threw, the last fatal error the JVM threw, or
      *         else the first.
      */
@@ -84,7 +84,7 @@ final class Closing {
         for (int i = values.size() - 1; i >= 0; i--) {
             Throwable thrown = null;
             try {
-                LoggedFailures.callOut();
+                FailureLog.callOut();
                 values.get(i).close();
             } catch (Throwable e) {
                 thrown = e;
@@ -105,39 +105,39 @@ final class Closing {
                 }
             }
         }
-        Faults.at(Faults.Step.RUN_VALUES_CLOSED);
-        return Failures.fatalFirst(Failures.fatalFirst(failed, escaped), held);
+        FaultInjection.at(FaultInjection.Step.RUN_VALUES_CLOSED);
+        return FailurePolicy.fatalFirst(FailurePolicy.fatalFirst(failed, escaped), held);
     }
 
     /**
      * Handles what a value a language kept for a run threw from {@code close()}, and adds it to what the values closed
-     * before it threw, the first fatal {@link Error} first (see {@link Failures#fatalFirst}): a fatal error it threw
-     * once it's logged, or, if logging it fails, what logging threw, carrying what it threw. An overflow inside the log
-     * call itself isn't such a failure: it loses the line and nothing else (see {@link Failures#logWarn}).
+     * before it threw, the first fatal {@link Error} first (see {@link FailurePolicy#fatalFirst}): a fatal error it
+     * threw once it's logged, or, if logging it fails, what logging threw, carrying what it threw. An overflow inside
+     * the log call itself isn't such a failure: it loses the line and nothing else (see {@link FailurePolicy#logWarn}).
      *
      * @param thrown What the value's {@code close()} threw
      * @param failed What the values closed before it threw that the caller throws, or {@code null}
      * @return What the caller throws, with this value's failure added
      */
     // Any Throwable: what logging throws is the caller's to throw, but for an overflow inside the log call, which
-    // Failures.logWarn swallows.
+    // FailurePolicy.logWarn swallows.
     private static Throwable runValueFailed(Throwable thrown, Throwable failed) {
         try {
-            Faults.at(Faults.Step.RUN_VALUE_FAILURE_LOGGED);
-            return Failures.fatalFirst(failed, failedToClose(thrown, null, null));
+            FaultInjection.at(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED);
+            return FailurePolicy.fatalFirst(failed, failedToClose(thrown, null, null));
         } catch (Throwable logging) {
-            Faults.at(Faults.Step.RUN_VALUE_FAILURE_LOGGED);
+            FaultInjection.at(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED);
             // As failedToClose would have, before it failed: an interrupt that made close() fail is kept.
-            Failures.keepInterruptStatus(thrown);
+            FailurePolicy.keepInterruptStatus(thrown);
             // What close() threw goes with it, so a fatal Error among it isn't lost.
-            return Failures.fatalFirst(Failures.fatalFirst(failed, logging), thrown);
+            return FailurePolicy.fatalFirst(FailurePolicy.fatalFirst(failed, logging), thrown);
         }
     }
 
     private static Error closeAll(Map<String, ? extends AutoCloseable> resources, String what) {
         Error fatal = null;
         for (Map.Entry<String, ? extends AutoCloseable> resource : resources.entrySet()) {
-            fatal = Failures.first(fatal, close(resource.getValue(), resource.getKey(), what));
+            fatal = FailurePolicy.first(fatal, close(resource.getValue(), resource.getKey(), what));
         }
         return fatal;
     }
@@ -147,7 +147,7 @@ final class Closing {
     // validate() or a close(), so what a run a close() starts logged is known.
     private static Error close(AutoCloseable resource, String language, String what) {
         try {
-            LoggedFailures.callOut();
+            FailureLog.callOut();
             resource.close();
             return null;
         } catch (Throwable e) {
@@ -169,16 +169,16 @@ final class Closing {
      * @return The fatal {@link Error} in it, or {@code null} if there is none
      */
     private static Error failedToClose(Throwable e, String language, String what) {
-        Failures.keepInterruptStatus(e);
-        if (!NestedFailures.logged(e)) {
+        FailurePolicy.keepInterruptStatus(e);
+        if (!CauseChains.logged(e)) {
             if (language == null) {
-                Failures.logWarn(log, "A value a language kept for the run failed to close: {}",
-                        NestedFailures.describe(e));
+                FailurePolicy.logWarn(log, "A value a language kept for the run failed to close: {}",
+                        CauseChains.describe(e));
             } else {
-                Failures.logWarn(log, "The '{}' expression language failed to close {}: {}",
-                        Text.quote(language), what, NestedFailures.describe(e));
+                FailurePolicy.logWarn(log, "The '{}' expression language failed to close {}: {}",
+                        Text.quote(language), what, CauseChains.describe(e));
             }
         }
-        return Failures.fatalError(e);
+        return FailurePolicy.fatalError(e);
     }
 }

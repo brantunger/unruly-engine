@@ -45,7 +45,7 @@ public final class ClassFiles {
      *
      * @param type The class
      * @return Each class file's bytes, by its entry name, such as
-     *         {@code io/github/brantunger/unruly/core/Failures.class}
+     *         {@code io/github/brantunger/unruly/core/FailurePolicy.class}
      * @throws IOException        if one can't be read
      * @throws URISyntaxException if the class's location isn't a path
      */

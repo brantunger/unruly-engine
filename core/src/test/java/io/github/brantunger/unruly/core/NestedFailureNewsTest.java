@@ -22,7 +22,7 @@ class NestedFailureNewsTest {
 
     private static final String NAMED = "a nested run() failed: inner failed";
 
-    private final ReportedFailure inner = NestedFailures.report("inner failed", null);
+    private final ReportedFailure inner = CauseChains.report("inner failed", null);
 
     /** An exception whose {@code getMessage()} throws, as a language's own can. */
     private static final class UnreadableMessage extends RuntimeException {
@@ -47,17 +47,17 @@ class NestedFailureNewsTest {
      * @return What {@code what} returned
      */
     private static <T> T afterNestedRunLogged(Throwable nested, Supplier<T> what) {
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.loggedByRun(nested);
+                FailureLog.loggedByRun(nested);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             return what.get();
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -66,8 +66,8 @@ class NestedFailureNewsTest {
     void wrapperWithAMessageOfItsOwn() {
         IllegalStateException wrapper = new IllegalStateException("fallback pricing failed for order 42", inner);
 
-        assertEquals("fallback pricing failed for order 42 (after " + NAMED + ")", NestedFailures.describe(wrapper));
-        assertNull(NestedFailures.nestedRunFailure(wrapper));
+        assertEquals("fallback pricing failed for order 42 (after " + NAMED + ")", CauseChains.describe(wrapper));
+        assertNull(CauseChains.nestedRunFailure(wrapper));
     }
 
     @Test
@@ -76,7 +76,7 @@ class NestedFailureNewsTest {
         IllegalStateException wrapper = new IllegalStateException("x".repeat(1_500), inner);
 
         assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after " + NAMED + ")",
-                NestedFailures.describe(wrapper));
+                CauseChains.describe(wrapper));
     }
 
     @Test
@@ -84,20 +84,20 @@ class NestedFailureNewsTest {
             + " is")
     void wrapperMessageAroundALoggedErrorShortened() {
         OutOfMemoryError oom = new OutOfMemoryError("nested oom");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                assertTrue(LoggedFailures.unloggedFatal(oom));
+                assertTrue(FailureLog.unloggedFatal(oom));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
 
             assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (after a nested run()"
                     + " failed: java.lang.OutOfMemoryError: nested oom)",
-                    NestedFailures.describe(new IllegalStateException("x".repeat(1_500), oom)));
+                    CauseChains.describe(new IllegalStateException("x".repeat(1_500), oom)));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -105,11 +105,11 @@ class NestedFailureNewsTest {
     @DisplayName("a nested engine failure is noted by its message alone, which already names a root cause without a"
             + " message")
     void engineFailureNotedByItsMessage() {
-        ReportedFailure nested = NestedFailures.report("Failed to execute action for rule 'inner': "
+        ReportedFailure nested = CauseChains.report("Failed to execute action for rule 'inner': "
                 + "java.lang.IllegalStateException", new IllegalStateException());
 
         assertEquals("audit failed (after a nested run() failed: " + nested.getMessage() + ")",
-                NestedFailures.describe(new IllegalStateException("audit failed", nested)));
+                CauseChains.describe(new IllegalStateException("audit failed", nested)));
     }
 
     @Test
@@ -117,7 +117,7 @@ class NestedFailureNewsTest {
     void causeWhoseTextCantBeRead() {
         IllegalStateException wrapper = new IllegalStateException("fallback", new UnreadableMessage(inner));
 
-        assertEquals("fallback (after " + NAMED + ")", NestedFailures.describe(wrapper));
+        assertEquals("fallback (after " + NAMED + ")", CauseChains.describe(wrapper));
     }
 
     @Test
@@ -125,8 +125,8 @@ class NestedFailureNewsTest {
     void newsBelowATransparentWrapper() {
         RuntimeException wrapper = new RuntimeException(new IllegalStateException("fallback", inner));
 
-        assertEquals("fallback (after " + NAMED + ")", NestedFailures.describe(wrapper));
-        assertNull(NestedFailures.nestedRunFailure(wrapper));
+        assertEquals("fallback (after " + NAMED + ")", CauseChains.describe(wrapper));
+        assertNull(CauseChains.nestedRunFailure(wrapper));
     }
 
     @Test
@@ -135,8 +135,8 @@ class NestedFailureNewsTest {
     void wrappersThatAddNothing() {
         for (Throwable wrapper : List.of(new IllegalStateException((String) null, inner), new UnreadableMessage(inner),
                 new IllegalStateException(inner), new IllegalStateException("inner failed", inner))) {
-            assertEquals(NAMED, NestedFailures.describe(wrapper), wrapper.getClass().getName());
-            assertSame(inner, NestedFailures.nestedRunFailure(wrapper));
+            assertEquals(NAMED, CauseChains.describe(wrapper), wrapper.getClass().getName());
+            assertSame(inner, CauseChains.nestedRunFailure(wrapper));
         }
     }
 
@@ -146,10 +146,10 @@ class NestedFailureNewsTest {
         IllegalStateException prefix = new IllegalStateException("audit: inner failed", inner);
         IllegalStateException suffix = new IllegalStateException("inner failed (retried 3 times)", inner);
 
-        assertEquals("audit: inner failed (after " + NAMED + ")", NestedFailures.describe(prefix));
-        assertNull(NestedFailures.nestedRunFailure(prefix));
-        assertEquals("inner failed (retried 3 times) (after " + NAMED + ")", NestedFailures.describe(suffix));
-        assertNull(NestedFailures.nestedRunFailure(suffix));
+        assertEquals("audit: inner failed (after " + NAMED + ")", CauseChains.describe(prefix));
+        assertNull(CauseChains.nestedRunFailure(prefix));
+        assertEquals("inner failed (retried 3 times) (after " + NAMED + ")", CauseChains.describe(suffix));
+        assertNull(CauseChains.nestedRunFailure(suffix));
     }
 
     @Test
@@ -160,16 +160,16 @@ class NestedFailureNewsTest {
 
         afterNestedRunLogged(nested, () -> {
             assertEquals("a nested run() failed: bad\\nname",
-                    NestedFailures.describe(new IllegalStateException("bad\nname", nested)));
+                    CauseChains.describe(new IllegalStateException("bad\nname", nested)));
             assertEquals("a nested run() failed: bad\\nname",
-                    NestedFailures.describe(new IllegalStateException("bad\\nname", nested)));
+                    CauseChains.describe(new IllegalStateException("bad\\nname", nested)));
             // Not its cause's message: the nested failure's own, one link further down.
             assertEquals("a nested run() failed: bad\\nname",
-                    NestedFailures.describe(new IllegalStateException("bad\nname", new RuntimeException(nested))));
+                    CauseChains.describe(new IllegalStateException("bad\nname", new RuntimeException(nested))));
             assertEquals("audit: bad\\nname (after a nested run() failed: bad\\nname)",
-                    NestedFailures.describe(new IllegalStateException("audit: bad\nname", nested)));
+                    CauseChains.describe(new IllegalStateException("audit: bad\nname", nested)));
             assertEquals("audit: bad\\nname (after a nested run() failed: bad\\nname)",
-                    NestedFailures.describe(new IllegalStateException("audit: bad\\nname", nested)));
+                    CauseChains.describe(new IllegalStateException("audit: bad\\nname", nested)));
             return null;
         });
     }
@@ -182,12 +182,12 @@ class NestedFailureNewsTest {
 
         afterNestedRunLogged(none, () -> {
             assertEquals("oops (after a nested run() failed: java.lang.IllegalArgumentException)",
-                    NestedFailures.describe(new IllegalStateException("oops", none)));
+                    CauseChains.describe(new IllegalStateException("oops", none)));
             return null;
         });
         afterNestedRunLogged(empty, () -> {
             assertEquals("oops (after a nested run() failed: )",
-                    NestedFailures.describe(new IllegalStateException("oops", empty)));
+                    CauseChains.describe(new IllegalStateException("oops", empty)));
             return null;
         });
     }
@@ -195,15 +195,15 @@ class NestedFailureNewsTest {
     @Test
     @DisplayName("the nested failure in a note is shortened, and escaped, and names a hidden root cause once")
     void noteShortened() {
-        ReportedFailure longer = NestedFailures.report("m".repeat(1_100), null);
+        ReportedFailure longer = CauseChains.report("m".repeat(1_100), null);
         IllegalArgumentException hidden = new IllegalArgumentException(null, new IOException("disk\nfull"));
 
         assertEquals("fallback (after a nested run() failed: " + "m".repeat(1_000) + "... (100 more characters))",
-                NestedFailures.describe(new IllegalStateException("fallback", longer)));
+                CauseChains.describe(new IllegalStateException("fallback", longer)));
         afterNestedRunLogged(hidden, () -> {
             assertEquals("fall\\nback (after a nested run() failed: java.lang.IllegalArgumentException (caused by "
                     + "java.io.IOException: disk\\nfull))",
-                    NestedFailures.describe(new IllegalStateException("fall\nback", hidden)));
+                    CauseChains.describe(new IllegalStateException("fall\nback", hidden)));
             return null;
         });
     }
@@ -211,14 +211,14 @@ class NestedFailureNewsTest {
     @Test
     @DisplayName("a failure whose cause has news names itself, so a run around it keeps the news too")
     void failureAroundNewsNamesItself() {
-        ReportedFailure middle = NestedFailures.report("middle failed: fallback (after " + NAMED + ")",
+        ReportedFailure middle = CauseChains.report("middle failed: fallback (after " + NAMED + ")",
                 new IllegalStateException("fallback", inner));
-        ReportedFailure plain = NestedFailures.report("middle failed", new IllegalStateException(inner));
+        ReportedFailure plain = CauseChains.report("middle failed", new IllegalStateException(inner));
 
-        assertSame(middle, NestedFailures.nestedRunFailure(middle));
+        assertSame(middle, CauseChains.nestedRunFailure(middle));
         assertEquals("a nested run() failed: " + middle.getMessage(),
-                NestedFailures.describe(new IllegalStateException(middle)));
-        assertSame(inner, NestedFailures.nestedRunFailure(plain));
+                CauseChains.describe(new IllegalStateException(middle)));
+        assertSame(inner, CauseChains.nestedRunFailure(plain));
     }
 
     @Test
@@ -229,10 +229,10 @@ class NestedFailureNewsTest {
         withCause.initCause(new IOException("below"));
 
         IllegalStateException cleanup = new IllegalStateException("cleanup failed", oom);
-        assertSame(cleanup, NestedFailures.newsAbove(new RuntimeException(cleanup), oom));
-        assertNull(NestedFailures.newsAbove(new IllegalStateException(oom), oom));
-        assertNull(NestedFailures.newsAbove(oom, oom));
-        assertNull(NestedFailures.newsAbove(withCause, withCause));
+        assertSame(cleanup, CauseChains.newsAbove(new RuntimeException(cleanup), oom));
+        assertNull(CauseChains.newsAbove(new IllegalStateException(oom), oom));
+        assertNull(CauseChains.newsAbove(oom, oom));
+        assertNull(CauseChains.newsAbove(withCause, withCause));
     }
 
     @Test
@@ -240,22 +240,22 @@ class NestedFailureNewsTest {
     void fatalLoggedAlready() {
         OutOfMemoryError oom = new OutOfMemoryError("heap");
 
-        assertFalse(NestedFailures.logged(oom), "no run in progress");
-        LoggedFailures.enter();
+        assertFalse(CauseChains.logged(oom), "no run in progress");
+        FailureLog.enter();
         try {
-            assertFalse(NestedFailures.logged(oom), "not logged yet");
-            assertTrue(LoggedFailures.unloggedFatal(oom));
-            assertTrue(NestedFailures.logged(oom));
-            assertTrue(NestedFailures.logged(new IllegalStateException(oom)));
-            assertFalse(NestedFailures.logged(new IllegalStateException("cleanup failed", oom)));
-            assertTrue(NestedFailures.logged(new IllegalStateException(inner)));
-            assertFalse(NestedFailures.logged(new IllegalStateException("cleanup failed", inner)));
+            assertFalse(CauseChains.logged(oom), "not logged yet");
+            assertTrue(FailureLog.unloggedFatal(oom));
+            assertTrue(CauseChains.logged(oom));
+            assertTrue(CauseChains.logged(new IllegalStateException(oom)));
+            assertFalse(CauseChains.logged(new IllegalStateException("cleanup failed", oom)));
+            assertTrue(CauseChains.logged(new IllegalStateException(inner)));
+            assertFalse(CauseChains.logged(new IllegalStateException("cleanup failed", inner)));
             OutOfMemoryError another = new OutOfMemoryError("another");
-            assertFalse(NestedFailures.logged(another));
-            assertFalse(LoggedFailures.unloggedFatal(oom), "logged() lost the one logged");
-            assertTrue(LoggedFailures.unloggedFatal(another), "logged() recorded it");
+            assertFalse(CauseChains.logged(another));
+            assertFalse(FailureLog.unloggedFatal(oom), "logged() lost the one logged");
+            assertTrue(FailureLog.unloggedFatal(another), "logged() recorded it");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -269,12 +269,12 @@ class NestedFailureNewsTest {
 
         afterNestedRunLogged(breaks, () -> {
             assertEquals("oops (after a nested run() failed: " + "\\n".repeat(1_000) + "... (100 more characters))",
-                    NestedFailures.describe(new IllegalStateException("oops", breaks)));
+                    CauseChains.describe(new IllegalStateException("oops", breaks)));
             return null;
         });
         afterNestedRunLogged(named, () -> {
             assertEquals("oops (after a nested run() failed: failed (caused by java.io.IOException: disk\\nfull))",
-                    NestedFailures.describe(new IllegalStateException("oops", named)));
+                    CauseChains.describe(new IllegalStateException("oops", named)));
             return null;
         });
     }
@@ -289,7 +289,7 @@ class NestedFailureNewsTest {
         afterNestedRunLogged(nested, () -> {
             assertEquals("oops (after a nested run() failed: " + "m".repeat(960) + " (caused by java.io.IOException: "
                     + "\\n".repeat(7) + "... (44 more characters))",
-                    NestedFailures.describe(new IllegalStateException("oops", nested)));
+                    CauseChains.describe(new IllegalStateException("oops", nested)));
             return null;
         });
     }

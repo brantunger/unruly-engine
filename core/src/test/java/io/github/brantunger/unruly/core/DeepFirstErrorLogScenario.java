@@ -75,7 +75,7 @@ final class DeepFirstErrorLogScenario {
          */
         NULL_OUTPUT,
         /**
-         * The output factory throws, logged before the run fails (Failures' reportCalledCodeFailure).
+         * The output factory throws, logged before the run fails (FailurePolicy's reportCalledCodeFailure).
          */
         OUTPUT_THROWS,
         /** A fact of a type other than the one declared, logged as the run rejects it (FactIntake's rejectedFact). */

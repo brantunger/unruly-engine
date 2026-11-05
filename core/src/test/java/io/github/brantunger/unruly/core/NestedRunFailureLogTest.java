@@ -1155,12 +1155,12 @@ class NestedRunFailureLogTest {
                 nested.run();
             }
         });
-        Faults.inject(Faults.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
+        FaultInjection.inject(FaultInjection.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
         Outcome<Throwable> outcome;
         try {
             outcome = failed(() -> engine.run(new FactMap<>()));
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertSame(oom, outcome.thrown());

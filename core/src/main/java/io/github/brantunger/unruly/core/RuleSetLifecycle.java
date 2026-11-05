@@ -142,12 +142,12 @@ final class RuleSetLifecycle {
         // Before the load counts or compiles anything, as in run().
         StackHeadroom.check();
         // A run a language starts while this compiles or makes copies is nested in the load, so a fatal Error it
-        // logged isn't logged again here (see LoggedFailures).
-        LoggedFailures.enterLoad();
+        // logged isn't logged again here (see FailureLog).
+        FailureLog.enterLoad();
         try {
             loadRules(ruleList);
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -169,8 +169,8 @@ final class RuleSetLifecycle {
         List<RuleCompilationException> listProblems = compiler.listProblems(ruleList, RuleListCompiler.Mode.LOAD);
         if (!listProblems.isEmpty()) {
             RuleCompilationException first = listProblems.get(0);
-            Failures.logError(log, first.getMessage());
-            throw LoggedFailures.loggedByLoad(first);
+            FailurePolicy.logError(log, first.getMessage());
+            throw FailureLog.loggedByLoad(first);
         }
         RuleListCompiler.Compilation compilation = compiler.compilation(RuleListCompiler.Mode.LOAD);
         CopyPool loaded;
@@ -181,7 +181,7 @@ final class RuleSetLifecycle {
                     new OneStepStack<>());
         } catch (Throwable t) {
             // Any Throwable, as in validate(): the compilers created must be closed however compiling ends.
-            Failures.throwIfPresent(Failures.closingInsteadOf(t, compilation.closeCompilers()));
+            FailurePolicy.throwIfPresent(FailurePolicy.closingInsteadOf(t, compilation.closeCompilers()));
             throw t;
         }
         // From here on the rule set owns the compilers, so a failure retires it, which closes the copies made so far,
@@ -224,9 +224,9 @@ final class RuleSetLifecycle {
             // Any Throwable, as retiring each rule set catches: retiring them failed before it began.
             failed = t;
         }
-        Failures.throwIfPresent(Failures.fatalError(failed));
+        FailurePolicy.throwIfPresent(FailurePolicy.fatalError(failed));
         if (failed != null) {
-            Failures.logWarn(log, RETIRE_AGAIN, NestedFailures.describe(failed));
+            FailurePolicy.logWarn(log, RETIRE_AGAIN, CauseChains.describe(failed));
         }
     }
 
@@ -239,23 +239,23 @@ final class RuleSetLifecycle {
      *                                  {@code load()} logs every failure, and recorded as logged, so a run around a
      *                                  nested {@code load()} doesn't log it again, unless what it holds is a nested
      *                                  run's or load's failure, which the code around names instead (see
-     *                                  {@link LoggedFailures})
+     *                                  {@link FailureLog})
      */
     // The cause is what the language threw, as when a language can't create its compiler: the ReportedFailure around
     // it is the engine's own wrapper for a run, and was logged when it was made, or holds a failure that was. The
     // exception thrown in its place is the engine's too, so the code around a nested load() takes its message, which
-    // has a nested failure's text, for adding nothing to it (see LoggedFailures).
+    // has a nested failure's text, for adding nothing to it (see FailureLog).
     @SuppressWarnings("PMD.PreserveStackTrace")
     private void prepareCopies(CopyPool loaded) {
-        Faults.at(Faults.Step.COPIES_PREPARED);
+        FaultInjection.at(FaultInjection.Step.COPIES_PREPARED);
         try {
             loaded.prepareCopies(copiesAtLoad);
         } catch (ReportedFailure e) {
-            RuleCompilationException failure = LoggedFailures.builtByEngine(
+            RuleCompilationException failure = FailureLog.builtByEngine(
                     new RuleCompilationException(e.getMessage(), e.getCause()));
             // Logged as the language's failure unless it held a nested run's or load's, which that one logged.
-            if (NestedFailures.nestedRunFailure(e.getCause()) == null) {
-                LoggedFailures.loggedByLoad(failure);
+            if (CauseChains.nestedRunFailure(e.getCause()) == null) {
+                FailureLog.loggedByLoad(failure);
             }
             throw failure;
         }
@@ -265,14 +265,15 @@ final class RuleSetLifecycle {
      * Retires a rule set that {@code load()} won't swap in, before the caller throws {@code failure}: closes its
      * copies, and then its compilers. A fatal {@link Error} from closing them is thrown here instead, carrying
      * {@code failure} as suppressed, or logging it at WARN if the error can't carry one, unless {@code failure} is a
-     * fatal error itself, which came first, and carries the one from closing (see {@link Failures#closingInsteadOf}). A
-     * rule set that retiring fails to mark retired, as it can when it runs out of stack, is kept for the next
-     * {@code load()} or {@code close()} to retire. What else stopped the retiring, even before it began, is thrown
-     * here instead of {@code failure}, carrying it, unless {@code failure} holds a fatal error, which came first: then
-     * that error carries it (see {@link Failures#insteadOf}). What retiring threw that isn't thrown, fatal or
-     * not, is logged at WARN once while it leaves the rule set to a later {@code load()} or {@code close()}, as a
-     * {@code load()} that swapped its rules in logs it, so the compilers left open aren't news only to the code that
-     * catches the error; one the thrown error can't carry is logged instead (see {@link Failures#keepAlso}).
+     * fatal error itself, which came first, and carries the one from closing
+     * (see {@link FailurePolicy#closingInsteadOf}). A rule set that retiring fails to mark retired, as it can when it
+     * runs out of stack, is kept for the next {@code load()} or {@code close()} to retire. What else stopped the
+     * retiring, even before it began, is thrown here instead of {@code failure}, carrying it, unless {@code failure}
+     * holds a fatal error, which came first: then that error carries it (see {@link FailurePolicy#insteadOf}). What
+     * retiring threw that isn't thrown, fatal or not, is logged at WARN once while it leaves the rule set to a later
+     * {@code load()} or {@code close()}, as a {@code load()} that swapped its rules in logs it, so the compilers left
+     * open aren't news only to the code that catches the error; one the thrown error can't carry is logged instead
+     * (see {@link FailurePolicy#keepAlso}).
      *
      * @param loaded  The rule set, which no run can see
      * @param failure What the caller throws next
@@ -294,15 +295,15 @@ final class RuleSetLifecycle {
             // still weighed against it.
             failed = t;
         }
-        Throwable instead = Failures.insteadOf(failure, failed);
+        Throwable instead = FailurePolicy.insteadOf(failure, failed);
         // What retiring threw says it when it's thrown, and keepAlso logged it when it couldn't be carried. Carried,
         // it's logged once here while the rule set is left for a later load() or close(); a fatal error closing it
         // threw, which leaves it retired, was logged as it was caught. An overflow in the log call loses only the line,
         // as after a swap (#1217).
-        if (Failures.carries(instead != null ? instead : failure, failed) && !loaded.retiredForGood()) {
-            Failures.logWarn(log, RETIRE_AGAIN, NestedFailures.describe(failed));
+        if (FailurePolicy.carries(instead != null ? instead : failure, failed) && !loaded.retiredForGood()) {
+            FailurePolicy.logWarn(log, RETIRE_AGAIN, CauseChains.describe(failed));
         }
-        Failures.rethrowUnchecked(instead);
+        FailurePolicy.rethrowUnchecked(instead);
     }
 
     /**
@@ -314,16 +315,16 @@ final class RuleSetLifecycle {
         // Before the engine is marked closed, so a close() that overflows here leaves it open, to close again.
         StackHeadroom.check();
         // As in load(): a run a language's close() starts is nested in this one, so what it logged isn't logged again
-        // (see LoggedFailures). Counted before the rules are taken from the engine, so failing to count it leaves the
+        // (see FailureLog). Counted before the rules are taken from the engine, so failing to count it leaves the
         // engine as it was.
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             long claim;
             synchronized (lifecycle) {
                 if (closed && ruleSet != null) {
                     // Only a close() made from inside this very one, between its two writes below, as a test's watch
-                    // does (see Faults.Step.CLOSE_MARKED), finds the engine closed with its rules still held. The
-                    // close() around it lets go of them and retires them; detaching them again here would link them
+                    // does (see FaultInjection.Step.CLOSE_MARKED), finds the engine closed with its rules still held.
+                    // The close() around it lets go of them and retires them; detaching them again here would link them
                     // to themselves, and leave RetireQueue.claim looping for ever.
                     return;
                 }
@@ -343,15 +344,15 @@ final class RuleSetLifecycle {
                     // throw, so the rules are let go of in a finally: a closed engine that still held its rules would
                     // leave the next close() linking them to themselves. The finally only writes a field, so it calls
                     // nothing and can't overflow itself.
-                    Faults.reached(Faults.Step.CLOSE_MARKED);
+                    FaultInjection.reached(FaultInjection.Step.CLOSE_MARKED);
                 } finally {
                     ruleSet = null;
                 }
                 toRetire.claim(claim);
             }
-            Failures.rethrowUnchecked(toRetire.retireClaimed(claim));
+            FailurePolicy.rethrowUnchecked(toRetire.retireClaimed(claim));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 }

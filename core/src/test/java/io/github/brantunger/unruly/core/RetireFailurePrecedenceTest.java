@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * fatal, as running out of stack is. A fatal error in the load's own failure comes first, wherever it is in that
  * failure, as it does against a fatal error from closing; with none, the retire failure is thrown, carrying the load's.
  * A load failure that holds its fatal error only as a suppressed exception can't come from a {@code load()} today, as
- * a language's fatal error is rethrown unchanged, so {@link Failures#insteadOf} is checked directly.
+ * a language's fatal error is rethrown unchanged, so {@link FailurePolicy#insteadOf} is checked directly.
  */
 @DisplayName("#893: a load's own fatal error comes before a retire failure that isn't fatal")
 class RetireFailurePrecedenceTest {
@@ -29,7 +29,7 @@ class RetireFailurePrecedenceTest {
         StackOverflowError retiring = new StackOverflowError("retiring");
         AtomicReference<Throwable> thrown = new AtomicReference<>();
 
-        String logs = TestLogs.logsOf(() -> thrown.set(Failures.insteadOf(failure, retiring)));
+        String logs = TestLogs.logsOf(() -> thrown.set(FailurePolicy.insteadOf(failure, retiring)));
 
         assertSame(fatal, thrown.get());
         assertArrayEquals(new Throwable[] {retiring}, fatal.getSuppressed(), "the retire failure isn't kept");
@@ -43,7 +43,7 @@ class RetireFailurePrecedenceTest {
         RuntimeException failure = new RuntimeException("making the copies", new OutOfMemoryError("a session"));
         StackOverflowError retiring = new StackOverflowError("retiring");
 
-        assertNull(Failures.insteadOf(failure, retiring));
+        assertNull(FailurePolicy.insteadOf(failure, retiring));
         assertArrayEquals(new Throwable[] {retiring}, failure.getSuppressed(), "the retire failure isn't kept");
     }
 
@@ -53,9 +53,9 @@ class RetireFailurePrecedenceTest {
         IllegalStateException failure = new IllegalStateException("making the copies");
         StackOverflowError retiring = new StackOverflowError("retiring");
 
-        assertSame(retiring, Failures.insteadOf(failure, retiring));
+        assertSame(retiring, FailurePolicy.insteadOf(failure, retiring));
         assertArrayEquals(new Throwable[] {failure}, retiring.getSuppressed(), "the load's failure isn't kept");
-        assertNull(Failures.insteadOf(failure, null));
+        assertNull(FailurePolicy.insteadOf(failure, null));
     }
 
     @Test
@@ -66,13 +66,13 @@ class RetireFailurePrecedenceTest {
         StackOverflowError retiring = new StackOverflowError("retiring");
         retiring.initCause(failure);
 
-        assertSame(retiring, Failures.insteadOf(failure, retiring));
+        assertSame(retiring, FailurePolicy.insteadOf(failure, retiring));
         assertArrayEquals(new Throwable[0], retiring.getSuppressed(), "kept on what reaches it already");
 
         OutOfMemoryError fatal = new OutOfMemoryError("closing a compiler");
         RuntimeException wrapping = new RuntimeException("retiring", fatal);
 
-        assertSame(fatal, Failures.insteadOf(failure, wrapping));
+        assertSame(fatal, FailurePolicy.insteadOf(failure, wrapping));
         assertArrayEquals(new Throwable[] {failure}, fatal.getSuppressed(), "the load's failure isn't kept");
     }
 
@@ -85,7 +85,7 @@ class RetireFailurePrecedenceTest {
         AtomicReference<Throwable> threw = new AtomicReference<>();
         Thread thread = new Thread(() -> {
             try {
-                Failures.insteadOf(failure, new StackOverflowError("retiring"));
+                FailurePolicy.insteadOf(failure, new StackOverflowError("retiring"));
                 status.set(Thread.currentThread().isInterrupted());
             } catch (Throwable t) {
                 threw.set(t);

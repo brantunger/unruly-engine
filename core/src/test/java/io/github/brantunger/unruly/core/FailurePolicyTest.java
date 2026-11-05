@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Text.truncate keeps a message of up to 1,000 characters and shortens a longer one, and escape and "
         + "quote make text safe for a log line")
-class FailuresTest {
+class FailurePolicyTest {
 
     private static final String EMOJI = Character.toString(0x1F600);
     private static final String TAG = Character.toString(0xE0041);
@@ -175,7 +175,7 @@ class FailuresTest {
                 new RuntimeException((String) null, root));
 
         assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (510 more characters) (caused by "
-                + "java.lang.IllegalStateException: disk full)", NestedFailures.describe(first));
+                + "java.lang.IllegalStateException: disk full)", CauseChains.describe(first));
     }
 
     @Test
@@ -189,7 +189,7 @@ class FailuresTest {
 
         assertEquals("failed: " + "r".repeat(992) + "... (208 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "r".repeat(1000) + "... (200 more characters))",
-                NestedFailures.describe(first));
+                CauseChains.describe(first));
     }
 
     @Test
@@ -199,7 +199,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("no room: " + "x".repeat(1500),
                 new RuntimeException((String) null, root));
 
-        assertEquals("no room: " + "x".repeat(991) + "... (509 more characters)", NestedFailures.describe(first));
+        assertEquals("no room: " + "x".repeat(991) + "... (509 more characters)", CauseChains.describe(first));
     }
 
     @Test
@@ -209,7 +209,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("x".repeat(1500), new RuntimeException((String) null, root));
 
         assertEquals("x".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (500 more characters) (caused by "
-                + "java.lang.IllegalStateException: more characters)", NestedFailures.describe(first));
+                + "java.lang.IllegalStateException: more characters)", CauseChains.describe(first));
     }
 
     @Test
@@ -220,7 +220,7 @@ class FailuresTest {
                 new RuntimeException((String) null, root));
 
         assertEquals("a".repeat(998) + "x... (6 more characters) (caused by java.lang.IllegalStateException: "
-                + "x\\ud83d)", NestedFailures.describe(first));
+                + "x\\ud83d)", CauseChains.describe(first));
     }
 
     @Test
@@ -231,7 +231,7 @@ class FailuresTest {
                 new RuntimeException((String) null, root));
 
         assertEquals("java.lang.RuntimeException: " + "x".repeat(972) + "... (527 more characters) (caused by "
-                + "java.lang.IllegalStateException: disk full)", Failures.describeWithClass(first));
+                + "java.lang.IllegalStateException: disk full)", FailurePolicy.describeWithClass(first));
     }
 
     @Test
@@ -247,7 +247,7 @@ class FailuresTest {
         };
 
         assertEquals("write failed (caused by java.lang.IllegalStateException: disk full)",
-                Failures.describeWithClass(first));
+                FailurePolicy.describeWithClass(first));
     }
 
     @Test
@@ -257,7 +257,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("write failed: disk full",
                 new RuntimeException((String) null, root));
 
-        assertEquals("java.lang.RuntimeException: write failed: disk full", Failures.describeWithClass(first));
+        assertEquals("java.lang.RuntimeException: write failed: disk full", FailurePolicy.describeWithClass(first));
     }
 
     @Test
@@ -267,7 +267,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("a".repeat(1200), new RuntimeException((String) null, root));
 
         assertEquals("a".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (200 more characters) (caused by "
-                + "java.lang.IllegalStateException: " + "a".repeat(600) + "b)", NestedFailures.describe(first));
+                + "java.lang.IllegalStateException: " + "a".repeat(600) + "b)", CauseChains.describe(first));
     }
 
     @Test
@@ -282,7 +282,7 @@ class FailuresTest {
         RuntimeException first = new RuntimeException("a".repeat(2 * length),
                 new RuntimeException((String) null, root));
 
-        String description = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(first));
+        String description = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> CauseChains.describe(first));
 
         assertEquals("a".repeat(Text.MAX_DESCRIPTION_LENGTH) + "... (799000 more characters) (caused by "
                 + "java.lang.IllegalStateException: " + "a".repeat(1000) + "... (399001 more characters))",
@@ -298,15 +298,15 @@ class FailuresTest {
         OutOfMemoryError otherFatal = new OutOfMemoryError("fatal too");
         IllegalStateException wrapping = new IllegalStateException("wraps a fatal error", otherFatal);
 
-        assertNull(Failures.fatalFirst(null, null));
-        assertSame(plain, Failures.fatalFirst(plain, null));
-        assertSame(plain, Failures.fatalFirst(null, plain));
-        assertSame(fatal, Failures.fatalFirst(plain, fatal));
+        assertNull(FailurePolicy.fatalFirst(null, null));
+        assertSame(plain, FailurePolicy.fatalFirst(plain, null));
+        assertSame(plain, FailurePolicy.fatalFirst(null, plain));
+        assertSame(fatal, FailurePolicy.fatalFirst(plain, fatal));
         assertArrayEquals(new Throwable[] {plain}, fatal.getSuppressed());
-        assertSame(fatal, Failures.fatalFirst(fatal, wrapping));
+        assertSame(fatal, FailurePolicy.fatalFirst(fatal, wrapping));
         assertArrayEquals(new Throwable[] {plain, wrapping}, fatal.getSuppressed());
         StackOverflowError later = new StackOverflowError("later");
-        assertSame(otherFatal, Failures.fatalFirst(later, wrapping));
+        assertSame(otherFatal, FailurePolicy.fatalFirst(later, wrapping));
         assertArrayEquals(new Throwable[] {later}, otherFatal.getSuppressed());
     }
 
@@ -314,14 +314,14 @@ class FailuresTest {
     @DisplayName("#855: a Teardown combines what the steps threw as fatalFirst does, in order, and returns the fatal"
             + " Error the first failure holds itself, carrying what else was thrown")
     void teardownCombinesWhatTheStepsThrew() {
-        Failures.Teardown nothing = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        FailurePolicy.Teardown nothing = new FailurePolicy.Teardown(2, FaultInjection.Step.RUN_ENDING_COMBINED);
         nothing.add(null);
         nothing.add(null);
         assertNull(nothing.result());
 
         StackOverflowError plain = new StackOverflowError("not fatal");
         OutOfMemoryError fatal = new OutOfMemoryError("fatal");
-        Failures.Teardown fatalLater = new Failures.Teardown(3, Faults.Step.RUN_ENDING_COMBINED);
+        FailurePolicy.Teardown fatalLater = new FailurePolicy.Teardown(3, FaultInjection.Step.RUN_ENDING_COMBINED);
         fatalLater.add(plain);
         fatalLater.add(null);
         fatalLater.add(fatal);
@@ -331,7 +331,7 @@ class FailuresTest {
         OutOfMemoryError carried = new OutOfMemoryError("carried");
         IllegalStateException wrapping = new IllegalStateException("wraps a fatal error", carried);
         StackOverflowError later = new StackOverflowError("later");
-        Failures.Teardown lifted = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        FailurePolicy.Teardown lifted = new FailurePolicy.Teardown(2, FaultInjection.Step.RUN_ENDING_COMBINED);
         lifted.add(wrapping);
         lifted.add(later);
         assertSame(carried, lifted.result());
@@ -344,24 +344,24 @@ class FailuresTest {
     void teardownReturnsTheFirstFatalErrorWhenCombiningFails() {
         OutOfMemoryError first = new OutOfMemoryError("first");
         OutOfMemoryError second = new OutOfMemoryError("second");
-        Failures.Teardown teardown = new Failures.Teardown(2, Faults.Step.RUN_ENDING_COMBINED);
+        FailurePolicy.Teardown teardown = new FailurePolicy.Teardown(2, FaultInjection.Step.RUN_ENDING_COMBINED);
         teardown.add(first);
         teardown.add(second);
-        Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, new StackOverflowError("combining"));
+        FaultInjection.inject(FaultInjection.Step.RUN_ENDING_COMBINED, 1, new StackOverflowError("combining"));
         try {
             assertSame(first, teardown.result());
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
     }
 
     @Test
     @DisplayName("#1268: the note text of a nested run's stop is its message alone, with no note of its cause")
     void noteTextOfAStopIsItsMessageAlone() {
-        ReportedFailure stop = NestedFailures.stop("nested run passed its deadline", new TimeoutException(),
+        ReportedFailure stop = CauseChains.stop("nested run passed its deadline", new TimeoutException(),
                 Deadline.from(Duration.ofMillis(1)));
 
-        assertEquals("nested run passed its deadline", Failures.noteText(stop));
+        assertEquals("nested run passed its deadline", FailurePolicy.noteText(stop));
     }
 
     /** An exception whose message can't be read, as a broken language's may be, above a cause whose message can. */
@@ -390,6 +390,6 @@ class FailuresTest {
         IllegalStateException logged = new IllegalStateException("the action failed" + note,
                 new UnreadableMessage(root));
 
-        assertEquals("the action failed" + note, Failures.loggedText(logged));
+        assertEquals("the action failed" + note, FailurePolicy.loggedText(logged));
     }
 }

@@ -228,14 +228,14 @@ class SuppressedFatalErrorTest {
         IllegalStateException first = new IllegalStateException("first");
         IllegalStateException last = new IllegalStateException("last");
         first.addSuppressed(oom);
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ; i++) {
             first.addSuppressed(new IllegalStateException("suppressed " + i));
             last.addSuppressed(new IllegalStateException("suppressed " + i, new IllegalStateException("cause")));
         }
         last.addSuppressed(oom);
 
-        assertSame(oom, Failures.fatalError(first));
-        assertNull(Failures.fatalError(last));
+        assertSame(oom, FailurePolicy.fatalError(first));
+        assertNull(FailurePolicy.fatalError(last));
     }
 
     @Test
@@ -247,7 +247,7 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(new IllegalStateException("back up", top));
         cause.addSuppressed(bodyFailed(oom));
 
-        assertSame(oom, Failures.fatalError(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
     }
 
     @Test
@@ -259,7 +259,7 @@ class SuppressedFatalErrorTest {
         IllegalStateException failure = bodyFailed(oom);
         AtomicReference<Error> thrown = new AtomicReference<>();
 
-        Outcome<Throwable> outcome = capture(() -> thrown.set(Failures.closingInsteadOf(failure, closeFatal)));
+        Outcome<Throwable> outcome = capture(() -> thrown.set(FailurePolicy.closingInsteadOf(failure, closeFatal)));
 
         assertSame(oom, thrown.get());
         assertEquals(List.of(closeFatal), List.of(oom.getSuppressed()));
@@ -278,8 +278,8 @@ class SuppressedFatalErrorTest {
         IllegalStateException top = new IllegalStateException("top");
         top.addSuppressed(suppressed);
 
-        assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, NestedFailures.errorInChain(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
+        assertSame(oom, CauseChains.errorInChain(top));
     }
 
     @Test
@@ -293,8 +293,8 @@ class SuppressedFatalErrorTest {
         IllegalStateException top = new IllegalStateException("top");
         top.addSuppressed(suppressed);
 
-        assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, NestedFailures.errorInChain(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
+        assertSame(oom, CauseChains.errorInChain(top));
     }
 
     @Test
@@ -312,14 +312,14 @@ class SuppressedFatalErrorTest {
         IllegalStateException top = new IllegalStateException("top");
         top.addSuppressed(suppressed);
 
-        assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, NestedFailures.errorInChain(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
+        assertSame(oom, CauseChains.errorInChain(top));
     }
 
     /** Returns an exception carrying as many suppressed exceptions as the engine reads. */
     private static IllegalStateException carryingAsManyAsRead(String message, Throwable cause) {
         IllegalStateException many = new IllegalStateException(message, cause);
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ; i++) {
             many.addSuppressed(new IllegalStateException(message + " " + i));
         }
         return many;
@@ -334,8 +334,8 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(oom);
         cause.addSuppressed(carryingAsManyAsRead("x", null));
 
-        assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, NestedFailures.errorInChain(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
+        assertSame(oom, CauseChains.errorInChain(top));
     }
 
     @Test
@@ -346,8 +346,8 @@ class SuppressedFatalErrorTest {
         top.addSuppressed(carryingAsManyAsRead("x", null));
         top.addSuppressed(oom);
 
-        assertSame(oom, Failures.fatalError(top));
-        assertSame(oom, NestedFailures.errorInChain(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
+        assertSame(oom, CauseChains.errorInChain(top));
     }
 
     @Test
@@ -358,7 +358,7 @@ class SuppressedFatalErrorTest {
         IllegalStateException loser = new IllegalStateException("loser", carryingAsManyAsRead("c", null));
         loser.addSuppressed(winner);
 
-        Failures.keepAlso(winner, loser);
+        FailurePolicy.keepAlso(winner, loser);
 
         assertEquals(0, winner.getSuppressed().length);
     }
@@ -368,10 +368,10 @@ class SuppressedFatalErrorTest {
             + " on each other")
     void reachedThroughWhatTheEngineKept() {
         OutOfMemoryError winner = new OutOfMemoryError("winner");
-        ReportedFailure loser = NestedFailures.report("loser", null);
+        ReportedFailure loser = CauseChains.report("loser", null);
         loser.addSuppressedByEngine(winner);
 
-        Failures.keepAlso(winner, loser);
+        FailurePolicy.keepAlso(winner, loser);
 
         assertEquals(0, winner.getSuppressed().length);
     }
@@ -383,12 +383,12 @@ class SuppressedFatalErrorTest {
         int fewer = where.startsWith("found") ? 2 : 1;
         OutOfMemoryError oom = new OutOfMemoryError("last read");
         IllegalStateException top = new IllegalStateException("top");
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ - fewer; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ - fewer; i++) {
             top.addSuppressed(new IllegalStateException("before " + i));
         }
         top.addSuppressed(oom);
 
-        assertSame(fewer == 2 ? oom : null, Failures.fatalError(top));
+        assertSame(fewer == 2 ? oom : null, FailurePolicy.fatalError(top));
     }
 
     @Test
@@ -397,12 +397,12 @@ class SuppressedFatalErrorTest {
         OutOfMemoryError oom = new OutOfMemoryError("last");
         IllegalStateException shared = new IllegalStateException("shared");
         IllegalStateException top = new IllegalStateException("top");
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ * 2; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ * 2; i++) {
             top.addSuppressed(shared);
         }
         top.addSuppressed(oom);
 
-        assertSame(oom, Failures.fatalError(top));
+        assertSame(oom, FailurePolicy.fatalError(top));
     }
 
     @Test
@@ -410,14 +410,14 @@ class SuppressedFatalErrorTest {
             + " described with the error as suppressed")
     void describedWithTheErrorAsSuppressed() {
         OutOfMemoryError oom = new OutOfMemoryError("OOM in close()");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertTrue(LoggedFailures.unloggedFatal(oom));
+            assertTrue(FailureLog.unloggedFatal(oom));
 
             assertEquals("body failed (with suppressed java.lang.OutOfMemoryError: OOM in close(), already logged)",
-                    NestedFailures.describe(bodyFailed(oom)));
+                    CauseChains.describe(bodyFailed(oom)));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -445,14 +445,14 @@ class SuppressedFatalErrorTest {
     @DisplayName("an exception whose getCause() changes is described from one reading of its chain")
     void describedFromOneReadingOfTheChain() {
         OutOfMemoryError oom = new OutOfMemoryError("logged");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertTrue(LoggedFailures.unloggedFatal(oom));
+            assertTrue(FailureLog.unloggedFatal(oom));
 
             assertEquals("outer (caused by java.lang.OutOfMemoryError: logged, already logged)",
-                    NestedFailures.describe(new CauseEveryOtherRead(oom)));
+                    CauseChains.describe(new CauseEveryOtherRead(oom)));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -477,7 +477,7 @@ class SuppressedFatalErrorTest {
         NewCauseEachRead thrown = new NewCauseEachRead();
         thrown.addSuppressed(new IllegalStateException("not it"));
 
-        assertNull(NestedFailures.newsAbove(thrown, new OutOfMemoryError("gone")));
+        assertNull(CauseChains.newsAbove(thrown, new OutOfMemoryError("gone")));
     }
 
     @Test

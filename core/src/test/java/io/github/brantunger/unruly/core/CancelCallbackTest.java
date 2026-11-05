@@ -66,7 +66,7 @@ class CancelCallbackTest {
 
     @AfterEach
     void timerIdle() throws InterruptedException {
-        Faults.clear();
+        FaultInjection.clear();
         CancelTimer.slowAfter(CancelTimer.SLOW_NANOS);
         // Each test closes what it registered, so the timer is gone before the next test starts.
         assertTimerExits();
@@ -113,7 +113,8 @@ class CancelCallbackTest {
         CountDownLatch release = new CountDownLatch(1);
         // Let go if it can't be held, so a failure here leaves no timer held for the next test.
         try {
-            Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(release));
+            FaultInjection.watch(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_HANDED_OFF,
+                    () -> await(release));
             CountDownLatch held = new CountDownLatch(1);
             scheduled(Duration.ZERO, held::countDown);
             await(held);
@@ -672,7 +673,7 @@ class CancelCallbackTest {
         // Once the exiting timer has given up its place, from another thread, as a run's would be. The action reads
         // which timer serves it: it is pending while it runs, so that timer can't exit before the read, as it can
         // before a read after the registration.
-        Faults.watch(exiting, Faults.Step.CANCEL_TIMER_EXITED, () -> {
+        FaultInjection.watch(exiting, FaultInjection.Step.CANCEL_TIMER_EXITED, () -> {
             Thread registering = new Thread(() -> {
                 try {
                     scheduled(Duration.ofMillis(50), () -> {

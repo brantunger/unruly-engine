@@ -32,7 +32,7 @@ public final class Engines {
      *                            initialize them
      */
     public static void initialize() {
-        RunClasses.initialize();
+        FirstUseClasses.initialize();
     }
 
     /**

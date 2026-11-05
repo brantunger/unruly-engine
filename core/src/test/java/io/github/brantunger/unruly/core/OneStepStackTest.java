@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class OneStepStackTest {
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     private static List<String> walk(Iterator<String> items) {
@@ -98,7 +98,7 @@ class OneStepStackTest {
     void addRetriesWhenTheTopChanged() {
         OneStepStack<String> stack = new OneStepStack<>(List.of("a"));
         // Another add has changed the top when this one compares and sets it, so the compare-and-set fails.
-        Faults.watch(Faults.Step.STACK_TOP_READ, () -> stack.add("b"));
+        FaultInjection.watch(FaultInjection.Step.STACK_TOP_READ, () -> stack.add("b"));
 
         stack.add("c");
 
@@ -111,7 +111,7 @@ class OneStepStackTest {
     void takeRetriesWhenTheTopChanged() {
         OneStepStack<String> stack = new OneStepStack<>(List.of("a", "b"));
         AtomicReference<String> other = new AtomicReference<>();
-        Faults.watch(Faults.Step.STACK_TOP_READ, () -> other.set(stack.poll()));
+        FaultInjection.watch(FaultInjection.Step.STACK_TOP_READ, () -> other.set(stack.poll()));
 
         String taken = stack.poll();
 
@@ -125,7 +125,7 @@ class OneStepStackTest {
     void failedAddLeavesTheStackUnchanged() {
         OneStepStack<String> stack = new OneStepStack<>(List.of("a"));
         StackOverflowError overflow = new StackOverflowError();
-        Faults.inject(Faults.Step.STACK_CHANGING, 1, overflow);
+        FaultInjection.inject(FaultInjection.Step.STACK_CHANGING, 1, overflow);
 
         assertSame(overflow, assertThrows(StackOverflowError.class, () -> stack.add("b")));
 
@@ -138,7 +138,7 @@ class OneStepStackTest {
     void failedTakeLeavesTheItem() {
         OneStepStack<String> stack = new OneStepStack<>(List.of("a", "b"));
         StackOverflowError overflow = new StackOverflowError();
-        Faults.inject(Faults.Step.STACK_CHANGING, 1, overflow);
+        FaultInjection.inject(FaultInjection.Step.STACK_CHANGING, 1, overflow);
 
         assertSame(overflow, assertThrows(StackOverflowError.class, stack::poll));
 

@@ -189,13 +189,13 @@ class CompileFailureTest {
         StackOverflowError overflow = new StackOverflowError();
         ExpressionLanguage language = language(throwing(overflow), NO_OP);
         // The check fails as it does deep in a stack, which DeepCompileOverflowTest shows in a JVM of its own.
-        Faults.inject(Faults.Step.OVERFLOW_ROOM_CHECKED, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.OVERFLOW_ROOM_CHECKED, 1, new StackOverflowError());
 
         RuleCompilationException ex;
         try {
             ex = assertLoggedAtError(RuleCompilationException.class, () -> load(language));
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertEquals("Condition for rule 'r' failed to compile: the stack ran out: it was compiled too deep in the "

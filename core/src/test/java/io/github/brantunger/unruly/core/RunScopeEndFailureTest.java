@@ -31,7 +31,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * ends: a value whose init ended the run is closed before its refusal is built, a run and the test kit call
  * {@link RunScope#end()} once more when it fails as it waits for another thread's init, an {@code end()} that fails as
  * it sets the interrupt again leaves the values to the next call, and the test kit closes every value whatever keeping
- * one's failure throws. Each failure is made with a {@link Faults} step where the stack or the heap could run out.
+ * one's failure throws. Each failure is made with a {@link FaultInjection} step where the stack or the heap could run
+ * out.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("#1052: a run's closing values are closed when its scope fails for stack or memory as it refuses or ends")
@@ -45,8 +46,8 @@ class RunScopeEndFailureTest {
     private final List<String> closed = new CopyOnWriteArrayList<>();
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     /** A value a language keeps for a run, which records its close() and then throws what the test set, if anything. */
@@ -81,7 +82,7 @@ class RunScopeEndFailureTest {
     void refusedValueIsClosedWhenBuildingTheRefusalFails() {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
-        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
+        FaultInjection.inject(FaultInjection.Step.RUN_VALUE_REFUSING, 1, building);
 
         assertSame(building, assertThrows(StackOverflowError.class, () -> context.runScopedClosing("key", () -> {
             endRun(context);
@@ -97,7 +98,8 @@ class RunScopeEndFailureTest {
     void fatalCloseFailureWinsOverAFailureBuildingTheRefusal() {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         OutOfMemoryError fatal = new OutOfMemoryError("close failed");
-        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, new StackOverflowError("building the refusal"));
+        FaultInjection.inject(FaultInjection.Step.RUN_VALUE_REFUSING, 1,
+                new StackOverflowError("building the refusal"));
 
         assertSame(fatal, assertThrows(OutOfMemoryError.class, () -> context.runScopedClosing("key", () -> {
             endRun(context);
@@ -112,7 +114,7 @@ class RunScopeEndFailureTest {
     void failureBuildingTheRefusalWinsOverACloseFailureThatIsNotFatal() {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
-        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
+        FaultInjection.inject(FaultInjection.Step.RUN_VALUE_REFUSING, 1, building);
 
         assertSame(building, assertThrows(StackOverflowError.class, () -> context.runScopedClosing("key", () -> {
             endRun(context);
@@ -127,7 +129,7 @@ class RunScopeEndFailureTest {
     void failureBuildingTheRefusalWinsOverAnInternalErrorAroundAnOverflow() {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         StackOverflowError building = new StackOverflowError("building the refusal");
-        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, building);
+        FaultInjection.inject(FaultInjection.Step.RUN_VALUE_REFUSING, 1, building);
 
         assertSame(building, assertThrows(StackOverflowError.class, () -> context.runScopedClosing("key", () -> {
             endRun(context);
@@ -137,7 +139,8 @@ class RunScopeEndFailureTest {
 
         EvaluationContext again = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         InternalError fatal = new InternalError("close failed");
-        Faults.inject(Faults.Step.RUN_VALUE_REFUSING, 1, new StackOverflowError("building the refusal"));
+        FaultInjection.inject(FaultInjection.Step.RUN_VALUE_REFUSING, 1,
+                new StackOverflowError("building the refusal"));
 
         assertSame(fatal, assertThrows(InternalError.class, () -> again.runScopedClosing("key", () -> {
             endRun(again);
@@ -184,11 +187,11 @@ class RunScopeEndFailureTest {
     void endingFailureWithAnInternalErrorWhenCombiningFails() throws Exception {
         StackOverflowError combining = new StackOverflowError("combining");
         assertSame(combining, runEndingWhileAnotherThreadHoldsTheTurn(new InternalError(new StackOverflowError()),
-                Faults.Step.RUN_ENDING_COMBINED, combining));
+                FaultInjection.Step.RUN_ENDING_COMBINED, combining));
 
         closed.clear();
         InternalError fatal = new InternalError("waiting");
-        assertSame(fatal, runEndingWhileAnotherThreadHoldsTheTurn(fatal, Faults.Step.RUN_ENDING_COMBINED,
+        assertSame(fatal, runEndingWhileAnotherThreadHoldsTheTurn(fatal, FaultInjection.Step.RUN_ENDING_COMBINED,
                 new StackOverflowError("combining")));
     }
 
@@ -212,14 +215,14 @@ class RunScopeEndFailureTest {
      * threw.
      */
     private Throwable runEndingWhileAnotherThreadHoldsTheTurn(Error first, Error second) throws Exception {
-        return runEndingWhileAnotherThreadHoldsTheTurn(first, Faults.Step.RUN_SCOPE_END_WAITING, second);
+        return runEndingWhileAnotherThreadHoldsTheTurn(first, FaultInjection.Step.RUN_SCOPE_END_WAITING, second);
     }
 
     /**
      * Runs the engine as {@link #runEndingWhileAnotherThreadHoldsTheTurn(Error, Error)} does, with {@code thenStep}
      * failing with {@code second}, if it isn't {@code null}, once the step where {@code end()} waits has failed.
      */
-    private Throwable runEndingWhileAnotherThreadHoldsTheTurn(Error first, Faults.Step thenStep, Error second)
+    private Throwable runEndingWhileAnotherThreadHoldsTheTurn(Error first, FaultInjection.Step thenStep, Error second)
             throws Exception {
         CountDownLatch inInit = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -249,9 +252,9 @@ class RunScopeEndFailureTest {
                 }
             });
             run.setDaemon(true);
-            Faults.inject(run, Faults.Step.RUN_SCOPE_END_WAITING, 1, first);
+            FaultInjection.inject(run, FaultInjection.Step.RUN_SCOPE_END_WAITING, 1, first);
             if (second != null) {
-                Faults.injectThen(thenStep, second);
+                FaultInjection.injectThen(thenStep, second);
             }
             run.start();
             try {
@@ -316,9 +319,9 @@ class RunScopeEndFailureTest {
             }
         });
         ender.setDaemon(true);
-        Faults.inject(ender, Faults.Step.RUN_SCOPE_END_WAITING, 1, first);
+        FaultInjection.inject(ender, FaultInjection.Step.RUN_SCOPE_END_WAITING, 1, first);
         if (second != null) {
-            Faults.injectThen(Faults.Step.RUN_SCOPE_END_WAITING, second);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_SCOPE_END_WAITING, second);
         }
         ender.start();
         try {
@@ -345,7 +348,7 @@ class RunScopeEndFailureTest {
         context.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
         context.runScopedClosing("c", () -> new Value("c", cFailure));
         StackOverflowError keeping = new StackOverflowError("keeping b's failure");
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, keeping);
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, keeping);
 
         assertSame(cFailure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("c closed", "b closed", "a closed"), closed);
@@ -362,8 +365,9 @@ class RunScopeEndFailureTest {
         context.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
         context.runScopedClosing("c", () -> new Value("c", cFailure));
         StackOverflowError keepingB = new StackOverflowError("keeping b's failure");
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, keepingB);
-        Faults.injectThen(Faults.Step.TEST_RUN_FAILURE_KEPT, new StackOverflowError("keeping a's failure"));
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, keepingB);
+        FaultInjection.injectThen(FaultInjection.Step.TEST_RUN_FAILURE_KEPT,
+                new StackOverflowError("keeping a's failure"));
 
         assertSame(cFailure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("c closed", "b closed", "a closed"), closed);
@@ -398,7 +402,7 @@ class RunScopeEndFailureTest {
         });
         ender.setDaemon(true);
         StackOverflowError interrupting = new StackOverflowError("setting the interrupt again");
-        Faults.inject(ender, Faults.Step.RUN_SCOPE_END_INTERRUPTING, 1, interrupting);
+        FaultInjection.inject(ender, FaultInjection.Step.RUN_SCOPE_END_INTERRUPTING, 1, interrupting);
         ender.start();
         try {
             await(() -> ender.getState() == Thread.State.TIMED_WAITING || ender.getState() == Thread.State.TERMINATED,
@@ -425,7 +429,7 @@ class RunScopeEndFailureTest {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new StackOverflowError("keeping the rest"));
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, new StackOverflowError("keeping the rest"));
 
         assertSame(failure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("a closed"), closed);
@@ -440,7 +444,7 @@ class RunScopeEndFailureTest {
         context.runScopedClosing("a", () -> new Value("a", new IOException("a failed to close")));
         context.runScopedClosing("b", () -> new Value("b"));
         OutOfMemoryError keeping = new OutOfMemoryError("keeping the rest");
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, keeping);
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, keeping);
 
         assertSame(keeping, assertThrows(OutOfMemoryError.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("b closed", "a closed"), closed);
@@ -454,7 +458,8 @@ class RunScopeEndFailureTest {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new InternalError(new StackOverflowError()));
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1,
+                new InternalError(new StackOverflowError()));
 
         assertSame(failure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("a closed"), closed);
@@ -462,7 +467,7 @@ class RunScopeEndFailureTest {
         EvaluationContext again = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         again.runScopedClosing("b", () -> new Value("b", new IOException("b failed to close")));
         InternalError fatal = new InternalError("keeping the rest");
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, fatal);
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, fatal);
 
         assertSame(fatal, assertThrows(InternalError.class, () -> EngineEvaluationContext.endRun(again)),
                 "an InternalError with no overflow is still fatal");
@@ -475,7 +480,7 @@ class RunScopeEndFailureTest {
         EvaluationContext context = EngineEvaluationContext.of(Map.of(), Deadline.NONE);
         IOException failure = new IOException("a failed to close");
         context.runScopedClosing("a", () -> new Value("a", failure));
-        Faults.inject(Faults.Step.TEST_RUN_FAILURE_KEPT, 1, new AssertionError("keeping the rest"));
+        FaultInjection.inject(FaultInjection.Step.TEST_RUN_FAILURE_KEPT, 1, new AssertionError("keeping the rest"));
 
         assertSame(failure, assertThrows(IOException.class, () -> EngineEvaluationContext.endRun(context)));
         assertEquals(List.of("a closed"), closed);
@@ -493,7 +498,7 @@ class RunScopeEndFailureTest {
         AtomicReference<Thread> second = new AtomicReference<>();
         // The first stops as it takes the values, until the second has taken them too, or waits to.
         Thread first = daemon(() -> {
-            Faults.watch(Faults.Step.RUN_SCOPE_VALUES_TAKING, () -> {
+            FaultInjection.watch(FaultInjection.Step.RUN_SCOPE_VALUES_TAKING, () -> {
                 Thread other = daemon(() -> secondHandedBack.set(scope.end()), failed);
                 second.set(other);
                 try {

@@ -80,7 +80,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * and so does the first message the engine logs, with a provider that logs: with slf4j-simple, it initializes SLF4J's
  * {@code Level} and {@code FormattingTuple}, which aren't initialized here. Deep in a stack, that can overflow inside
  * the engine's own log call, which then loses the line, and the failure is still reported or rethrown (see
- * {@link Failures#logError}, #1208). This class has no static initializer of its
+ * {@link FailurePolicy#logError}, #1208). This class has no static initializer of its
  * own, which an engine built deep in a stack could break, as the lists are built only once the room is checked. What a
  * builder's settings reject may still initialize classes before any check, maybe deep in a stack, though nothing a
  * builder accepts does: {@code language()} initializes {@link LanguageNames.Problem} when it rejects a language's name,
@@ -92,7 +92,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * compiled to build its strings without it (#965).
  * </p>
  */
-final class RunClasses {
+final class FirstUseClasses {
 
     // The name of the method readMembers calls reflectively. A constant, so this class has no static initializer.
     private static final String HASH_CODE = "hashCode";
@@ -101,7 +101,7 @@ final class RunClasses {
     // under this class's lock, so an engine built meanwhile waits for it, and one that threw leaves it unset.
     private static volatile boolean initialized;
 
-    private RunClasses() {
+    private FirstUseClasses() {
     }
 
     /**
@@ -118,7 +118,7 @@ final class RunClasses {
         if (initialized) {
             return;
         }
-        synchronized (RunClasses.class) {
+        synchronized (FirstUseClasses.class) {
             if (initialized) {
                 return;
             }
@@ -139,7 +139,7 @@ final class RunClasses {
             // initialized by doing the same: computing a checksum, which finds the digest in the JDK's security
             // settings, and sorting and filtering a rule list with streams, here two rules, one without a priority, and
             // a null.
-            Checksums.ofRules(List.of());
+            RuleListChecksum.ofRules(List.of());
             Rule rule = Rule.builder().ruleName("a").condition("a").action("a").build();
             RuleListCompiler.inPriorityOrder(RuleListCompiler.withoutNulls(Arrays.asList(rule, null,
                     rule.toBuilder().ruleName("b").priority(1).build())));
@@ -154,7 +154,7 @@ final class RunClasses {
             // from now on, as the table it reads is built (#1297).
             Accessors.markCaseTableBuilt();
             initialize(MethodHandles.lookup(), engineClasses(), namedClasses());
-            initialize(MethodHandles.lookup(), loadAndRunClasses(), loadAndRunNamedClasses());
+            initialize(MethodHandles.lookup(), loadAndRunFirstUseClasses(), loadAndRunNamedClasses());
             // What a language's first load or run, or a first write through a generic setter, may do with the JDK's
             // reflection, which differs between JDK releases, so that is done here on the JDK's own classes (#1115).
             readMembers(List.of(Object.class, Class.class, Math.class, String.class, Thread.class, System.class,
@@ -338,36 +338,36 @@ final class RunClasses {
     }
 
     // Initialized through a lookup in this package, which can reach each of them. CoreRulesEngine creates the engine's
-    // logger, which starts SLF4J and its provider if the application hasn't, and Failures.Log, beside the holder of
-    // EngineCompileContext's logger, creates Failures' own logger, kept out of Failures because Throwables reaches
-    // Failures before any engine is built (#1260). FlightRecorderEvents initializes RunEvent and RuleEvent, which
-    // register the engine's Flight Recorder events, where Flight Recorder is there, and decides whether they can be
-    // used. They aren't named, as naming a class loads it, and they extend a class that may not be there. OneStepStack
-    // makes the field updater that every change to a rule set's idle copies and open compilers goes through, which a
-    // load would otherwise make (#1220). The thirteen before the last twelve have no static initializer: they are what
-    // a rule's or a run's first failure would otherwise be the first to load, which can overflow deep in a stack as
-    // initializing a class can (#1066, #1093), so they are loaded here. So are the next five, which the JVM's first
-    // wait for a copy and its first failed load, in any language, would otherwise be the first to load or initialize
-    // (#1097). The last seven are what the api and core packages share and what api.language publishes of it, none with
-    // a static initializer since Text's table of the characters it escapes became comparisons (#1313): a failure's
-    // description, or a language's or the kit's first failure, read through Throwables, ImportLimits or FatalErrors,
-    // would otherwise be the first to load them (#1241). MatchPolicy, after the engine, makes the three match policies,
-    // which Engines names only once this has run.
+    // logger, which starts SLF4J and its provider if the application hasn't, and FailurePolicy.Log, beside the holder
+    // of EngineCompileContext's logger, creates FailurePolicy's own logger, kept out of FailurePolicy because
+    // Throwables reaches FailurePolicy before any engine is built (#1260). FlightRecorderEvents initializes RunEvent
+    // and RuleEvent, which register the engine's Flight Recorder events, where Flight Recorder is there, and decides
+    // whether they can be used. They aren't named, as naming a class loads it, and they extend a class that may not be
+    // there. OneStepStack makes the field updater that every change to a rule set's idle copies and open compilers goes
+    // through, which a load would otherwise make (#1220). The thirteen before the last twelve have no static
+    // initializer: they are what a rule's or a run's first failure would otherwise be the first to load, which can
+    // overflow deep in a stack as initializing a class can (#1066, #1093), so they are loaded here. So are the next
+    // five, which the JVM's first wait for a copy and its first failed load, in any language, would otherwise be the
+    // first to load or initialize (#1097). The last seven are what the api and core packages share and what
+    // api.language publishes of it, none with a static initializer since Text's table of the characters it escapes
+    // became comparisons (#1313): a failure's description, or a language's or the kit's first failure, read through
+    // Throwables, ImportLimits or FatalErrors, would otherwise be the first to load them (#1241). MatchPolicy, after
+    // the engine, makes the three match policies, which Engines names only once this has run.
     private static List<Class<?>> engineClasses() {
         return List.of(CoreRulesEngine.class, MatchPolicy.class, LanguageRegistry.class, ImportResolver.class,
                 LanguageNames.Problem.class, FactNames.Problem.class, RuleListCompiler.Mode.class,
-                EngineCompileContext.Warnings.class, Failures.Log.class, Prepared.class, Ran.class,
-                LoggedFailures.class, Faults.Step.class, Failures.class, ExpressionKind.class,
+                EngineCompileContext.Warnings.class, FailurePolicy.Log.class, Prepared.class, Ran.class,
+                FailureLog.class, FaultInjection.Step.class, FailurePolicy.class, ExpressionKind.class,
                 InvalidExpressionException.Issue.Severity.class, CopyPool.class, OneStepStack.class,
                 FlightRecorderEvents.class, Cancellation.class, Cancellation.Reason.class, Deadline.class,
                 CopyPool.Kind.class, CopyPool.Held.class, Closing.class,
-                Widening.class, LoggedFailures.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
+                Widening.class, FailureLog.LoggedAt.class, RunOptions.class, RuleEvaluation.Outcome.class,
                 ConditionResult.class, ActionResult.class, FactProperties.class, RunScope.class,
-                CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, LoggedFailures.Logged.class,
-                LoggedFailures.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
-                CoreRulesEngine.BeforeRun.class, NestedFailures.class, NestedFailures.Below.class,
-                Failures.Reach.class, Failures.Deeper.class, ListenerNotifier.ListenerFatal.class, IsoInstant.class,
-                CopyPermits.Returned.class,
+                CancelTimer.class, RuleExecutionException.class, ReportedFailure.class, FailureLog.Logged.class,
+                FailureLog.Outermost.class, ListenerNotifier.OnError.class, ListenerNotifier.OnRunError.class,
+                CoreRulesEngine.BeforeRun.class, CauseChains.class, CauseChains.Below.class,
+                FailurePolicy.Reach.class, FailurePolicy.Deeper.class, ListenerNotifier.ListenerFatal.class,
+                IsoInstant.class, CopyPermits.Returned.class,
                 RuleCompilationException.class, InvalidExpressionException.class,
                 InvalidExpressionException.Issue.class, MessageText.class,
                 Text.class, Causes.class, Lookups.class, ImportSize.class, Throwables.class, ImportLimits.class,
@@ -386,29 +386,29 @@ final class RunClasses {
     // Accessors is what the default output writer's first write to a bean loads. Deep in a stack, once the JIT has
     // compiled the checks, a class's first load could overflow there, and on JDK 21 a run on a virtual thread that was
     // the JVM's first to read a file could leave every later run of every engine, and every file read on a virtual
-    // thread, failing for the life of the JVM (#1210). Failures' Teardown is what every run makes as it ends, before it
-    // closes its values, and LoggedFailures' Ring is what the first failure a run reports, or a nested run logs,
+    // thread, failing for the life of the JVM (#1210). FailurePolicy's Teardown is what every run makes as it ends,
+    // before it closes its values, and FailureLog's Ring is what the first failure a run reports, or a nested run logs,
     // makes. Last, OneStepStack's Node, which a load makes for its compilers, and Walk, which the JVM's
     // first retire() makes to read the copies an earlier call took, are preloaded too (#1220). And
     // EngineCompileContext, which a load's first compile context would otherwise be the first to load when no fact is
     // declared, since the build checks a declared fact with it only when there is one.
     // Initializing a class doesn't load its nested or outer classes, so CopyPool's and RuleEvaluation.Outcome's, in the
     // list above, don't load these.
-    private static List<Class<?>> loadAndRunClasses() {
-        return List.of(Faults.class, LoggedFailures.Runs.class, RuleListCompiler.Compilation.class,
+    private static List<Class<?>> loadAndRunFirstUseClasses() {
+        return List.of(FaultInjection.class, FailureLog.Runs.class, RuleListCompiler.Compilation.class,
                 LanguageCompilers.class, Expression.class, CompiledCondition.class, CompiledAction.class,
                 OutputConverter.class, LanguageOutputConverter.class, LoadedRules.class, LanguagesRan.class,
                 RuleExecutor.RunBody.class, CopyPool.Copy.class,
                 RunFacts.class, RunResult.class, RuleSelection.class, RunState.class, ReadOnlyFacts.class,
                 EngineEvaluationContext.class, CopyPool.Loan.class, EngineRunContext.class, RuleListener.class,
                 RuleEvaluation.class, RuleExecutor.Matches.class, EngineActionContext.class, Accessors.class,
-                Failures.Teardown.class, LoggedFailures.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class,
+                FailurePolicy.Teardown.class, FailureLog.Ring.class, OneStepStack.Node.class, OneStepStack.Walk.class,
                 EngineCompileContext.class);
     }
 
     // Loaded by name, as this package can't name them: the default output writer's classes that its first write to a
-    // bean would otherwise be the first to load, as loadAndRunClasses says (#1210). In a native image, which loads no
-    // class from a file, none is named.
+    // bean would otherwise be the first to load, as loadAndRunFirstUseClasses says (#1210). In a native image, which
+    // loads no class from a file, none is named.
     private static List<String> loadAndRunNamedClasses() {
         return List.of("io.github.brantunger.unruly.api.BeansAndMapsWriter$Lookup",
                 "io.github.brantunger.unruly.api.BeansAndMapsWriter$Setter");

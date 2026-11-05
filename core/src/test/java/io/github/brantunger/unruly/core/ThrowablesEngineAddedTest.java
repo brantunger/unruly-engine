@@ -19,13 +19,13 @@ class ThrowablesEngineAddedTest {
     @DisplayName("fatalError skips a fatal error the engine added as suppressed, and finds one anything else added")
     void fatalErrorSkipsWhatTheEngineAdded() {
         OutOfMemoryError kept = new OutOfMemoryError("kept by the engine");
-        ReportedFailure byEngine = NestedFailures.report("reported", null);
+        ReportedFailure byEngine = CauseChains.report("reported", null);
         byEngine.addSuppressedByEngine(kept);
         assertNull(Throwables.fatalError(byEngine));
         assertNull(Throwables.fatalError(new IllegalStateException("around", byEngine)));
 
         OutOfMemoryError added = new OutOfMemoryError("added by a try-with-resources");
-        ReportedFailure byOthers = NestedFailures.report("reported", null);
+        ReportedFailure byOthers = CauseChains.report("reported", null);
         byOthers.addSuppressed(added);
         assertSame(added, Throwables.fatalError(byOthers));
         assertSame(added, Throwables.fatalError(new IllegalStateException("around", byOthers)));
@@ -34,12 +34,12 @@ class ThrowablesEngineAddedTest {
     @Test
     @DisplayName("isInterrupt skips an interrupt the engine added as suppressed, and finds one anything else added")
     void isInterruptSkipsWhatTheEngineAdded() {
-        ReportedFailure byEngine = NestedFailures.report("reported", null);
+        ReportedFailure byEngine = CauseChains.report("reported", null);
         byEngine.addSuppressedByEngine(new InterruptedException("kept by the engine"));
         assertFalse(Throwables.isInterrupt(byEngine));
         assertFalse(Throwables.isInterrupt(new IllegalStateException("around", byEngine)));
 
-        ReportedFailure byOthers = NestedFailures.report("reported", null);
+        ReportedFailure byOthers = CauseChains.report("reported", null);
         byOthers.addSuppressed(new InterruptedException("added by a try-with-resources"));
         assertTrue(Throwables.isInterrupt(byOthers));
         assertTrue(Throwables.isInterrupt(new IllegalStateException("around", byOthers)));

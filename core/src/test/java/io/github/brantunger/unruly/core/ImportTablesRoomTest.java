@@ -70,8 +70,8 @@ class ImportTablesRoomTest {
         warmUp();
         flag(CharacterTables.class, "built").setBoolean(null, false);
         // So the first build's initialization runs again, as the JVM's first build runs it. It sets the flag itself.
-        flag(RunClasses.class, "initialized").setBoolean(null, false);
-        RunClasses.initialize();
+        flag(FirstUseClasses.class, "initialized").setBoolean(null, false);
+        FirstUseClasses.initialize();
         assertEquals(UNCHECKED, walk(ImportTablesRoomTest::untilCheckPasses));
     }
 

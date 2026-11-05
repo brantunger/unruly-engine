@@ -245,7 +245,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
      *                              thing a value's {@code close()} threw, as it is; every other {@code close()}
      *                              failure, what waiting again threw, and the first failure to keep one of them are
      *                              suppressed on it, as far as keeping them doesn't fail: each once, and none it
-     *                              already carries or that carries it (see {@link Failures#keepAlso})
+     *                              already carries or that carries it (see {@link FailurePolicy#keepAlso})
      * @throws Error                a {@link VirtualMachineError} other than {@link StackOverflowError}, and other than
      *                              an {@link InternalError} that wraps one (see {@link Causes#isOverflow}), that
      *                              keeping what failed before on the first failure threw, once every value is closed,
@@ -281,9 +281,9 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
                     first = e;
                 } else {
                     try {
-                        Faults.at(Faults.Step.TEST_RUN_FAILURE_KEPT);
+                        FaultInjection.at(FaultInjection.Step.TEST_RUN_FAILURE_KEPT);
                         // Not the same one twice, nor one that would make a loop of causes and suppressed exceptions.
-                        Failures.keepAlso(first, e);
+                        FailurePolicy.keepAlso(first, e);
                     } catch (Throwable t) {
                         if (lost == null) {
                             lost = t;
@@ -293,9 +293,9 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
             }
         }
         try {
-            Faults.at(Faults.Step.TEST_RUN_FAILURE_KEPT);
-            Failures.keepAlso(first, again);
-            Failures.keepAlso(first, lost);
+            FaultInjection.at(FaultInjection.Step.TEST_RUN_FAILURE_KEPT);
+            FailurePolicy.keepAlso(first, again);
+            FailurePolicy.keepAlso(first, lost);
         } catch (StackOverflowError ignored) {
             // Every value is closed: only what wasn't kept is lost, and the first is thrown as it is all the same.
         } catch (InternalError internal) {
@@ -311,7 +311,7 @@ public record EngineEvaluationContext(Map<String, Object> facts, RunState run)
         } catch (Throwable ignored) {
             // As for a StackOverflowError.
         }
-        Failures.<RuntimeException>rethrowUnchecked(first);
+        FailurePolicy.<RuntimeException>rethrowUnchecked(first);
     }
 
     /**

@@ -143,8 +143,8 @@ public final class Accessors {
     // Returns the character the caller is about to ask a Character method about its case. If it is above U+00FF and
     // the JDK's table of the first plane isn't known to be built yet, that read may be the JVM's first, which builds
     // the table in its static initializer: so this first checks the room for initializing classes, as the JVM's first
-    // engine build does before it reads the same table (see RunClasses), then reads the table itself. The check for
-    // the engine's own steps, StackHeadroom.check(), isn't enough, as it makes no room for initializing a class. A
+    // engine build does before it reads the same table (see FirstUseClasses), then reads the table itself. The check
+    // for the engine's own steps, StackHeadroom.check(), isn't enough, as it makes no room for initializing a class. A
     // failed check throws StackOverflowError before the table is touched, and leaves the next call to check again. A
     // character of U+00FF or below is in the table the JVM builds at startup, and takes no check.
     private static char roomForCaseTable(char c) {
@@ -158,9 +158,9 @@ public final class Accessors {
 
     /**
      * Says that the JDK's case table of the first plane, {@code java.lang.CharacterData00}, has been built, so this
-     * class checks no room before it reads it: called by {@link RunClasses} once the JVM's first engine build has read
-     * it, after checking the room for that. A name above U+00FF read after the first build then takes no check, as it
-     * took none before #1297.
+     * class checks no room before it reads it: called by {@link FirstUseClasses} once the JVM's first engine build has
+     * read it, after checking the room for that. A name above U+00FF read after the first build then takes no check, as
+     * it took none before #1297.
      */
     static void markCaseTableBuilt() {
         caseTableBuilt = true;
@@ -196,11 +196,11 @@ public final class Accessors {
      * {@code (already logged)} when no run the code around the read started logged it: a nested run's failure, whether
      * or not a run is in progress on this thread, or a fatal {@link Error} a run the code around the read started
      * logged, the condition, action or other call-out the run in progress on this thread is in (see
-     * {@link LoggedFailures#callOut()}), in either case with nothing of its own around it, such as
+     * {@link FailureLog#callOut()}), in either case with nothing of its own around it, such as
      * {@code new RuntimeException(e)}. A caller that reads the message directly finds it as the cause. While a run, a
      * {@code load()} or a {@code validate()} is in progress on this thread, the exception around such a failure is
      * recorded as one the engine built, so the failure is logged once, by the nested run, and the rule around it names
-     * it so (see {@link LoggedFailures}). Nothing else is recorded, so a run's other read failures never push it out of
+     * it so (see {@link FailureLog}). Nothing else is recorded, so a run's other read failures never push it out of
      * the record. A fatal error the run in progress, one around it, or a run an earlier call-out started, logged
      * earlier and that is thrown again here, keeps its message, so the rule's failure names this read.
      * </p>
@@ -208,7 +208,7 @@ public final class Accessors {
      * <p>
      * An accessor that was interrupted leaves the thread interrupted: when {@code cause}, one of its causes, or an
      * exception suppressed on them, is an {@link InterruptedException}, the interrupt status is set again (see
-     * {@link Failures#keepInterruptStatus}), so code that catches the exception this returns, such as a rule's own
+     * {@link FailurePolicy#keepInterruptStatus}), so code that catches the exception this returns, such as a rule's own
      * {@code try}/{@code catch}, doesn't hide the interrupt from the engine or from the caller. A {@code cause} that is
      * itself a {@link VirtualMachineError} is the exception: only its own message is read, so this can't fail again
      * for running out of stack or memory, and an interrupt among its causes or suppressed exceptions, such as one a
@@ -222,19 +222,19 @@ public final class Accessors {
     public static IllegalStateException readFailed(String what, Throwable cause) {
         // Out of stack or memory, nothing more than the error's own message is read, so this can't fail again for that.
         if (cause instanceof VirtualMachineError error) {
-            return loggedBelow(error) ? LoggedFailures.builtByEngine(new IllegalStateException(what, cause))
+            return loggedBelow(error) ? FailureLog.builtByEngine(new IllegalStateException(what, cause))
                     : new IllegalStateException(withMessage(what, messageOf(error)), cause);
         }
         // A caller that catches the exception, as a rule's own try/catch can, would otherwise lose the interrupt.
-        Failures.keepInterruptStatus(cause);
-        Error fatal = Failures.fatalError(cause);
+        FailurePolicy.keepInterruptStatus(cause);
+        Error fatal = FailurePolicy.fatalError(cause);
         boolean nested = fatal != null
-                ? loggedBelow(fatal) && NestedFailures.newsAbove(cause, fatal) == null
-                : NestedFailures.nestedRunFailure(cause) != null;
+                ? loggedBelow(fatal) && CauseChains.newsAbove(cause, fatal) == null
+                : CauseChains.nestedRunFailure(cause) != null;
         if (nested) {
-            return LoggedFailures.builtByEngineIfInProgress(new IllegalStateException(what, cause));
+            return FailureLog.builtByEngineIfInProgress(new IllegalStateException(what, cause));
         }
-        return new IllegalStateException(withMessage(what, Failures.readableMessage(cause)), cause);
+        return new IllegalStateException(withMessage(what, FailurePolicy.readableMessage(cause)), cause);
     }
 
     /**
@@ -244,15 +244,16 @@ public final class Accessors {
      * {@link OutOfMemoryError} it keeps ready.
      */
     private static boolean loggedBelow(Error fatal) {
-        LoggedFailures.LoggedAt at = LoggedFailures.loggedAt(fatal);
-        return at == LoggedFailures.LoggedAt.NESTED_RUN || at == LoggedFailures.LoggedAt.NESTED_LOAD;
+        FailureLog.LoggedAt at = FailureLog.loggedAt(fatal);
+        return at == FailureLog.LoggedAt.NESTED_RUN || at == FailureLog.LoggedAt.NESTED_LOAD;
     }
 
     private static String withMessage(String what, @Nullable String message) {
         return message == null ? what : what + ": " + message;
     }
 
-    // Anything getMessage() throws only makes the message unavailable, as Failures.read makes it, without a lambda.
+    // Anything getMessage() throws only makes the message unavailable, as FailurePolicy.read makes it, without a
+    // lambda.
     private static @Nullable String messageOf(VirtualMachineError fatal) {
         try {
             return fatal.getMessage();

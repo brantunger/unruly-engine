@@ -107,7 +107,7 @@ class CallOutOverflowTest {
 
             private void throwAt(Call at) {
                 if (at == call) {
-                    Failures.<RuntimeException>rethrowUnchecked(thrown.get());
+                    FailurePolicy.<RuntimeException>rethrowUnchecked(thrown.get());
                 }
             }
         };

@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * #941: {@code close()} marks the engine closed before it lets go of the rules, so a call that reads them while it
  * closes finds either the rules whole or the engine closed, never an engine with no rules loaded. The calls are made
- * from inside {@code close()}, between its two writes, through a step {@link Faults} watches.
+ * from inside {@code close()}, between its two writes, through a step {@link FaultInjection} watches.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("#941: a call made while close() runs finds the rules or a closed engine, never no rules loaded")
@@ -91,7 +91,7 @@ class CloseOrderTest {
 
     @AfterEach
     void takeBackTheWatch() {
-        Faults.clear();
+        FaultInjection.clear();
     }
 
     private static RulesEngine<Map<String, Object>> engine() {
@@ -131,7 +131,7 @@ class CloseOrderTest {
         AtomicReference<Object> ran = new AtomicReference<>();
         AtomicReference<Object> seen = new AtomicReference<>();
         AtomicReference<Object> validated = new AtomicReference<>();
-        Faults.watch(Faults.Step.CLOSE_MARKED, () -> {
+        FaultInjection.watch(FaultInjection.Step.CLOSE_MARKED, () -> {
             ran.set(outcome(() -> engine.run(new FactMap<>())));
             seen.set(outcome(engine::rules));
             validated.set(outcome(() -> engine.validate(List.of(HIGH))));
@@ -156,7 +156,7 @@ class CloseOrderTest {
         RulesEngine<Map<String, Object>> engine = engine(language);
 
         onAnotherThread(() -> {
-            Faults.watch(Faults.Step.CLOSE_MARKED, engine::close);
+            FaultInjection.watch(FaultInjection.Step.CLOSE_MARKED, engine::close);
             engine.close();
         });
 
@@ -172,7 +172,7 @@ class CloseOrderTest {
         Counting language = new Counting();
         RulesEngine<Map<String, Object>> engine = engine(language);
         StackOverflowError overflow = new StackOverflowError("watching close()");
-        Faults.watch(Faults.Step.CLOSE_MARKED, () -> {
+        FaultInjection.watch(FaultInjection.Step.CLOSE_MARKED, () -> {
             throw overflow;
         });
 
@@ -190,7 +190,7 @@ class CloseOrderTest {
     @DisplayName("a watch runs on the thread it was set for alone, and once")
     void aWatchRunsOnItsOwnThreadOnce() throws Throwable {
         AtomicInteger runs = new AtomicInteger();
-        Faults.watch(Faults.Step.CLOSE_MARKED, runs::incrementAndGet);
+        FaultInjection.watch(FaultInjection.Step.CLOSE_MARKED, runs::incrementAndGet);
 
         onAnotherThread(() -> engine().close());
         assertEquals(0, runs.get(), "closing on another thread doesn't run it");
@@ -204,11 +204,11 @@ class CloseOrderTest {
     @DisplayName("a step that is only watched can't be made to fail, and one that is made to fail can't be watched")
     void watchedAndFailedStepsAreKeptApart() {
         IllegalArgumentException injected = assertThrows(IllegalArgumentException.class,
-                () -> Faults.inject(Faults.Step.CLOSE_MARKED, 1, new StackOverflowError()));
+                () -> FaultInjection.inject(FaultInjection.Step.CLOSE_MARKED, 1, new StackOverflowError()));
         IllegalArgumentException following = assertThrows(IllegalArgumentException.class,
-                () -> Faults.injectThen(Faults.Step.RUN_SCOPE_MAP_MAKING, new StackOverflowError()));
+                () -> FaultInjection.injectThen(FaultInjection.Step.RUN_SCOPE_MAP_MAKING, new StackOverflowError()));
         IllegalArgumentException watched = assertThrows(IllegalArgumentException.class,
-                () -> Faults.watch(Faults.Step.SETTLING, () -> {
+                () -> FaultInjection.watch(FaultInjection.Step.SETTLING, () -> {
                 }));
 
         assertEquals("CLOSE_MARKED can only be watched", injected.getMessage());

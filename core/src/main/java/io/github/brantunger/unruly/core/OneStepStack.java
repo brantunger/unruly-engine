@@ -66,13 +66,13 @@ final class OneStepStack<E> extends AbstractQueue<E> {
     @Override
     public boolean offer(E item) {
         Objects.requireNonNull(item);
-        Faults.at(Faults.Step.STACK_CHANGING);
+        FaultInjection.at(FaultInjection.Step.STACK_CHANGING);
         Node<E> was;
         Node<E> node;
         do {
             was = top;
             node = new Node<>(item, was);
-            Faults.reached(Faults.Step.STACK_TOP_READ);
+            FaultInjection.reached(FaultInjection.Step.STACK_TOP_READ);
         } while (!TOP.compareAndSet(this, was, node));
         return true;
     }
@@ -84,14 +84,14 @@ final class OneStepStack<E> extends AbstractQueue<E> {
      */
     @Override
     public E poll() {
-        Faults.at(Faults.Step.STACK_CHANGING);
+        FaultInjection.at(FaultInjection.Step.STACK_CHANGING);
         Node<E> was;
         do {
             was = top;
             if (was == null) {
                 return null;
             }
-            Faults.reached(Faults.Step.STACK_TOP_READ);
+            FaultInjection.reached(FaultInjection.Step.STACK_TOP_READ);
         } while (!TOP.compareAndSet(this, was, was.next));
         return was.item;
     }

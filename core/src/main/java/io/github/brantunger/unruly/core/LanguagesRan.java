@@ -10,8 +10,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Whether a run has finished with a language of each class one loaded rule list uses, which tells its runs whether
  * they need the room for a language's first run, which {@link StackHeadroom#checkFirstRun()} checks. The flags are
- * those of {@link RunClasses.Ran}, shared by every rule list that uses a language of the same class, read once here so
- * a run reads no class value. <b>Internal:</b> this class may change in any release.
+ * those of {@link FirstUseClasses.Ran}, shared by every rule list that uses a language of the same class, read once
+ * here so a run reads no class value. <b>Internal:</b> this class may change in any release.
  */
 final class LanguagesRan {
 
@@ -27,7 +27,7 @@ final class LanguagesRan {
     LanguagesRan(Map<String, ExpressionLanguage> languages) {
         Map<String, AtomicBoolean> ran = new HashMap<>();
         for (Map.Entry<String, ExpressionLanguage> language : languages.entrySet()) {
-            ran.put(language.getKey(), RunClasses.Ran.CLASSES.get(language.getValue().getClass()));
+            ran.put(language.getKey(), FirstUseClasses.Ran.CLASSES.get(language.getValue().getClass()));
         }
         this.ranByLanguage = Map.copyOf(ran);
         this.flags = List.copyOf(ran.values());

@@ -5,9 +5,10 @@ package io.github.brantunger.unruly.core;
  * {@code java.lang.CharacterData00}, which a {@link Character} method reads for such a character and the JVM builds on
  * its first use, in its static initializer: only the Latin-1 one is built at startup. A first use that overflows deep
  * in a stack leaves that table unusable for the life of the JVM, the application's own code included. The JVM's first
- * engine build reads every one of them after checking the room for that ({@link RunClasses}), with {@link #warm()};
- * {@link EngineCompileContext}, which a language's tests make with no engine built, checks the room with
- * {@link #checkRoom(String)} before {@code internal.ImportSize} reads a package import's name above U+00FF (#1366).
+ * engine build reads every one of them after checking the room for that ({@link FirstUseClasses}), with
+ * {@link #warm()}; {@link EngineCompileContext}, which a language's tests make with no engine built, checks the room
+ * with {@link #checkRoom(String)} before {@code internal.ImportSize} reads a package import's name above U+00FF
+ * (#1366).
  */
 final class CharacterTables {
 
@@ -54,18 +55,18 @@ final class CharacterTables {
 
     /**
      * Builds every plane's table, by the type of one character of each, and records that they are built, so
-     * {@link #checkRoom(String)} checks no more: called by {@link RunClasses} once it has checked the room for that,
-     * and by {@link #checkRoom(String)}.
+     * {@link #checkRoom(String)} checks no more: called by {@link FirstUseClasses} once it has checked the room for
+     * that, and by {@link #checkRoom(String)}.
      */
     static void warm() {
         // The Basic Multilingual Plane (CharacterData00), planes 1 to 3 (01, 02, 03), the unassigned planes 4 to 13
         // (Undefined), plane 14 (0E), and the private-use planes 15 and 16 (PrivateUse) (#1286). The first reads the
         // character from a string, as the JDK's code for a string with such a character, StringUTF16, is initialized by
         // the first read of a character of one, and nothing at startup does that on Linux or macOS; a JVM on Windows,
-        // and the read of the JDK's security settings before this in RunClasses, initialize it before this, so this
-        // reads one in case. From checkRoom, a compile context's ImportSize.checkSize, with indexOf, and checkRoom's
-        // own charAt scan have already read the name, a string with such a character, before the check, so on Linux
-        // or macOS StringUTF16 may be initialized there first (#1295).
+        // and the read of the JDK's security settings before this in FirstUseClasses, initialize it before this, so
+        // this reads one in case. From checkRoom, a compile context's ImportSize.checkSize, with indexOf, and
+        // checkRoom's own charAt scan have already read the name, a string with such a character, before the check, so
+        // on Linux or macOS StringUTF16 may be initialized there first (#1295).
         Character.getType("\u03c0".codePointAt(0));
         Character.getType(0x10000);
         Character.getType(0x20000);

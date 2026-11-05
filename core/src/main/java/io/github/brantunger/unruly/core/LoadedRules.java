@@ -54,7 +54,7 @@ final class LoadedRules {
         this.namesRead = Map.copyOf(namesRead);
         this.reservedNames = Map.copyOf(reservedFactNames);
         this.ran = new LanguagesRan(languages);
-        this.ruleChecksum = Checksums.ofRules(this.compiledRules);
+        this.ruleChecksum = RuleListChecksum.ofRules(this.compiledRules);
         this.loadTime = Instant.now();
     }
 

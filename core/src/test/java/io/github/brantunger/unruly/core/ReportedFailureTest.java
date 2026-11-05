@@ -30,7 +30,7 @@ class ReportedFailureTest {
     private static final Set<String> FIELDS_BEFORE_RECORDING = Set.of("stopped");
 
     private static ReportedFailure failure(String message, Throwable cause) {
-        return NestedFailures.report(message, cause, "r", ExpressionKind.ACTION);
+        return CauseChains.report(message, cause, "r", ExpressionKind.ACTION);
     }
 
     /**
@@ -74,9 +74,9 @@ class ReportedFailureTest {
 
         ReportedFailure copy = roundTrip(top);
 
-        assertEquals("bottom", NestedFailures.innermostReported(copy).getMessage());
-        assertEquals("bottom error", NestedFailures.errorInChain(copy).getMessage());
-        assertEquals("a nested run() failed: bottom", NestedFailures.describe(new IllegalStateException(copy)));
+        assertEquals("bottom", CauseChains.innermostReported(copy).getMessage());
+        assertEquals("bottom error", CauseChains.errorInChain(copy).getMessage());
+        assertEquals("a nested run() failed: bottom", CauseChains.describe(new IllegalStateException(copy)));
     }
 
     @Test
@@ -87,9 +87,9 @@ class ReportedFailureTest {
 
         ReportedFailure copy = roundTrip(top);
 
-        assertEquals("bottom", NestedFailures.innermostReported(copy).getMessage());
-        assertEquals("bottom error", NestedFailures.errorInChain(copy).getMessage());
-        assertEquals("a nested run() failed: bottom", NestedFailures.describe(new IllegalStateException(copy)));
+        assertEquals("bottom", CauseChains.innermostReported(copy).getMessage());
+        assertEquals("bottom error", CauseChains.errorInChain(copy).getMessage());
+        assertEquals("a nested run() failed: bottom", CauseChains.describe(new IllegalStateException(copy)));
     }
 
     @Test
@@ -99,7 +99,7 @@ class ReportedFailureTest {
         ReportedFailure top = asOldForm(failure("top", failure("middle", bottom)));
 
         assertEquals("a nested run() failed: bottom",
-                NestedFailures.describe(new IllegalStateException(roundTrip(top))));
+                CauseChains.describe(new IllegalStateException(roundTrip(top))));
     }
 
     @Test
@@ -109,18 +109,18 @@ class ReportedFailureTest {
 
         ReportedFailure copy = roundTrip(top);
 
-        assertSame(top, NestedFailures.nestedRunFailure(top));
-        assertSame(copy, NestedFailures.nestedRunFailure(copy));
-        assertEquals("a nested run() failed: top: fallback", NestedFailures.describe(new IllegalStateException(copy)));
+        assertSame(top, CauseChains.nestedRunFailure(top));
+        assertSame(copy, CauseChains.nestedRunFailure(copy));
+        assertEquals("a nested run() failed: top: fallback", CauseChains.describe(new IllegalStateException(copy)));
     }
 
     @Test
     @DisplayName("an old form wrapping a nested stop still tells the run around it that the nested run stopped")
     void oldFormWrappingAStop() throws Exception {
-        ReportedFailure stop = NestedFailures.stop("stopped", new InterruptedException(), null);
+        ReportedFailure stop = CauseChains.stop("stopped", new InterruptedException(), null);
         ReportedFailure outer = asOldForm(failure("outer", stop));
 
-        assertTrue(NestedFailures.nestedRunStopped(roundTrip(outer), null));
+        assertTrue(CauseChains.nestedRunStopped(roundTrip(outer), null));
     }
 
     /**
@@ -131,17 +131,17 @@ class ReportedFailureTest {
      * @return The failure, built once the nested load has ended but not the run around it
      */
     private static ReportedFailure aroundNestedLoad(RuntimeException nested) {
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.loggedByLoad(nested);
+                FailureLog.loggedByLoad(nested);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             return failure("outer", failure("middle", nested));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -154,9 +154,9 @@ class ReportedFailureTest {
 
         // Once the run it was built in has ended, it reads as logged already; a copy, which can't tell where it was
         // built, still reads as a nested load's.
-        assertEquals("Duplicate rule name 'dup' (already logged)", NestedFailures.describe(top));
-        assertEquals("a nested load() failed: Duplicate rule name 'dup'", NestedFailures.describe(copy));
-        assertEquals("Duplicate rule name 'dup'", NestedFailures.nestedRunFailure(copy).getMessage());
+        assertEquals("Duplicate rule name 'dup' (already logged)", CauseChains.describe(top));
+        assertEquals("a nested load() failed: Duplicate rule name 'dup'", CauseChains.describe(copy));
+        assertEquals("Duplicate rule name 'dup'", CauseChains.nestedRunFailure(copy).getMessage());
     }
 
     @Test
@@ -165,7 +165,7 @@ class ReportedFailureTest {
         ReportedFailure top = aroundNestedLoad(new IllegalStateException("Duplicate rule name 'dup'"));
         asOldForm((ReportedFailure) top.getCause());
 
-        assertEquals("a nested run() failed: middle", NestedFailures.describe(roundTrip(asOldForm(top))));
+        assertEquals("a nested run() failed: middle", CauseChains.describe(roundTrip(asOldForm(top))));
     }
 
     @Test
@@ -181,7 +181,7 @@ class ReportedFailureTest {
             }
         }
 
-        assertEquals("a nested run() failed: middle", NestedFailures.describe(roundTrip(top)));
+        assertEquals("a nested run() failed: middle", CauseChains.describe(roundTrip(top)));
     }
 
     @Test
@@ -190,9 +190,9 @@ class ReportedFailureTest {
         ReportedFailure nested = failure("nested", new AssertionError("nested error"));
         AssertionError above = new AssertionError("above", nested);
 
-        assertSame(above, NestedFailures.errorInChain(failure("outer", above)));
+        assertSame(above, CauseChains.errorInChain(failure("outer", above)));
         AssertionError first = new AssertionError("first", new IllegalStateException(new AssertionError("second")));
-        assertSame(first, NestedFailures.errorInChain(first));
+        assertSame(first, CauseChains.errorInChain(first));
     }
 
     @Test
@@ -204,8 +204,8 @@ class ReportedFailureTest {
         AssertionError above = new AssertionError("above",
                 asOldForm(failure("old", failure("recorded", new IllegalStateException()))));
 
-        assertSame(between, NestedFailures.errorInChain(old));
-        assertSame(above, NestedFailures.errorInChain(above));
+        assertSame(between, CauseChains.errorInChain(old));
+        assertSame(above, CauseChains.errorInChain(above));
     }
 
     @Test
@@ -235,12 +235,12 @@ class ReportedFailureTest {
             + " stopped, and a nested failure suppressed there doesn't")
     void suppressedNestedStop() {
         IllegalStateException stopped = new IllegalStateException("body failed");
-        stopped.addSuppressed(NestedFailures.stop("run() was interrupted", new InterruptedException(), null));
+        stopped.addSuppressed(CauseChains.stop("run() was interrupted", new InterruptedException(), null));
         IllegalStateException failed = new IllegalStateException("body failed");
-        failed.addSuppressed(NestedFailures.report("a nested rule failed", null));
+        failed.addSuppressed(CauseChains.report("a nested rule failed", null));
 
-        assertTrue(NestedFailures.nestedRunStopped(new RuntimeException("wrapped", stopped), null));
-        assertFalse(NestedFailures.nestedRunStopped(failed, null));
+        assertTrue(CauseChains.nestedRunStopped(new RuntimeException("wrapped", stopped), null));
+        assertFalse(CauseChains.nestedRunStopped(failed, null));
     }
 
     @Test
@@ -250,10 +250,10 @@ class ReportedFailureTest {
         Deadline nested = Deadline.from(Duration.ofMillis(1));
         Deadline outer = Deadline.from(Duration.ofMillis(2));
         RuntimeException thrown = new RuntimeException("action failed");
-        thrown.addSuppressed(NestedFailures.stop("nested run passed its deadline", new TimeoutException(), nested));
+        thrown.addSuppressed(CauseChains.stop("nested run passed its deadline", new TimeoutException(), nested));
 
-        assertTrue(NestedFailures.nestedRunStopped(thrown, nested), "the same deadline");
-        assertFalse(NestedFailures.nestedRunStopped(thrown, outer), "another deadline");
-        assertFalse(NestedFailures.nestedRunStopped(thrown, null), "an interrupt");
+        assertTrue(CauseChains.nestedRunStopped(thrown, nested), "the same deadline");
+        assertFalse(CauseChains.nestedRunStopped(thrown, outer), "another deadline");
+        assertFalse(CauseChains.nestedRunStopped(thrown, null), "an interrupt");
     }
 }

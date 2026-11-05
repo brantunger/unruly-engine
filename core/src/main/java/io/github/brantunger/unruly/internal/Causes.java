@@ -52,7 +52,7 @@ public final class Causes {
      *
      * <p>
      * It allocates nothing, and is the one check the engine's last-resort code makes, where handling a failure has
-     * itself failed, as it can deep in a stack or with no memory left: ending a run (see {@code core.Failures}'
+     * itself failed, as it can deep in a stack or with no memory left: ending a run (see {@code core.FailurePolicy}'s
      * {@code Teardown}), closing a run's values and refusing one whose init ended the run ask it for what they caught,
      * with instanceof checks and assignments around it. Only an {@link InternalError} has its chain read, as
      * {@link #isOverflow} reads it, so the call takes one frame more than the checks themselves would (#1164).
@@ -146,7 +146,7 @@ public final class Causes {
      * Whatever {@code getMessage()} throws, a fatal {@link Error} too, only makes the message unavailable: what an
      * accessor of an exception the engine didn't create throws says nothing about the failure the engine is handling,
      * which is still handled as it would be, its own fatal errors included. {@link #causeOf} and the other accessors
-     * of {@code core.Failures} read the same way, each in a {@code try} of its own rather than through a lambda or
+     * of {@code core.FailurePolicy} read the same way, each in a {@code try} of its own rather than through a lambda or
      * method reference, so the JVM's first failure links no call site, which could overflow deep in a stack (#1093).
      *
      * @param e The exception

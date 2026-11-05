@@ -362,11 +362,13 @@ class InterruptStatusTest {
         assertTrue(status.get(), "the thread's interrupt status after run() threw");
     }
 
-    /** The interrupt status of a thread of its own after {@link Failures#keepInterruptStatus} read {@code thrown}. */
+    /**
+     * The interrupt status of a thread of its own after {@link FailurePolicy#keepInterruptStatus} read {@code thrown}.
+     */
     private static boolean statusAfter(Throwable thrown) {
         AtomicBoolean status = new AtomicBoolean();
         Thread thread = new Thread(() -> {
-            Failures.keepInterruptStatus(thrown);
+            FailurePolicy.keepInterruptStatus(thrown);
             status.set(Thread.currentThread().isInterrupted());
         });
         thread.start();
@@ -405,7 +407,7 @@ class InterruptStatusTest {
                 "suppressed on a suppressed exception");
         assertFalse(statusAfter(suppressing(new RuntimeException("top"), new SocketTimeoutException("Read timed out"))),
                 "an InterruptedIOException");
-        ReportedFailure stop = NestedFailures.report("stopped", null);
+        ReportedFailure stop = CauseChains.report("stopped", null);
         stop.addSuppressedByEngine(new InterruptedException("kept by the engine"));
         assertFalse(statusAfter(stop), "one the engine added with addSuppressedByEngine");
     }
@@ -416,7 +418,7 @@ class InterruptStatusTest {
     void keepInterruptStatusUpToTheLastExceptionRead(String where) {
         int fewer = where.startsWith("found") ? 2 : 1;
         IllegalStateException top = new IllegalStateException("top");
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ - fewer; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ - fewer; i++) {
             top.addSuppressed(new IllegalStateException("before " + i));
         }
         top.addSuppressed(new InterruptedException("last read"));

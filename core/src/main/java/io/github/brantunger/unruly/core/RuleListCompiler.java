@@ -268,9 +268,9 @@ final class RuleListCompiler {
                 boolean tells;
                 boolean holdsNull = false;
                 try {
-                    // A call-out to the language, as compiling is (see LoggedFailures); and so is reading the set it
+                    // A call-out to the language, as compiling is (see FailureLog); and so is reading the set it
                     // returned, which is the language's own.
-                    LoggedFailures.callOut();
+                    FailureLog.callOut();
                     Set<String> returned = check.getValue().factNamesRead();
                     tells = returned != null;
                     if (tells) {
@@ -284,7 +284,7 @@ final class RuleListCompiler {
                     }
                 } catch (Throwable e) {
                     failed(compilationFailure(named + " failed to tell which facts its rules read: "
-                            + NestedFailures.describeCallOut(e, true), e, null));
+                            + CauseChains.describeCallOut(e, true), e, null));
                     continue;
                 }
                 if (holdsNull) {
@@ -299,9 +299,9 @@ final class RuleListCompiler {
         // A failed run() or load() a language started while compiling or checking a name has already logged its
         // failure. One logged here is recorded, so a run or load around this one's doesn't log it again.
         private void failed(RuleCompilationException failure) {
-            if (logged && NestedFailures.nestedRunFailure(failure) == null) {
-                Failures.logError(log, failure.getMessage());
-                LoggedFailures.loggedByLoad(failure);
+            if (logged && CauseChains.nestedRunFailure(failure) == null) {
+                FailurePolicy.logError(log, failure.getMessage());
+                FailureLog.loggedByLoad(failure);
             }
             failures.add(failure);
         }
@@ -341,7 +341,7 @@ final class RuleListCompiler {
          * each next one while the list stays within {@value Text#MAX_DESCRIPTION_LENGTH} characters, then counts
          * the rest, which the exception's {@code failures()} still has. Every failure was logged when it happened, so
          * the one exception for several is recorded as logged, and a run or load around a nested {@code load()}
-         * doesn't log it again (see {@link LoggedFailures}).
+         * doesn't log it again (see {@link FailureLog}).
          *
          * @throws RuleCompilationException if there are any
          */
@@ -349,7 +349,7 @@ final class RuleListCompiler {
             if (failures.isEmpty()) {
                 return;
             }
-            throw failures.size() == 1 ? failures.get(0) : LoggedFailures.loggedByLoad(combined(failures));
+            throw failures.size() == 1 ? failures.get(0) : FailureLog.loggedByLoad(combined(failures));
         }
 
         /**
@@ -379,7 +379,7 @@ final class RuleListCompiler {
                                                                 Map<String, String> reserved) {
         List<RuleCompilationException> failures = new ArrayList<>();
         // Inside the load() or validate(), whose call-out each check is.
-        LoggedFailures.Runs runs = LoggedFailures.inProgress();
+        FailureLog.Runs runs = FailureLog.inProgress();
         for (String name : declaredFacts.keySet()) {
             String reservedBy = reserved.get(name);
             if (reservedBy != null) {
@@ -393,8 +393,8 @@ final class RuleListCompiler {
                 // An overflow's rejection says the stack overflowed, as run() reports it, with no note naming its
                 // class again.
                 String reason = Causes.isOverflow(rejected)
-                        ? Text.clip(Failures.messageOr(rejected, rejected.getClass().getName()))
-                        : NestedFailures.describe(rejected);
+                        ? Text.clip(FailurePolicy.messageOr(rejected, rejected.getClass().getName()))
+                        : CauseChains.describe(rejected);
                 failures.add(compilationFailure("Declared fact '" + Text.quote(name) + "' can't be used: " + reason,
                         rejected, null));
             }
@@ -405,8 +405,8 @@ final class RuleListCompiler {
     /**
      * Makes the exception for a rejected rule list or a failure to compile, for the caller to log and throw. An
      * interrupt in {@code cause} sets the thread's interrupt status again. A fatal {@link Error} in {@code cause}'s
-     * cause chain, or suppressed on it (see {@link Failures#fatalError}), is logged at ERROR here instead, unless a
-     * run the language started logged it, and rethrown.
+     * cause chain, or suppressed on it (see {@link FailurePolicy#fatalError}), is logged at ERROR here instead, unless
+     * a run the language started logged it, and rethrown.
      *
      * @param msg      What failed, naming the rule or the language
      * @param cause    What the expression language threw, or {@code null}
@@ -430,21 +430,21 @@ final class RuleListCompiler {
      */
     // Not logged here: load() logs each failure as it collects it, and validate() logs nothing. A fatal error is
     // the exception: it's logged, then rethrown, whichever is compiling, unless a run the language started logged it
-    // and nothing wrapped around it says something of its own (see LoggedFailures). One with a cause is the engine's
+    // and nothing wrapped around it says something of its own (see FailureLog). One with a cause is the engine's
     // words around what the language threw, which may be a nested run's failure, so it's recorded as the engine's.
     private RuleCompilationException compilationFailure(String msg, Throwable cause, String ruleName,
                                                         ExpressionKind kind,
                                                         List<InvalidExpressionException.Issue> issues) {
-        Failures.keepInterruptStatus(cause);
-        Error fatal = Failures.fatalError(cause);
+        FailurePolicy.keepInterruptStatus(cause);
+        Error fatal = FailurePolicy.fatalError(cause);
         if (fatal != null) {
-            if (NestedFailures.unlogged(cause)) {
-                Failures.logError(log, msg);
+            if (CauseChains.unlogged(cause)) {
+                FailurePolicy.logError(log, msg);
             }
             throw fatal;
         }
         RuleCompilationException failure = new RuleCompilationException(msg, cause, ruleName, kind, issues);
-        return cause == null ? failure : LoggedFailures.builtByEngine(failure);
+        return cause == null ? failure : FailureLog.builtByEngine(failure);
     }
 
     /**
@@ -518,27 +518,27 @@ final class RuleListCompiler {
      *                                  that throws
      */
     private ExpressionCompiler newCompiler(String name, ExpressionLanguage language, CompileContext context) {
-        // A language the engine wasn't built to use is prepared at its first use (see RunClasses). The room for that
-        // is checked out here, so a StackOverflowError from the check reaches the caller as it is, with nothing
+        // A language the engine wasn't built to use is prepared at its first use (see FirstUseClasses). The room for
+        // that is checked out here, so a StackOverflowError from the check reaches the caller as it is, with nothing
         // initialized; what prepare() throws fails the language as what newCompiler() throws does, saying which failed.
-        boolean firstUse = RunClasses.firstUse(language);
+        boolean firstUse = FirstUseClasses.firstUse(language);
         ExpressionCompiler compiler;
         String failedTo = "prepare";
         // prepare() reads no rule text, so an overflow there says nothing of it.
         boolean preparing = true;
         try {
-            // prepare() and newCompiler() are each a call-out to the language, so each is marked (see LoggedFailures).
+            // prepare() and newCompiler() are each a call-out to the language, so each is marked (see FailureLog).
             if (firstUse) {
-                LoggedFailures.callOut();
-                RunClasses.prepare(language);
+                FailureLog.callOut();
+                FirstUseClasses.prepare(language);
             }
             failedTo = "create a compiler";
             preparing = false;
-            LoggedFailures.callOut();
+            FailureLog.callOut();
             compiler = language.newCompiler(context);
         } catch (Throwable e) {
             throw compilationFailure("The '" + Text.quote(name) + "' expression language failed to " + failedTo
-                    + ": " + NestedFailures.describeCallOut(e, !preparing), e, null);
+                    + ": " + CauseChains.describeCallOut(e, !preparing), e, null);
         }
         if (compiler == null) {
             throw compilationFailure("The '" + Text.quote(name) + "' expression language returned no compiler",
@@ -574,7 +574,7 @@ final class RuleListCompiler {
 
     /**
      * Compiles one condition or action. An expression the language rejects is reported with the language's reason and
-     * issues, or with none if its exception can't give them (see {@link Failures#issuesOf}); anything else the
+     * issues, or with none if its exception can't give them (see {@link FailurePolicy#issuesOf}); anything else the
      * language throws, such as a syntax error it doesn't point to, becomes the cause of the failure. A
      * {@link StackOverflowError}, also in the cause chain of what the language threw with no {@link LinkageError}
      * before it (see {@link Causes#isOverflow}), is reported by its cause, which the room left on the stack where it
@@ -589,22 +589,22 @@ final class RuleListCompiler {
      * @throws RuleCompilationException if the expression doesn't compile, or the language returns {@code null}
      */
     private <T> T compile(Expression source, Function<Expression, T> compilation) {
-        String expression = Failures.expression(source.kind(), source.ruleName());
+        String expression = FailurePolicy.expression(source.kind(), source.ruleName());
         T compiled;
         try {
-            LoggedFailures.callOut();
+            FailureLog.callOut();
             compiled = compilation.apply(source);
         } catch (InvalidExpressionException e) {
             // A language's own subclass may have a getMessage() or an issues() that throws.
-            String reason = Text.clip(Failures.messageOr(e, "was rejected by its expression language"));
+            String reason = Text.clip(FailurePolicy.messageOr(e, "was rejected by its expression language"));
             throw compilationFailure(expression + " " + reason, e, source.ruleName(), source.kind(),
-                    Failures.issuesOf(e));
+                    FailurePolicy.issuesOf(e));
         } catch (Throwable e) {
             // MVEL's parser recurses once per operator, so a very long expression overflows the stack; so does any
             // expression compiled with too little stack left, such as by a load called deep in a stack or on a thread
             // with a small one (#1013).
             // A class an overflow left unusable isn't one: no change to the rule or the depth helps (#1116).
-            String reason = Causes.isOverflow(e) ? overflowReason() : NestedFailures.describe(e);
+            String reason = Causes.isOverflow(e) ? overflowReason() : CauseChains.describe(e);
             throw compilationFailure(expression + " failed to compile: " + reason, e, source.ruleName(), source.kind(),
                     List.of());
         }
@@ -629,7 +629,7 @@ final class RuleListCompiler {
      */
     private static String overflowReason() {
         try {
-            Faults.at(Faults.Step.OVERFLOW_ROOM_CHECKED);
+            FaultInjection.at(FaultInjection.Step.OVERFLOW_ROOM_CHECKED);
             StackHeadroom.checkInitializing();
             return "the expression is too long or too deeply nested to compile";
         } catch (StackOverflowError e) {

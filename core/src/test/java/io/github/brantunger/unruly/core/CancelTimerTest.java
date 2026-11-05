@@ -47,7 +47,7 @@ class CancelTimerTest {
 
     @AfterEach
     void timerIdle() {
-        Faults.clear();
+        FaultInjection.clear();
         CancelTimer.slowAfter(CancelTimer.SLOW_NANOS);
         Thread.interrupted();
         awaitTimerExit();
@@ -101,7 +101,8 @@ class CancelTimerTest {
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         CountDownLatch registered = new CountDownLatch(1);
         try {
-            Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(registered));
+            FaultInjection.watch(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_HANDED_OFF,
+                    () -> await(registered));
             CountDownLatch held = new CountDownLatch(1);
             scheduled(Duration.ZERO, held::countDown);
             await(held);
@@ -153,7 +154,7 @@ class CancelTimerTest {
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch registered = new CountDownLatch(1);
         try {
-            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(timer, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 holding.countDown();
                 await(registered);
             });
@@ -169,7 +170,7 @@ class CancelTimerTest {
                 due.add(registration);
                 later.add(scheduled(Duration.ofHours(1), () -> fail("ran early")));
             }
-            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF,
+            FaultInjection.watch(timer, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF,
                     () -> markedAtFirst.set((int) due.stream().filter(CancelTimer.Registration::finished).count()));
 
             registered.countDown();
@@ -203,7 +204,7 @@ class CancelTimerTest {
         // Let go whatever happens, so a failure here leaves no timer, nor action, held for the next test.
         try {
             String logs = LogsUntil.logsUntil(slow, () -> {
-                Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+                FaultInjection.watch(timer, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                     holding.countDown();
                     await(registered);
                 });
@@ -221,7 +222,7 @@ class CancelTimerTest {
                     ran.countDown();
                     blocks.run();
                 }, System.nanoTime() - 1, CancelTimer.Registration.MADE));
-                Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF,
+                FaultInjection.watch(timer, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF,
                         () -> pendingAtStart.set(CancelTimer.pendingCount()));
                 registered.countDown();
                 await(ran);
@@ -240,7 +241,7 @@ class CancelTimerTest {
     @DisplayName("a timer that can't be started fails onCancel with what starting it threw, and leaves nothing pending")
     void timerFailsToStart() throws InterruptedException {
         OutOfMemoryError noThreads = new OutOfMemoryError("unable to create native thread");
-        Faults.inject(Faults.Step.CANCEL_TIMER_STARTING, 1, noThreads);
+        FaultInjection.inject(FaultInjection.Step.CANCEL_TIMER_STARTING, 1, noThreads);
         // An hour away, so onCancel hands it to the timer however slow the machine, rather than running it at once.
         EvaluationContext context = context(Duration.ofHours(1));
 
@@ -258,7 +259,7 @@ class CancelTimerTest {
     @Test
     @DisplayName("an action whose failure can't be logged is ignored all the same")
     void failureNotLogged() {
-        Faults.inject(Faults.Step.CANCEL_FAILURE_LOGGED, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.CANCEL_FAILURE_LOGGED, 1, new StackOverflowError());
 
         Outcome<Throwable> outcome = capture(() -> context(Duration.ofSeconds(-1)).onCancel(() -> {
             throw new IllegalStateException("not logged");
@@ -293,7 +294,7 @@ class CancelTimerTest {
         try {
             // On the timer's thread, once it has started the first, before it looks for the next: it isn't waiting,
             // so neither registering nor closing notifies it.
-            Faults.watch(timer, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(timer, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 scheduled(Duration.ofMillis(60), () -> closedRan.set(true)).close();
                 scheduled(Duration.ofMillis(80), second::countDown);
             });
@@ -318,7 +319,7 @@ class CancelTimerTest {
         // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
         try {
             awaitNoActionThreads();
-            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+            FaultInjection.inject(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_STARTING, 1,
                     new OutOfMemoryError("unable to create native thread"));
 
             scheduled(Duration.ofMillis(50), () -> {
@@ -360,9 +361,9 @@ class CancelTimerTest {
         // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
         try {
             awaitNoActionThreads();
-            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+            FaultInjection.inject(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_STARTING, 1,
                     new OutOfMemoryError("unable to create native thread"));
-            Faults.injectThen(Faults.Step.CANCEL_ACTION_FALLING_BACK, fallingBack);
+            FaultInjection.injectThen(FaultInjection.Step.CANCEL_ACTION_FALLING_BACK, fallingBack);
 
             String logs = LogsUntil.logsUntil(expected, () -> scheduled(Duration.ofMillis(50), () -> ran.set(true)));
 
@@ -392,7 +393,8 @@ class CancelTimerTest {
         try {
             // The timer looks again only once the action has begun, however slowly its thread starts, so it's found
             // running.
-            Faults.watch(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> await(began));
+            FaultInjection.watch(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_HANDED_OFF,
+                    () -> await(began));
 
             // Blocks until the WARN has been logged, which shows it was logged while the action ran.
             String logs = LogsUntil.logsUntil(slow, () -> scheduled(Duration.ofMillis(50), () -> {
@@ -457,7 +459,7 @@ class CancelTimerTest {
             }
             await(spinning);
             CancelTimer.slowAfter(0);
-            Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+            FaultInjection.inject(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_STARTING, 1,
                     new OutOfMemoryError("unable to create native thread"));
 
             String logs = LogsUntil.logsUntil(notStarted, () -> scheduled(Duration.ofMillis(50), ran::countDown),
@@ -496,7 +498,7 @@ class CancelTimerTest {
             // to find both due, and marks both started. It looks at them from the last registered down, so it starts
             // that one first, then dies before it hands on the one registered before it, which the timer that
             // replaces it at once must hand on.
-            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(dying, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 holding.countDown();
                 await(registered);
             });
@@ -510,7 +512,7 @@ class CancelTimerTest {
                     CancelTimer.Registration.MADE));
             CancelTimer.schedule(new CancelTimer.Registration(CancelTimerTest::nothing, passed,
                     CancelTimer.Registration.MADE));
-            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(dying, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 throw new AssertionError("the timer dies");
             });
 
@@ -536,8 +538,9 @@ class CancelTimerTest {
         CountDownLatch second = new CountDownLatch(1);
         // Let go whatever happens, so a failure here leaves no timer held for the next test.
         try {
-            Faults.inject(dying, Faults.Step.CANCEL_FAILURE_LOGGED, 1, new OutOfMemoryError("can't log"));
-            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.inject(dying, FaultInjection.Step.CANCEL_FAILURE_LOGGED, 1,
+                    new OutOfMemoryError("can't log"));
+            FaultInjection.watch(dying, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 await(first);
                 throw new OutOfMemoryError("the timer dies");
             });
@@ -567,7 +570,7 @@ class CancelTimerTest {
         CancelTimer.slowAfter(0);
         CancelRegistration keeper = context(Duration.ofHours(1)).onCancel(() -> fail("ran early"));
         Thread timer = CancelTimer.runningThread();
-        Faults.inject(timer, Faults.Step.CANCEL_FAILURE_LOGGED, 1, new OutOfMemoryError("can't log"));
+        FaultInjection.inject(timer, FaultInjection.Step.CANCEL_FAILURE_LOGGED, 1, new OutOfMemoryError("can't log"));
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch returned = new CountDownLatch(1);
         CountDownLatch next = new CountDownLatch(1);
@@ -640,7 +643,7 @@ class CancelTimerTest {
         CountDownLatch registered = new CountDownLatch(1);
         // Let go whatever happens, so a failure here leaves no timer held for the next test.
         try {
-            Faults.watch(dying, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(dying, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 await(registered);
                 throw death;
             });
@@ -686,7 +689,7 @@ class CancelTimerTest {
         try {
             Thread dying = CancelTimer.runningThread();
             TestSupport.await(() -> dying.getState() == Thread.State.TIMED_WAITING, 10, "the timer waits");
-            Faults.watch(dying, Faults.Step.CANCEL_TIMER_WAITING, () -> {
+            FaultInjection.watch(dying, FaultInjection.Step.CANCEL_TIMER_WAITING, () -> {
                 throw new AssertionError("the timer dies at once");
             });
             String expected = "WARN " + EngineLogs.ENGINE_LOGGER + "The cancel timer failed, and the actions still"
@@ -726,7 +729,7 @@ class CancelTimerTest {
             // Waiting for the keeper, however slowly the machine started it, so each registration below is compared
             // with the one it waits for.
             TestSupport.await(() -> timer.getState() == Thread.State.TIMED_WAITING, 10, "the timer waits");
-            Faults.watch(timer, Faults.Step.CANCEL_TIMER_WAITING, woke::countDown);
+            FaultInjection.watch(timer, FaultInjection.Step.CANCEL_TIMER_WAITING, woke::countDown);
 
             later = scheduled(Duration.ofHours(2), () -> fail("ran early"));
             // A wake would be seen at once; a machine too slow to show it in this time only lets this pass.
@@ -752,7 +755,7 @@ class CancelTimerTest {
         try {
             Thread first = CancelTimer.runningThread();
             // It dies once the action it started has returned, so nothing is pending.
-            Faults.watch(first, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.watch(first, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 holder.close();
                 awaitNothingPending();
                 throw new AssertionError("the timer dies");
@@ -772,8 +775,9 @@ class CancelTimerTest {
         // Closed whatever happens, so a failure here leaves no timer kept running for the next test.
         try {
             Thread second = CancelTimer.runningThread();
-            Faults.inject(second, Faults.Step.CANCEL_TIMER_STARTING, 1, new OutOfMemoryError("no threads"));
-            Faults.watch(second, Faults.Step.CANCEL_ACTION_HANDED_OFF, () -> {
+            FaultInjection.inject(second, FaultInjection.Step.CANCEL_TIMER_STARTING, 1,
+                    new OutOfMemoryError("no threads"));
+            FaultInjection.watch(second, FaultInjection.Step.CANCEL_ACTION_HANDED_OFF, () -> {
                 throw new AssertionError("the timer dies");
             });
             // The OutOfMemoryError that kept another from starting is suppressed on what the timer died of, so it's

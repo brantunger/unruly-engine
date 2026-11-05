@@ -8,13 +8,13 @@ package io.github.brantunger.unruly.core;
  * read of one field. A fault fails a step, and a watch runs, only on the thread it was set for, so a thread of another
  * test that reaches the same step meanwhile is never failed, nor uses the fault or the watch up.
  */
-final class Faults {
+final class FaultInjection {
 
     /** A step a test can make fail, or, for one reached with {@link #reached(Step)}, only watch. */
     enum Step {
-        /** {@link LoggedFailures#enter()} counting a run, before it has counted anything. */
+        /** {@link FailureLog#enter()} counting a run, before it has counted anything. */
         RUN_COUNTED,
-        /** {@link LoggedFailures#leave()} uncounting a run, once it has. */
+        /** {@link FailureLog#leave()} uncounting a run, once it has. */
         RUN_UNCOUNTED,
         /** {@link Cancellation#enter(Deadline)} setting a run's deadline, once it has. */
         DEADLINE_SET,
@@ -97,7 +97,7 @@ final class Faults {
         FAILURE_DESCRIBING,
         /**
          * Logging at ERROR a failure the engine reports or rethrows, or a warning at WARN, before it has (see
-         * {@link Failures#logError} and {@link Failures#logWarn}).
+         * {@link FailurePolicy#logError} and {@link FailurePolicy#logWarn}).
          */
         FAILURE_LOGGED,
         /**
@@ -187,7 +187,7 @@ final class Faults {
     private static Thread watching;
     private static Runnable onReach;
 
-    private Faults() {
+    private FaultInjection() {
     }
 
     /**

@@ -28,12 +28,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The thread's record of the failures nested runs and loads logged: made only for a nested one, forgotten when the
- * outermost run ends, and bounded, so a failure logged before the last {@value LoggedFailures#MAX_LOGGED} is logged
+ * outermost run ends, and bounded, so a failure logged before the last {@value FailureLog#MAX_LOGGED} is logged
  * again if it's thrown on, and none is ever left out. The fatal {@link Error}s runs logged, and the exceptions the
  * engine built around a failure, are bounded the same way.
  */
 @DisplayName("the thread's record of what nested runs logged is made only when nested, and bounded")
-class LoggedFailuresTest {
+class FailureLogTest {
 
     private static final String OUTPUT_REJECTED = "'output' is reserved for the output object and cannot be used as "
             + "a fact name";
@@ -44,7 +44,7 @@ class LoggedFailuresTest {
      * @return The ring, or {@code null} if none was created, or no run is in progress on this thread
      */
     private static Object ring() throws ReflectiveOperationException {
-        Field runsField = LoggedFailures.class.getDeclaredField("RUNS");
+        Field runsField = FailureLog.class.getDeclaredField("RUNS");
         runsField.setAccessible(true);
         Object runs = ((ThreadLocal<?>) runsField.get(null)).get();
         if (runs == null) {
@@ -76,15 +76,15 @@ class LoggedFailuresTest {
     @DisplayName("an outermost run records nothing it logs, and creates nothing to record it in")
     void outermostRecordsNothing() throws ReflectiveOperationException {
         IllegalArgumentException failure = new IllegalArgumentException("top level");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertSame(failure, LoggedFailures.loggedByRun(failure));
-            assertSame(failure, LoggedFailures.loggedByLoad(failure));
-            assertNull(LoggedFailures.find(failure));
-            assertNull(NestedFailures.nestedRunFailure(failure));
+            assertSame(failure, FailureLog.loggedByRun(failure));
+            assertSame(failure, FailureLog.loggedByLoad(failure));
+            assertNull(FailureLog.find(failure));
+            assertNull(CauseChains.nestedRunFailure(failure));
             assertNull(ring());
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -92,21 +92,21 @@ class LoggedFailuresTest {
     @DisplayName("#1268: a failure the innermost run itself builds is recorded at that run's depth, so it isn't below"
             + " the run, while one a nested run built is")
     void ownReportedFailureIsNotBelow() {
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            ReportedFailure own = NestedFailures.report("the run's own", null);
-            assertFalse(LoggedFailures.loggedBelow(own), "built by the innermost run");
+            ReportedFailure own = CauseChains.report("the run's own", null);
+            assertFalse(FailureLog.loggedBelow(own), "built by the innermost run");
 
-            LoggedFailures.enter();
+            FailureLog.enter();
             ReportedFailure nested;
             try {
-                nested = NestedFailures.report("a nested run's", null);
+                nested = CauseChains.report("a nested run's", null);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertTrue(LoggedFailures.loggedBelow(nested), "built by a nested run");
+            assertTrue(FailureLog.loggedBelow(nested), "built by a nested run");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -134,32 +134,32 @@ class LoggedFailuresTest {
     void equalInstanceIsStillNews() {
         EqualToAll logged = new EqualToAll("rejected");
         EqualToAll equal = new EqualToAll("rejected");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.loggedByRun(logged);
+                FailureLog.loggedByRun(logged);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertNotNull(LoggedFailures.find(logged), "the very instance");
-            assertNull(LoggedFailures.find(equal), "an equal one");
-            assertSame(logged, NestedFailures.nestedRunFailure(new IllegalStateException(logged)));
-            assertNull(NestedFailures.nestedRunFailure(new IllegalStateException(equal)));
+            assertNotNull(FailureLog.find(logged), "the very instance");
+            assertNull(FailureLog.find(equal), "an equal one");
+            assertSame(logged, CauseChains.nestedRunFailure(new IllegalStateException(logged)));
+            assertNull(CauseChains.nestedRunFailure(new IllegalStateException(equal)));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
     /**
      * Reads one field of what is in progress on this thread.
      *
-     * @param runs What {@link LoggedFailures#enter()} returned
+     * @param runs What {@link FailureLog#enter()} returned
      * @param name The field's name
      * @return Its value
      */
-    private static Object field(LoggedFailures.Runs runs, String name) throws ReflectiveOperationException {
-        Field field = LoggedFailures.Runs.class.getDeclaredField(name);
+    private static Object field(FailureLog.Runs runs, String name) throws ReflectiveOperationException {
+        Field field = FailureLog.Runs.class.getDeclaredField(name);
         field.setAccessible(true);
         return field.get(runs);
     }
@@ -168,23 +168,23 @@ class LoggedFailuresTest {
     @DisplayName("#961: an outermost run that starts no nested run and builds no failure creates nothing to tell its"
             + " call-outs apart with, and the first nested run creates it, a fatal Error's stamps included")
     void callOutRecordCreatedWithTheFirstNestedRun() throws ReflectiveOperationException {
-        LoggedFailures.Runs runs = LoggedFailures.enter();
+        FailureLog.Runs runs = FailureLog.enter();
         try {
             runs.callOut();
-            assertTrue(LoggedFailures.unloggedFatal(new InternalError("by the outermost run")));
+            assertTrue(FailureLog.unloggedFatal(new InternalError("by the outermost run")));
             for (String name : List.of("stamps", "outermost")) {
                 assertNull(field(runs, name), name);
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 assertNotNull(field(runs, "stamps"));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertNotNull(NestedFailures.report("built", null).builtIn());
+            assertNotNull(CauseChains.report("built", null).builtIn());
             assertNotNull(field(runs, "outermost"));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -216,44 +216,44 @@ class LoggedFailuresTest {
     void nestedRecordedThenForgotten() {
         IllegalArgumentException byRun = new IllegalArgumentException("by run");
         IllegalStateException byLoad = new IllegalStateException("by load");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.loggedByRun(byRun);
-                LoggedFailures.loggedByLoad(byLoad);
+                FailureLog.loggedByRun(byRun);
+                FailureLog.loggedByLoad(byLoad);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertFalse(LoggedFailures.find(byRun).byLoad());
-            assertTrue(LoggedFailures.find(byLoad).byLoad());
-            assertNull(LoggedFailures.find(new IllegalArgumentException("by run")));
+            assertFalse(FailureLog.find(byRun).byLoad());
+            assertTrue(FailureLog.find(byLoad).byLoad());
+            assertNull(FailureLog.find(new IllegalArgumentException("by run")));
             assertEquals("wrapped (after a nested load() failed: by load)",
-                    NestedFailures.describe(new IllegalStateException("wrapped", byLoad)));
+                    CauseChains.describe(new IllegalStateException("wrapped", byLoad)));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
-        assertNull(LoggedFailures.find(byRun));
-        assertEquals("wrapped", NestedFailures.describe(new IllegalStateException("wrapped", byLoad)));
+        assertNull(FailureLog.find(byRun));
+        assertEquals("wrapped", CauseChains.describe(new IllegalStateException("wrapped", byLoad)));
     }
 
     @Test
     @DisplayName("the ring of fatal Errors exists as soon as a run starts, so recording an OutOfMemoryError allocates"
             + " nothing")
     void fatalRingMadeBeforeAnyFailure() throws ReflectiveOperationException {
-        Field runsField = LoggedFailures.class.getDeclaredField("RUNS");
+        Field runsField = FailureLog.class.getDeclaredField("RUNS");
         runsField.setAccessible(true);
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             Object runs = ((ThreadLocal<?>) runsField.get(null)).get();
             Field loggedFatal = runs.getClass().getDeclaredField("loggedFatal");
             loggedFatal.setAccessible(true);
             Object ring = loggedFatal.get(runs);
-            assertEquals(LoggedFailures.MAX_LOGGED, ((Error[]) ring).length);
-            assertTrue(LoggedFailures.unloggedFatal(new OutOfMemoryError("heap")));
+            assertEquals(FailureLog.MAX_LOGGED, ((Error[]) ring).length);
+            assertTrue(FailureLog.unloggedFatal(new OutOfMemoryError("heap")));
             assertSame(ring, loggedFatal.get(runs), "a ring made while recording");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -261,21 +261,21 @@ class LoggedFailuresTest {
     @DisplayName("a fatal Error logged once stays logged while fewer than the bound of others are logged after it")
     void fatalStaysLoggedPastOthers() {
         InternalError first = new InternalError("first");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertTrue(LoggedFailures.unloggedFatal(first));
-            for (int i = 1; i < LoggedFailures.MAX_LOGGED; i++) {
-                LoggedFailures.enter();
+            assertTrue(FailureLog.unloggedFatal(first));
+            for (int i = 1; i < FailureLog.MAX_LOGGED; i++) {
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(new InternalError("nested " + i)));
+                    assertTrue(FailureLog.unloggedFatal(new InternalError("nested " + i)));
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             }
-            assertTrue(NestedFailures.logged(first));
-            assertFalse(LoggedFailures.unloggedFatal(first));
+            assertTrue(CauseChains.logged(first));
+            assertFalse(FailureLog.unloggedFatal(first));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -284,25 +284,25 @@ class LoggedFailuresTest {
     void boundedFatalRecord() {
         InternalError first = new InternalError("first");
         InternalError last = null;
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertTrue(LoggedFailures.unloggedFatal(first));
-            for (int i = 1; i <= LoggedFailures.MAX_LOGGED; i++) {
+            assertTrue(FailureLog.unloggedFatal(first));
+            for (int i = 1; i <= FailureLog.MAX_LOGGED; i++) {
                 last = new InternalError("later " + i);
-                assertTrue(LoggedFailures.unloggedFatal(last));
+                assertTrue(FailureLog.unloggedFatal(last));
             }
-            assertFalse(LoggedFailures.unloggedFatal(last));
-            assertFalse(NestedFailures.logged(first));
-            assertTrue(LoggedFailures.unloggedFatal(first), "logged again");
-            assertFalse(LoggedFailures.unloggedFatal(first), "and recorded again");
+            assertFalse(FailureLog.unloggedFatal(last));
+            assertFalse(CauseChains.logged(first));
+            assertTrue(FailureLog.unloggedFatal(first), "logged again");
+            assertFalse(FailureLog.unloggedFatal(first), "and recorded again");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            assertTrue(LoggedFailures.unloggedFatal(first), "forgotten with the outermost run");
+            assertTrue(FailureLog.unloggedFatal(first), "forgotten with the outermost run");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -312,27 +312,27 @@ class LoggedFailuresTest {
         InternalError byLoad = new InternalError("by a load");
         InternalError byRun = new InternalError("by a run");
         int loads = 5;
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             for (int i = 0; i < loads; i++) {
-                LoggedFailures.enterLoad();
+                FailureLog.enterLoad();
             }
-            assertTrue(LoggedFailures.unloggedFatal(byLoad));
-            assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(byLoad), "its own level's");
-            LoggedFailures.enter();
-            assertTrue(LoggedFailures.unloggedFatal(byRun));
-            LoggedFailures.leave();
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(byRun), "a run the load started");
+            assertTrue(FailureLog.unloggedFatal(byLoad));
+            assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(byLoad), "its own level's");
+            FailureLog.enter();
+            assertTrue(FailureLog.unloggedFatal(byRun));
+            FailureLog.leave();
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(byRun), "a run the load started");
             for (int i = 0; i < loads; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             // The outermost run started a load(), whatever that load started in turn.
-            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(byLoad));
-            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(byRun));
+            assertEquals(FailureLog.LoggedAt.NESTED_LOAD, FailureLog.loggedAt(byLoad));
+            assertEquals(FailureLog.LoggedAt.NESTED_LOAD, FailureLog.loggedAt(byRun));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
-        assertNull(LoggedFailures.loggedAt(byLoad), "forgotten with the outermost run");
+        assertNull(FailureLog.loggedAt(byLoad), "forgotten with the outermost run");
     }
 
     @Test
@@ -341,22 +341,22 @@ class LoggedFailuresTest {
         InternalError fatal = new InternalError("deep");
         int depth = Long.SIZE + 2;
         for (int i = 0; i < depth; i++) {
-            LoggedFailures.enterLoad();
+            FailureLog.enterLoad();
         }
         try {
-            assertTrue(LoggedFailures.unloggedFatal(fatal));
-            LoggedFailures.leave();
-            LoggedFailures.leave();
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+            assertTrue(FailureLog.unloggedFatal(fatal));
+            FailureLog.leave();
+            FailureLog.leave();
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(fatal));
             for (int i = 2; i < Long.SIZE; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(fatal));
+            assertEquals(FailureLog.LoggedAt.NESTED_LOAD, FailureLog.loggedAt(fatal));
         } finally {
-            LoggedFailures.leave();
-            LoggedFailures.leave();
+            FailureLog.leave();
+            FailureLog.leave();
         }
-        assertNull(LoggedFailures.loggedAt(fatal));
+        assertNull(FailureLog.loggedAt(fatal));
     }
 
     @Test
@@ -364,41 +364,41 @@ class LoggedFailuresTest {
     void fatalLoggedDeeperByARunThatHasEnded() {
         InternalError deeper = new InternalError("by a run that has ended");
         InternalError own = new InternalError("by the run started after it");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(deeper));
+                    assertTrue(FailureLog.unloggedFatal(deeper));
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(deeper), "on its way out");
-            LoggedFailures.enter();
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(deeper), "on its way out");
+            FailureLog.enter();
             try {
-                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper), "a later sibling");
-                LoggedFailures.enter();
+                assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(deeper), "a later sibling");
+                FailureLog.enter();
                 try {
-                    assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper),
+                    assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(deeper),
                             "a run the sibling started");
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
-                assertTrue(LoggedFailures.unloggedFatal(own));
-                LoggedFailures.enter();
-                LoggedFailures.leave();
-                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(own), "its own level's");
+                assertTrue(FailureLog.unloggedFatal(own));
+                FailureLog.enter();
+                FailureLog.leave();
+                assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(own), "its own level's");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(deeper));
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(own));
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(deeper));
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(own));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -407,41 +407,41 @@ class LoggedFailuresTest {
             + " in a run started after them")
     void wrappedFatalRecordLoggedDeeperByRunsThatHaveEnded() {
         List<InternalError> fatals = new ArrayList<>();
-        for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+        for (int i = 0; i <= FailureLog.MAX_LOGGED; i++) {
             fatals.add(new InternalError("by a run that has ended " + i));
         }
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
                     for (InternalError fatal : fatals) {
-                        assertTrue(LoggedFailures.unloggedFatal(fatal));
+                        assertTrue(FailureLog.unloggedFatal(fatal));
                     }
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertNull(LoggedFailures.loggedAt(fatals.get(0)), "pushed out of the ring");
+            assertNull(FailureLog.loggedAt(fatals.get(0)), "pushed out of the ring");
             List<InternalError> held = fatals.subList(1, fatals.size());
             for (InternalError fatal : held) {
-                assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal), fatal.getMessage());
+                assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(fatal), fatal.getMessage());
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 // The newest is in the ring's first slot and the one before it in its last, past where the next goes.
                 for (InternalError fatal : held) {
-                    assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(fatal),
+                    assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(fatal),
                             fatal.getMessage());
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -450,29 +450,29 @@ class LoggedFailuresTest {
     void fatalLoggedDeeperThenShallowerByRunsThatHaveEnded() {
         InternalError deeper = new InternalError("by the deeper run");
         InternalError shallower = new InternalError("by the run around it, after it ended");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(deeper));
+                    assertTrue(FailureLog.unloggedFatal(deeper));
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
-                assertTrue(LoggedFailures.unloggedFatal(shallower));
+                assertTrue(FailureLog.unloggedFatal(shallower));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(deeper), "the deeper");
-                assertEquals(LoggedFailures.LoggedAt.NOT_BELOW, LoggedFailures.loggedAt(shallower), "the shallower");
+                assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(deeper), "the deeper");
+                assertEquals(FailureLog.LoggedAt.NOT_BELOW, FailureLog.loggedAt(shallower), "the shallower");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -480,24 +480,24 @@ class LoggedFailuresTest {
     @DisplayName("a fatal Error a load() logged through a run it started is still the load()'s once a sibling ran")
     void fatalLoggedBelowALoadAfterASiblingRun() {
         InternalError fatal = new InternalError("below a load");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enterLoad();
+            FailureLog.enterLoad();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(fatal));
+                    assertTrue(FailureLog.unloggedFatal(fatal));
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
-            LoggedFailures.leave();
-            assertEquals(LoggedFailures.LoggedAt.NESTED_LOAD, LoggedFailures.loggedAt(fatal));
+            FailureLog.enter();
+            FailureLog.leave();
+            assertEquals(FailureLog.LoggedAt.NESTED_LOAD, FailureLog.loggedAt(fatal));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -505,20 +505,20 @@ class LoggedFailuresTest {
     @DisplayName("a run nested at the depth of a load() that has ended is a run, not a load()")
     void runAfterALoadAtTheSameDepth() {
         InternalError fatal = new InternalError("by a run after a load");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enterLoad();
-            LoggedFailures.leave();
-            LoggedFailures.enter();
+            FailureLog.enterLoad();
+            FailureLog.leave();
+            FailureLog.enter();
             try {
-                assertTrue(LoggedFailures.unloggedFatal(fatal));
+                assertTrue(FailureLog.unloggedFatal(fatal));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
 
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(fatal));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -527,42 +527,42 @@ class LoggedFailuresTest {
             + " ended, not in a sibling, nor once the outermost run has ended")
     void reportedRecordedWithItsDepth() {
         ReportedFailure nested;
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    nested = NestedFailures.report("by a nested run", null);
+                    nested = CauseChains.report("by a nested run", null);
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
                 assertEquals("wrapped (after a nested run() failed: by a nested run)",
-                        NestedFailures.describe(new IllegalStateException("wrapped", nested)),
+                        CauseChains.describe(new IllegalStateException("wrapped", nested)),
                         "the run that started it");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             assertEquals("wrapped (after a nested run() failed: by a nested run)",
-                    NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a run around that one");
-            LoggedFailures.enter();
+                    CauseChains.describe(new IllegalStateException("wrapped", nested)), "a run around that one");
+            FailureLog.enter();
             try {
                 assertEquals("wrapped (caused by by a nested run, already logged)",
-                        NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a later sibling");
+                        CauseChains.describe(new IllegalStateException("wrapped", nested)), "a later sibling");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
         assertEquals("wrapped (caused by by a nested run, already logged)",
-                NestedFailures.describe(new IllegalStateException("wrapped", nested)), "no run in progress");
-        LoggedFailures.enter();
+                CauseChains.describe(new IllegalStateException("wrapped", nested)), "no run in progress");
+        FailureLog.enter();
         try {
             assertEquals("wrapped (caused by by a nested run, already logged)",
-                    NestedFailures.describe(new IllegalStateException("wrapped", nested)), "a later outermost run");
+                    CauseChains.describe(new IllegalStateException("wrapped", nested)), "a later outermost run");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -571,27 +571,27 @@ class LoggedFailuresTest {
             + " recorded any, and the newest isn't")
     void boundedReportedRecord() {
         List<ReportedFailure> reported = new ArrayList<>();
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
-                    reported.add(NestedFailures.report("reported " + i, null));
+                for (int i = 0; i <= FailureLog.MAX_LOGGED; i++) {
+                    reported.add(CauseChains.report("reported " + i, null));
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 assertEquals("wrapped (after a nested run() failed: reported 0)",
-                        NestedFailures.describe(new IllegalStateException("wrapped", reported.get(0))), "pushed out");
+                        CauseChains.describe(new IllegalStateException("wrapped", reported.get(0))), "pushed out");
                 assertEquals("wrapped (caused by reported 32, already logged)",
-                        NestedFailures.describe(new IllegalStateException("wrapped", reported.get(32))), "the newest");
+                        CauseChains.describe(new IllegalStateException("wrapped", reported.get(32))), "the newest");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -600,21 +600,21 @@ class LoggedFailuresTest {
     void reportedOnAnotherThreadIsNested() throws InterruptedException {
         AtomicReference<ReportedFailure> reported = new AtomicReference<>();
         Thread other = new Thread(() -> {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                reported.set(NestedFailures.report("on another thread", null));
+                reported.set(CauseChains.report("on another thread", null));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         });
         other.start();
         other.join();
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             assertEquals("wrapped (after a nested run() failed: on another thread)",
-                    NestedFailures.describe(new IllegalStateException("wrapped", reported.get())));
+                    CauseChains.describe(new IllegalStateException("wrapped", reported.get())));
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -643,16 +643,16 @@ class LoggedFailuresTest {
             assertNull(run.thrown(), run.logs());
             assertEquals(List.of("Failed to execute action for rule 'inner-rule': inner rule failed"),
                     run.lines("ERROR"), run.logs());
-            Field runsField = LoggedFailures.class.getDeclaredField("RUNS");
+            Field runsField = FailureLog.class.getDeclaredField("RUNS");
             runsField.setAccessible(true);
             assertNull(executor.submit(() -> ((ThreadLocal<?>) runsField.get(null)).get()).get());
             assertEquals("wrapped (caused by Failed to execute action for rule 'inner-rule': inner rule failed,"
                     + " already logged)", executor.submit(() -> {
-                        LoggedFailures.enter();
+                        FailureLog.enter();
                         try {
-                            return NestedFailures.describe(new IllegalStateException("wrapped", kept.get()));
+                            return CauseChains.describe(new IllegalStateException("wrapped", kept.get()));
                         } finally {
-                            LoggedFailures.leave();
+                            FailureLog.leave();
                         }
                     }).get());
         } finally {
@@ -665,8 +665,8 @@ class LoggedFailuresTest {
      * {@code new RuntimeException(e)}, whose message is its {@code toString()}.
      */
     private static void assertThrownOnReads(String expected, ReportedFailure reported, String where) {
-        assertEquals(expected, NestedFailures.describe(reported), where + ", as is");
-        assertEquals(expected, NestedFailures.describe(new RuntimeException(reported)), where + ", wrapped");
+        assertEquals(expected, CauseChains.describe(reported), where + ", as is");
+        assertEquals(expected, CauseChains.describe(new RuntimeException(reported)), where + ", wrapped");
     }
 
     @Test
@@ -674,36 +674,36 @@ class LoggedFailuresTest {
             + " that built it, and once that run has ended reads as logged already")
     void reportedThrownOnRecordedWithItsDepth() {
         ReportedFailure nested;
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    nested = NestedFailures.report("by a nested run", null);
+                    nested = CauseChains.report("by a nested run", null);
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
                 assertThrownOnReads("a nested run() failed: by a nested run", nested, "the run that started it");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             assertThrownOnReads("a nested run() failed: by a nested run", nested, "a run around that one");
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 assertThrownOnReads("by a nested run (already logged)", nested, "a later sibling");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
         assertThrownOnReads("by a nested run (already logged)", nested, "no run in progress");
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             assertThrownOnReads("by a nested run (already logged)", nested, "a later outermost run");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -712,25 +712,25 @@ class LoggedFailuresTest {
             + " nested run's, and the newest reads as logged already")
     void boundedReportedRecordThrownOn() {
         List<ReportedFailure> reported = new ArrayList<>();
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
-                    reported.add(NestedFailures.report("reported " + i, null));
+                for (int i = 0; i <= FailureLog.MAX_LOGGED; i++) {
+                    reported.add(CauseChains.report("reported " + i, null));
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 assertThrownOnReads("a nested run() failed: reported 0", reported.get(0), "pushed out");
                 assertThrownOnReads("reported 32 (already logged)", reported.get(32), "the newest");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -740,20 +740,20 @@ class LoggedFailuresTest {
     void reportedOnAnotherThreadThrownOnIsNested() throws InterruptedException {
         AtomicReference<ReportedFailure> reported = new AtomicReference<>();
         Thread other = new Thread(() -> {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                reported.set(NestedFailures.report("on another thread", null));
+                reported.set(CauseChains.report("on another thread", null));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         });
         other.start();
         other.join();
-        LoggedFailures.enter();
+        FailureLog.enter();
         try {
             assertThrownOnReads("a nested run() failed: on another thread", reported.get(), "another thread");
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -765,7 +765,7 @@ class LoggedFailuresTest {
         List<IllegalArgumentException> rejections = new ArrayList<>();
         RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
                 .language(new StubExpressionLanguage().action((action, session) -> {
-                    for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+                    for (int i = 0; i <= FailureLog.MAX_LOGGED; i++) {
                         try {
                             runWithOutputFact(nested);
                         } catch (IllegalArgumentException e) {
@@ -779,56 +779,56 @@ class LoggedFailuresTest {
         Outcome<RuntimeException> outcome = capture(RuntimeException.class, () -> engine.run(new FactMap<>()));
 
         List<String> errors = outcome.lines("ERROR");
-        assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.stream().filter(OUTPUT_REJECTED::equals).count(),
+        assertEquals(FailureLog.MAX_LOGGED + 1, errors.stream().filter(OUTPUT_REJECTED::equals).count(),
                 outcome.logs());
         String outer = "Failed to execute action for rule 'outer-rule': ";
         if ("the oldest".equals(which)) {
             // Logged twice, by the nested run and by the rule, but not left out.
             assertEquals(outer + OUTPUT_REJECTED, outcome.thrown().getMessage());
             assertEquals(outer + OUTPUT_REJECTED, errors.get(errors.size() - 1), outcome.logs());
-            assertEquals(LoggedFailures.MAX_LOGGED + 2, errors.size(), outcome.logs());
+            assertEquals(FailureLog.MAX_LOGGED + 2, errors.size(), outcome.logs());
         } else {
             assertEquals(outer + "a nested run() failed: " + OUTPUT_REJECTED, outcome.thrown().getMessage());
-            assertEquals(LoggedFailures.MAX_LOGGED + 1, errors.size(), outcome.logs());
+            assertEquals(FailureLog.MAX_LOGGED + 1, errors.size(), outcome.logs());
         }
         // Nothing is left behind on the thread.
-        assertNull(LoggedFailures.find(rejections.get(rejections.size() - 1)));
+        assertNull(FailureLog.find(rejections.get(rejections.size() - 1)));
     }
 
     @Test
     @DisplayName("an exception the engine built around a nested failure adds nothing to it whatever it says, while an "
             + "equal one of an application's is news, and the record is forgotten with the outermost run and bounded")
     void engineWrapperKnownByInstance() {
-        ReportedFailure inner = NestedFailures.report("inner failed", null);
+        ReportedFailure inner = CauseChains.report("inner failed", null);
         IllegalArgumentException engines = new IllegalArgumentException("check failed: inner failed", inner);
         IllegalArgumentException applications = new IllegalArgumentException("check failed: inner failed", inner);
         String named = "a nested run() failed: inner failed";
 
-        assertFalse(LoggedFailures.isEngineWrapper(engines), "no run in progress");
-        LoggedFailures.enter();
+        assertFalse(FailureLog.isEngineWrapper(engines), "no run in progress");
+        FailureLog.enter();
         try {
-            assertFalse(LoggedFailures.isEngineWrapper(engines), "nothing built yet");
-            assertSame(engines, LoggedFailures.builtByEngine(engines));
-            assertTrue(LoggedFailures.isEngineWrapper(engines));
-            assertEquals(named, NestedFailures.describe(engines));
-            assertSame(inner, NestedFailures.nestedRunFailure(engines));
-            assertFalse(LoggedFailures.isEngineWrapper(applications));
-            assertEquals("check failed: inner failed (after " + named + ")", NestedFailures.describe(applications));
-            for (int i = 1; i < LoggedFailures.MAX_LOGGED; i++) {
-                LoggedFailures.builtByEngine(new IllegalStateException("built " + i));
+            assertFalse(FailureLog.isEngineWrapper(engines), "nothing built yet");
+            assertSame(engines, FailureLog.builtByEngine(engines));
+            assertTrue(FailureLog.isEngineWrapper(engines));
+            assertEquals(named, CauseChains.describe(engines));
+            assertSame(inner, CauseChains.nestedRunFailure(engines));
+            assertFalse(FailureLog.isEngineWrapper(applications));
+            assertEquals("check failed: inner failed (after " + named + ")", CauseChains.describe(applications));
+            for (int i = 1; i < FailureLog.MAX_LOGGED; i++) {
+                FailureLog.builtByEngine(new IllegalStateException("built " + i));
             }
-            assertTrue(LoggedFailures.isEngineWrapper(engines), "kept while fewer than the bound are built after it");
-            LoggedFailures.builtByEngine(new IllegalStateException("one more"));
-            assertFalse(LoggedFailures.isEngineWrapper(engines), "the oldest is forgotten past the bound");
-            LoggedFailures.builtByEngine(engines);
+            assertTrue(FailureLog.isEngineWrapper(engines), "kept while fewer than the bound are built after it");
+            FailureLog.builtByEngine(new IllegalStateException("one more"));
+            assertFalse(FailureLog.isEngineWrapper(engines), "the oldest is forgotten past the bound");
+            FailureLog.builtByEngine(engines);
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
-        assertFalse(LoggedFailures.isEngineWrapper(engines), "forgotten when the outermost run ends");
+        assertFalse(FailureLog.isEngineWrapper(engines), "forgotten when the outermost run ends");
     }
 
     /**
-     * A run's call-outs are told apart in a run fewer than {@value LoggedFailures#MARKED_DEPTHS} deep: what a run the
+     * A run's call-outs are told apart in a run fewer than {@value FailureLog#MARKED_DEPTHS} deep: what a run the
      * call-out in progress started logged is below the run, even when that run is too deep to mark call-outs of its
      * own, and what one an earlier call-out started logged isn't, until that call-out is taken up again. In a run
      * deeper than that, what any run it started logged is below it, as before call-outs were told apart.
@@ -836,173 +836,173 @@ class LoggedFailuresTest {
      * @param depth How deep the run is
      */
     @ParameterizedTest(name = "a run {0} deep")
-    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS - 1, LoggedFailures.MARKED_DEPTHS})
+    @ValueSource(ints = {FailureLog.MARKED_DEPTHS - 1, FailureLog.MARKED_DEPTHS})
     @DisplayName("#961: a run's call-outs are told apart up to the bound, and past it a failure below the run is a"
             + " nested run's whatever call-out started it")
     void callOutsToldApartUpToTheBound(int depth) {
         InternalError fatal = new InternalError("by a nested run");
         IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
         ReportedFailure reported;
-        LoggedFailures.Runs runs = LoggedFailures.enter();
+        FailureLog.Runs runs = FailureLog.enter();
         for (int i = 1; i < depth; i++) {
-            runs = LoggedFailures.enter();
+            runs = FailureLog.enter();
         }
         try {
             long first = runs.callOut();
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                assertTrue(LoggedFailures.unloggedFatal(fatal));
-                LoggedFailures.loggedByRun(rejection);
-                reported = NestedFailures.report("reported by a nested run", null);
+                assertTrue(FailureLog.unloggedFatal(fatal));
+                FailureLog.loggedByRun(rejection);
+                reported = CauseChains.report("reported by a nested run", null);
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
             assertBelow(true, fatal, rejection, reported, "the call-out that started the nested run");
             runs.callOut();
-            assertBelow(depth >= LoggedFailures.MARKED_DEPTHS, fatal, rejection, reported, "a later call-out");
+            assertBelow(depth >= FailureLog.MARKED_DEPTHS, fatal, rejection, reported, "a later call-out");
             runs.resume(first);
             assertBelow(true, fatal, rejection, reported, "the call-out that started it, taken up again");
         } finally {
             for (int i = 0; i < depth; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         }
     }
 
     /**
      * A failure a run that had ended logged, however deep, isn't below a run started after it, past the bound of
-     * {@value LoggedFailures#MARKED_DEPTHS} too, where the run's call-outs aren't told apart:
-     * {@link LoggedFailures#enter} lowers it to the depth the later run starts at.
+     * {@value FailureLog#MARKED_DEPTHS} too, where the run's call-outs aren't told apart:
+     * {@link FailureLog#enter} lowers it to the depth the later run starts at.
      *
      * @param depth How deep the later run is
      */
     @ParameterizedTest(name = "a run {0} deep")
-    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS - 1, LoggedFailures.MARKED_DEPTHS,
-        LoggedFailures.MARKED_DEPTHS + 1})
+    @ValueSource(ints = {FailureLog.MARKED_DEPTHS - 1, FailureLog.MARKED_DEPTHS,
+        FailureLog.MARKED_DEPTHS + 1})
     @DisplayName("#961: a failure a run that had ended logged deeper isn't below a later sibling, past the bound too")
     void loggedByASiblingThatHadEndedNotBelowPastTheBound(int depth) {
         InternalError fatal = new InternalError("by a nested run of an earlier sibling");
         IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
         ReportedFailure reported;
-        LoggedFailures.enter();
+        FailureLog.enter();
         for (int i = 2; i < depth; i++) {
-            LoggedFailures.enter();
+            FailureLog.enter();
         }
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(fatal));
-                    LoggedFailures.loggedByRun(rejection);
-                    reported = NestedFailures.report("reported by a nested run", null);
+                    assertTrue(FailureLog.unloggedFatal(fatal));
+                    FailureLog.loggedByRun(rejection);
+                    reported = CauseChains.report("reported by a nested run", null);
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
                 assertBelow(false, fatal, rejection, reported, "a later sibling");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
             for (int i = 1; i < depth; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         }
     }
 
     /**
      * A failure a run that had ended logged deeper isn't below a later sibling past the bound of
-     * {@value LoggedFailures#MARKED_DEPTHS} when the parent logged failures of its own in between, at its shallower
+     * {@value FailureLog#MARKED_DEPTHS} when the parent logged failures of its own in between, at its shallower
      * depth: the parent's logging keeps the deepest depth a failure was logged at, rather than lowering it to its own,
-     * so the later sibling's {@link LoggedFailures#enter} still finds a failure logged deeper than it starts, and
+     * so the later sibling's {@link FailureLog#enter} still finds a failure logged deeper than it starts, and
      * lowers that failure's depth to its own.
      *
      * @param depth How deep the later run is
      */
     @ParameterizedTest(name = "a run {0} deep, the parent logging in between")
-    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS, LoggedFailures.MARKED_DEPTHS + 1,
-        LoggedFailures.MARKED_DEPTHS + 2})
+    @ValueSource(ints = {FailureLog.MARKED_DEPTHS, FailureLog.MARKED_DEPTHS + 1,
+        FailureLog.MARKED_DEPTHS + 2})
     @DisplayName("#1019: a failure a run that had ended logged deeper isn't below a later sibling past the bound, when"
             + " the parent logged failures of its own in between")
     void parentLogsBetweenPastTheBound(int depth) {
         InternalError fatal = new InternalError("by a nested run of an earlier sibling");
         IllegalArgumentException rejection = new IllegalArgumentException("rejected by a nested run");
         ReportedFailure reported;
-        LoggedFailures.enter();
+        FailureLog.enter();
         for (int i = 2; i < depth; i++) {
-            LoggedFailures.enter();
+            FailureLog.enter();
         }
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    assertTrue(LoggedFailures.unloggedFatal(fatal));
-                    LoggedFailures.loggedByRun(rejection);
-                    reported = NestedFailures.report("reported by a nested run", null);
+                    assertTrue(FailureLog.unloggedFatal(fatal));
+                    FailureLog.loggedByRun(rejection);
+                    reported = CauseChains.report("reported by a nested run", null);
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertTrue(LoggedFailures.unloggedFatal(new InternalError("the parent's own")));
-            LoggedFailures.loggedByRun(new IllegalStateException("the parent's own"));
-            NestedFailures.report("the parent's own", null);
-            LoggedFailures.enter();
+            assertTrue(FailureLog.unloggedFatal(new InternalError("the parent's own")));
+            FailureLog.loggedByRun(new IllegalStateException("the parent's own"));
+            CauseChains.report("the parent's own", null);
+            FailureLog.enter();
             try {
                 assertBelow(false, fatal, rejection, reported, "a later sibling");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
             for (int i = 1; i < depth; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         }
     }
 
     /**
      * A failure a run that had ended only reported, logging nothing, isn't below a later sibling past the bound of
-     * {@value LoggedFailures#MARKED_DEPTHS} either: reporting it records the depth it was built at, as logging does.
+     * {@value FailureLog#MARKED_DEPTHS} either: reporting it records the depth it was built at, as logging does.
      *
      * @param depth How deep the later run is
      */
     @ParameterizedTest(name = "only reported, a run {0} deep")
-    @ValueSource(ints = {LoggedFailures.MARKED_DEPTHS, LoggedFailures.MARKED_DEPTHS + 1})
+    @ValueSource(ints = {FailureLog.MARKED_DEPTHS, FailureLog.MARKED_DEPTHS + 1})
     @DisplayName("#1019: a failure a run that had ended only reported isn't below a later sibling past the bound")
     void onlyReportedPastTheBound(int depth) {
         ReportedFailure reported;
-        LoggedFailures.enter();
+        FailureLog.enter();
         for (int i = 2; i < depth; i++) {
-            LoggedFailures.enter();
+            FailureLog.enter();
         }
         try {
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                LoggedFailures.enter();
+                FailureLog.enter();
                 try {
-                    reported = NestedFailures.report("reported by a nested run", null);
+                    reported = CauseChains.report("reported by a nested run", null);
                 } finally {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            LoggedFailures.enter();
+            FailureLog.enter();
             try {
-                assertFalse(LoggedFailures.loggedBelow(reported), "a later sibling: a run's failure");
+                assertFalse(FailureLog.loggedBelow(reported), "a later sibling: a run's failure");
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         } finally {
             for (int i = 1; i < depth; i++) {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
         }
     }
@@ -1010,31 +1010,31 @@ class LoggedFailuresTest {
     @Test
     @DisplayName("#1019: a load() nested exactly as deep as a long has bits for counts as a run")
     void loadAtTheBoundCountsAsRun() {
-        InternalError fatal = new InternalError("by a load " + LoggedFailures.MARKED_DEPTHS + " deep");
-        LoggedFailures.enter();
-        for (int i = 2; i < LoggedFailures.MARKED_DEPTHS; i++) {
-            LoggedFailures.enter();
+        InternalError fatal = new InternalError("by a load " + FailureLog.MARKED_DEPTHS + " deep");
+        FailureLog.enter();
+        for (int i = 2; i < FailureLog.MARKED_DEPTHS; i++) {
+            FailureLog.enter();
         }
         try {
-            LoggedFailures.enterLoad();
+            FailureLog.enterLoad();
             try {
-                assertTrue(LoggedFailures.unloggedFatal(fatal));
+                assertTrue(FailureLog.unloggedFatal(fatal));
             } finally {
-                LoggedFailures.leave();
+                FailureLog.leave();
             }
-            assertEquals(LoggedFailures.LoggedAt.NESTED_RUN, LoggedFailures.loggedAt(fatal));
+            assertEquals(FailureLog.LoggedAt.NESTED_RUN, FailureLog.loggedAt(fatal));
         } finally {
-            for (int i = 1; i < LoggedFailures.MARKED_DEPTHS; i++) {
-                LoggedFailures.leave();
+            for (int i = 1; i < FailureLog.MARKED_DEPTHS; i++) {
+                FailureLog.leave();
             }
         }
     }
 
     private static void assertBelow(boolean below, InternalError fatal, IllegalArgumentException rejection,
                                     ReportedFailure reported, String where) {
-        assertEquals(below ? LoggedFailures.LoggedAt.NESTED_RUN : LoggedFailures.LoggedAt.NOT_BELOW,
-                LoggedFailures.loggedAt(fatal), where + ": a fatal Error");
-        assertEquals(below, LoggedFailures.loggedBelow(LoggedFailures.find(rejection)), where + ": rejected facts");
-        assertEquals(below, LoggedFailures.loggedBelow(reported), where + ": a run's failure");
+        assertEquals(below ? FailureLog.LoggedAt.NESTED_RUN : FailureLog.LoggedAt.NOT_BELOW,
+                FailureLog.loggedAt(fatal), where + ": a fatal Error");
+        assertEquals(below, FailureLog.loggedBelow(FailureLog.find(rejection)), where + ": rejected facts");
+        assertEquals(below, FailureLog.loggedBelow(reported), where + ": a run's failure");
     }
 }

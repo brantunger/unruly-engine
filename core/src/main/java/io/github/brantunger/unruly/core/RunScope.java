@@ -49,7 +49,7 @@ final class RunScope {
     // The most closing inits one thread can have running at once on one scope: what holds counts up to.
     static final char MAX_HOLDS = Character.MAX_VALUE;
     // What closing holds once end() has handed the values back, so the run having ended takes no field of its own.
-    // RunClasses initializes it with the engine's other classes, as runs use it.
+    // FirstUseClasses initializes it with the engine's other classes, as runs use it.
     @SuppressWarnings("PMD.LooseCoupling")
     private static final ClosingValues ENDED = new ClosingValues();
 
@@ -130,7 +130,7 @@ final class RunScope {
      * returned {@code null}, makes its own. If {@code init} ends the scope
      * and returns a value, nothing is kept under {@code key}: the value is closed, and refused as one asked for after
      * the scope ended is. What its {@code close()} throws is suppressed on the {@link IllegalStateException}, unless
-     * that is or carries a fatal {@link Error} (see {@link Failures#fatalFirst}), which is thrown in its place,
+     * that is or carries a fatal {@link Error} (see {@link FailurePolicy#fatalFirst}), which is thrown in its place,
      * carrying the {@link IllegalStateException}. The wait is uninterruptible: an interrupt meanwhile is set again once
      * it ends.
      *
@@ -184,7 +184,7 @@ final class RunScope {
                         }
                         if (turn || !closes) {
                             if (values == null) {
-                                Faults.reached(Faults.Step.RUN_SCOPE_MAP_MAKING);
+                                FaultInjection.reached(FaultInjection.Step.RUN_SCOPE_MAP_MAKING);
                                 values = new HashMap<>();
                             }
                             Slot found = values.get(key);
@@ -297,7 +297,7 @@ final class RunScope {
         }
         IllegalStateException refused;
         try {
-            Faults.at(Faults.Step.RUN_VALUE_REFUSING);
+            FaultInjection.at(FaultInjection.Step.RUN_VALUE_REFUSING);
             refused = endedFailure(method, key);
         } catch (Throwable t) {
             // Only the instanceof checks of Causes.isFatal, which allocates nothing, so they can't fail as building
@@ -310,7 +310,7 @@ final class RunScope {
         if (closing != null) {
             // The refusal, carrying closing, or the fatal Error in it, carrying the refusal but not closing, which is
             // or reaches it.
-            Throwable thrown = Failures.fatalFirst(refused, closing);
+            Throwable thrown = FailurePolicy.fatalFirst(refused, closing);
             if (thrown instanceof Error fatal) {
                 throw fatal;
             }
@@ -350,12 +350,12 @@ final class RunScope {
                         break;
                     }
                 }
-                Faults.at(Faults.Step.RUN_SCOPE_END_WAITING);
+                FaultInjection.at(FaultInjection.Step.RUN_SCOPE_END_WAITING);
                 interrupted |= pause();
             }
         } finally {
             if (interrupted) {
-                Faults.at(Faults.Step.RUN_SCOPE_END_INTERRUPTING);
+                FaultInjection.at(FaultInjection.Step.RUN_SCOPE_END_INTERRUPTING);
                 me.interrupt();
             }
         }
@@ -373,7 +373,7 @@ final class RunScope {
         ClosingValues handedBack;
         synchronized (this) {
             handedBack = closing;
-            Faults.reached(Faults.Step.RUN_SCOPE_VALUES_TAKING);
+            FaultInjection.reached(FaultInjection.Step.RUN_SCOPE_VALUES_TAKING);
             closing = ENDED;
         }
         return handedBack == null || handedBack == ENDED ? List.of() : handedBack;

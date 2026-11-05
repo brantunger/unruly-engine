@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * #1260: a language, a rule or the application may call {@link Throwables}, {@link ImportLimits} and
  * {@link MessageText} before any engine is built, as in a {@code catch} after a failure, deep in a stack. A class the
  * first call initializes there could overflow its static initializer, and then fail for the life of the JVM, every
- * later engine build with it: {@code Failures}' logger started SLF4J, and on JDK 21 a count of an import's parts in
- * a {@code long} initialized {@code java.lang.Long}, as did the {@code String.startsWith} that {@code Lookups} told
+ * later engine build with it: {@code FailurePolicy}'s logger started SLF4J, and on JDK 21 a count of an import's parts
+ * in a {@code long} initialized {@code java.lang.Long}, as did the {@code String.startsWith} that {@code Lookups} told
  * the JVM's "wrong name" error with, when it didn't match. Overflowing at every depth finds that only on some JDKs and
  * stacks, so this runs {@link FacadeFirstUseScenario} in a new JVM, before any engine is built, and reads the
  * {@code Initializing '...'} lines {@code -Xlog:class+init} prints between its markers: no class with a static
@@ -78,11 +78,11 @@ class FacadeFirstUseInitializationTest {
 
     // The facades, and the engine's classes behind them, none with a static initializer, which the calls must
     // initialize: so the test can't pass by reading the wrong lines, nor because something before the calls had
-    // initialized them already. Failures and FactNames aren't public, or aren't reachable from here, and Whitespace,
-    // Sorting and CharacterTables aren't on a release before their fixes, or aren't public, so they are named by
-    // their names (#1292, #1298, #1366).
+    // initialized them already. FailurePolicy and FactNames aren't public, or aren't reachable from here, and
+    // Whitespace, Sorting and CharacterTables aren't on a release before their fixes, or aren't public, so they are
+    // named by their names (#1292, #1298, #1366).
     private static final List<String> FIRST_USED = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
-            MessageText.class.getName(), "io.github.brantunger.unruly.core.Failures", Lookups.class.getName(),
+            MessageText.class.getName(), "io.github.brantunger.unruly.core.FailurePolicy", Lookups.class.getName(),
             ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
             Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
             "io.github.brantunger.unruly.core.FactNames", LanguageNames.class.getName(),

@@ -42,8 +42,8 @@ class FirstRunRoomTest {
     private static final String CLOSE_FAILED = "the run's value failed to close";
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     @Test
@@ -63,7 +63,7 @@ class FirstRunRoomTest {
         assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "before the language's first run");
         StackOverflowError overflow = new StackOverflowError();
         // The check overflowing, as it does deep in a stack: the run throws it as it is.
-        Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, overflow);
+        FaultInjection.inject(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING, 1, overflow);
         assertSame(overflow, assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
         assertEquals(List.of(), runsStarted, "runs a listener was told of");
         assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "after a run the check refused");
@@ -75,7 +75,7 @@ class FirstRunRoomTest {
 
         assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "after it");
         // Not reached any more: the run doesn't throw.
-        Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertEquals(Map.of(), engine.run(new FactMap<>()));
         CoreRulesEngine<Map<String, Object>> other = engine(new FirstLanguage());
         other.load(List.of(rule("s", "yes", "done")));
@@ -100,7 +100,7 @@ class FirstRunRoomTest {
         engine.load(List.of(rule("first", "yes", "done"),
                 rule("other", "no", "done").toBuilder().language(NotRunLanguage.NAME).build()));
         assertTrue(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list of both");
-        Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()), "a run of a rule list of both");
 
         engine.run(new FactMap<>());
@@ -227,7 +227,7 @@ class FirstRunRoomTest {
     void validateDoesntCount() {
         CoreRulesEngine<Map<String, Object>> engine = engine(new ValidatedLanguage());
         // Not reached: validate() checks no more room for a language's first run.
-        Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
         assertEquals(List.of(), engine.validate(List.of(rule("r", "yes", "done"))));
 
         engine.load(List.of(rule("r", "yes", "done")));
@@ -240,7 +240,7 @@ class FirstRunRoomTest {
         CoreRulesEngine<Map<String, Object>> engine = engine(new EmptyListLanguage());
         engine.load(List.of());
         assertFalse(engine.currentRules().loaded().languagesRan().needsRoom(), "a rule list without rules");
-        Faults.inject(Faults.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING, 1, new StackOverflowError());
 
         assertNull(engine.run(new FactMap<>()));
 

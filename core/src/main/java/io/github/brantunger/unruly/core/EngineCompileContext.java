@@ -305,8 +305,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         Objects.requireNonNull(source, "source must not be null");
         Objects.requireNonNull(issue, "issue must not be null");
         if (warningsLogged) {
-            Failures.logWarn(Warnings.LOG, "{} has a warning{}: {}",
-                    Failures.expression(source.kind(), source.ruleName()), Failures.position(issue),
+            FailurePolicy.logWarn(Warnings.LOG, "{} has a warning{}: {}",
+                    FailurePolicy.expression(source.kind(), source.ruleName()), FailurePolicy.position(issue),
                     Text.clip(issue.message()));
         }
     }
@@ -315,7 +315,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * The logger warnings go to, in a class of its own so that this one has no static initializer: the builder checks
      * each declared fact with {@link #checkDeclaration(String, Class)}, maybe deep in a stack, before the engine has
      * made room for initializing classes, and creating the logger may start SLF4J. The engine initializes it when it's
-     * built (see RunClasses).
+     * built (see FirstUseClasses).
      */
     static final class Warnings {
 

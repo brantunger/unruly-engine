@@ -55,7 +55,7 @@ final class SlowNotStartedScenario {
         CancelTimer.Registration keeper = CancelTimer.registration(() -> {
         }, Deadline.from(Duration.ofHours(1)));
         CancelTimer.schedule(keeper);
-        Faults.inject(CancelTimer.runningThread(), Faults.Step.CANCEL_ACTION_STARTING, 1,
+        FaultInjection.inject(CancelTimer.runningThread(), FaultInjection.Step.CANCEL_ACTION_STARTING, 1,
                 new OutOfMemoryError("unable to create native thread"));
         CancelTimer.schedule(CancelTimer.registration(() -> {
             ran.set(true);

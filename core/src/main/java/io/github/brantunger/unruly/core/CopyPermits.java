@@ -156,7 +156,7 @@ final class CopyPermits {
     void giveBack() {
         givenBack.incrementAndGet();
         semaphore.release();
-        Faults.at(Faults.Step.PERMIT_RELEASED);
+        FaultInjection.at(FaultInjection.Step.PERMIT_RELEASED);
     }
 
     /**
@@ -223,7 +223,7 @@ final class CopyPermits {
     void giveBackSlot() {
         slotsGivenBack.incrementAndGet();
         slots.release();
-        Faults.at(Faults.Step.SLOT_RELEASED);
+        FaultInjection.at(FaultInjection.Step.SLOT_RELEASED);
     }
 
     /**
@@ -232,7 +232,7 @@ final class CopyPermits {
      * which makes a class and takes more stack than the engine's checks make room for, and only a run that has to wait
      * for a permit, or looks for a build slot, runs these, so the JVM's first such run, maybe deep in a stack, could
      * overflow there, and the run would throw a {@link StackOverflowError} in place of waiting or taking a slot
-     * (#1097). Loaded when the JVM's first engine is built (see RunClasses).
+     * (#1097). Loaded when the JVM's first engine is built (see FirstUseClasses).
      */
     static final class Returned implements LongSupplier {
 

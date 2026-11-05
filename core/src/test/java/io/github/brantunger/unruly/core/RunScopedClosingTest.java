@@ -111,8 +111,8 @@ class RunScopedClosingTest {
     };
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     /**
@@ -440,7 +440,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("b", () -> new Value("b"));
             self.get().load(RULES);
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             // The values were taken before the step failed, so none can be made, and they're closed all the same.
@@ -462,7 +462,7 @@ class RunScopedClosingTest {
             self.get().load(RULES);
             throw new IllegalStateException("the rule failed");
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(1, injected.getSuppressed().length, () -> Arrays.toString(injected.getSuppressed()));
@@ -480,7 +480,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("key", () -> new Value("value"));
             throw fatal;
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Arrays.asList(fatal.getSuppressed()).contains(injected),
@@ -501,7 +501,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("key", () -> new Value("value"));
             throw new IllegalStateException("the rule failed");
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
             Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
             assertSame(fatal, outcome.thrown(), outcome.logs());
@@ -528,7 +528,7 @@ class RunScopedClosingTest {
         try (RulesEngine<Map<String, Object>> engine = engine(context -> {
             throw new IllegalStateException("the rule failed");
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Thread.interrupted(), "the interrupt the replaced failure carried was lost");
@@ -544,7 +544,7 @@ class RunScopedClosingTest {
         injected.initCause(fatal);
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("key", () -> new Value("value")))) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, injected);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "value closed"), events);
@@ -563,7 +563,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("c", () -> new Value("c", cFailure));
         })) {
             // c is closed first, so logging its failure is what fails.
-            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
 
             Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
@@ -584,7 +584,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("a", () -> new Value("a"));
             context.runScopedClosing("b", () -> new Value("b", fatal));
         })) {
-            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertArrayEquals(new Throwable[] {logging}, fatal.getSuppressed());
@@ -603,7 +603,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("c", () -> new Value("c", new IllegalStateException("c failed to close")));
         })) {
             // c is closed first: logging its failure fails, and so does keeping what that threw.
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, handling);
 
             Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
@@ -624,7 +624,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("c", () -> new Value("c", new IllegalStateException("c failed to close")));
         })) {
             // Logging, and keeping what that threw, fails for both c and b.
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
 
             Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
@@ -648,7 +648,7 @@ class RunScopedClosingTest {
         })) {
             // c is closed first: logging, and keeping what that threw, fails for both c and b, so each fatal error is
             // held by assignment alone, and the last held wins (see Closing.runValues).
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
 
             assertSame(last, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertArrayEquals(new Throwable[] {handling}, last.getSuppressed());
@@ -668,7 +668,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("c", () -> new Value("c", first));
         })) {
             // Logging c's failure, the first, fails; b's is logged.
-            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, new StackOverflowError("logging"));
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, new StackOverflowError("logging"));
 
             assertSame(first, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Arrays.asList(first.getSuppressed()).contains(later),
@@ -685,7 +685,7 @@ class RunScopedClosingTest {
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("key", () -> new Value("value",
                         new IllegalStateException("interrupted while closing", new InterruptedException()))))) {
-            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
 
             assertSame(logging, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Thread.interrupted(), "the interrupt that made close() fail was lost");
@@ -701,7 +701,7 @@ class RunScopedClosingTest {
         failure.addSuppressed(new InterruptedException("close interrupted"));
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("key", () -> new Value("value", failure)))) {
-            Faults.inject(Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, logging);
 
             assertSame(logging, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Thread.interrupted(), "the interrupt suppressed in what close() threw was lost");
@@ -736,7 +736,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("a", () -> new Value("a"));
             self.get().load(RULES);
         })) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSED, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSED, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed", "session closed"), events);
@@ -752,7 +752,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("a", () -> new Value("a"));
             self.get().load(RULES);
         })) {
-            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_ENDING_COMBINED, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed", "session closed"), events);
@@ -767,7 +767,7 @@ class RunScopedClosingTest {
         injected.initCause(new OutOfMemoryError("inside what combining threw"));
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a")))) {
-            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_ENDING_COMBINED, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed"), events);
@@ -784,7 +784,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("a", () -> new Value("a"));
             context.runScopedClosing("b", () -> new Value("b", fatal));
         })) {
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, handling);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "b closed", "a closed"), events);
@@ -803,7 +803,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("d", () -> new Value("d", new IllegalStateException("d failed to close")));
         })) {
             // Logging, and keeping what that threw, fails for every value.
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 8, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 8, handling);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "d closed", "c closed", "b closed", "a closed"), events);
@@ -818,7 +818,7 @@ class RunScopedClosingTest {
         StackOverflowError injected = new StackOverflowError("injected");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a", fatal)))) {
-            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_ENDING_COMBINED, 1, injected);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed"), events);
@@ -833,8 +833,8 @@ class RunScopedClosingTest {
         StackOverflowError combining = new StackOverflowError("combining");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a")))) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, taking);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, taking);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, combining);
 
             assertSame(taking, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed"), events);
@@ -849,7 +849,7 @@ class RunScopedClosingTest {
         StackOverflowError injected = new StackOverflowError("injected");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a", overflow)))) {
-            Faults.inject(Faults.Step.RUN_ENDING_COMBINED, 1, injected);
+            FaultInjection.inject(FaultInjection.Step.RUN_ENDING_COMBINED, 1, injected);
 
             assertSame(injected, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed"), events);
@@ -864,15 +864,15 @@ class RunScopedClosingTest {
         StackOverflowError combining = new StackOverflowError("combining");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a")))) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, taking);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, taking);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, combining);
 
             assertSame(combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertEquals(List.of("afterRun", "a closed"), events);
 
             InternalError fatal = new InternalError("taking failed");
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, fatal);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, new StackOverflowError("combining"));
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, fatal);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, new StackOverflowError("combining"));
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())),
                     "an InternalError with no overflow is still fatal");
         }
@@ -887,13 +887,13 @@ class RunScopedClosingTest {
         StackOverflowError combining = new StackOverflowError("combining");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a", new IllegalStateException("a"))))) {
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, overflow);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, overflow);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, combining);
             assertSame(combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
 
-            Faults.clear();
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, fatal);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            FaultInjection.clear();
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 2, fatal);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, combining);
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
         }
     }
@@ -909,12 +909,12 @@ class RunScopedClosingTest {
             context.runScopedClosing("b", () -> new Value("b", new IllegalStateException("b failed to close")));
         })) {
             // Logging, and keeping what that threw, fails for every value.
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
 
             Throwable thrown = EngineLogs.thrownBy(() -> engine.run(new FactMap<>()));
 
             assertNotSame(overflow, thrown);
-            assertNull(Failures.fatalError(thrown), thrown::toString);
+            assertNull(FailurePolicy.fatalError(thrown), thrown::toString);
             // What close() threw first, b's, is the one held, not replaced by a's as a fatal error would be.
             assertTrue(Arrays.stream(thrown.getSuppressed()).anyMatch(e -> "b failed to close".equals(e.getMessage())),
                     () -> Arrays.toString(thrown.getSuppressed()));
@@ -925,7 +925,7 @@ class RunScopedClosingTest {
             context.runScopedClosing("a", () -> new Value("a", fatal));
             context.runScopedClosing("b", () -> new Value("b", new IllegalStateException("b failed to close")));
         })) {
-            Faults.inject(Thread.currentThread(), Faults.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
+            FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.RUN_VALUE_FAILURE_LOGGED, 1, 4, handling);
 
             assertSame(fatal, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())),
                     "an InternalError with no overflow is still the fatal error kept");
@@ -941,10 +941,10 @@ class RunScopedClosingTest {
         AssertionError plain = new AssertionError("taking failed");
         try (RulesEngine<Map<String, Object>> engine = engine(
                 context -> context.runScopedClosing("a", () -> new Value("a", closing)))) {
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, taking);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, taking);
             assertSame(taking, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
 
-            Faults.inject(Faults.Step.RUN_VALUES_CLOSING, 1, plain);
+            FaultInjection.inject(FaultInjection.Step.RUN_VALUES_CLOSING, 1, plain);
             assertSame(closing, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
             assertTrue(Arrays.asList(closing.getSuppressed()).contains(plain),
                     () -> Arrays.toString(closing.getSuppressed()));

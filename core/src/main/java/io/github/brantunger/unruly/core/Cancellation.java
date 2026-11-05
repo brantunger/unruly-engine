@@ -101,7 +101,7 @@ final class Cancellation {
      */
     static void enter(Deadline deadline) {
         restore(deadline);
-        Faults.at(Faults.Step.DEADLINE_SET);
+        FaultInjection.at(FaultInjection.Step.DEADLINE_SET);
     }
 
     /**
@@ -112,7 +112,7 @@ final class Cancellation {
      */
     static void leave(Deadline outer) {
         restore(outer);
-        Faults.at(Faults.Step.DEADLINE_PUT_BACK);
+        FaultInjection.at(FaultInjection.Step.DEADLINE_PUT_BACK);
     }
 
     private static void restore(Deadline deadline) {
