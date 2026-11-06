@@ -6,14 +6,14 @@
 # page or raise a number: split the page. To lower the numbers, run python docs/scripts/check_style.py
 # --write-baseline, which rewrites the list with every git-tracked page except CHANGELOG.md that is over 2,500, at
 # its current count; then check that the diff only lowers numbers or removes lines.
-CONTRIBUTING.md 2731
+CONTRIBUTING.md 2728
 RELEASING.md 2644
 docs/compiled-copies.md 2650
-docs/contributing/build-and-gates.md 2616
+docs/contributing/build-and-gates.md 2615
 docs/engines-and-runs.md 3560
 docs/glossary.md 2671
 docs/languages/custom.md 4758
 docs/languages/mvel.md 3258
 docs/listeners-and-logging.md 3327
 docs/migrating-to-2.md 5402
-docs/troubleshooting.md 2505
+docs/troubleshooting.md 2504

@@ -19,11 +19,11 @@ taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 | If you | Do this |
 | --- | --- |
-| 🐛 **Found a bug?** | [Search the issues](https://github.com/brantunger/unruly-engine/issues) to see if it's known, then [open a bug report](https://github.com/brantunger/unruly-engine/issues/new/choose). |
-| ✨ **Have an idea?** | [Open a feature request](https://github.com/brantunger/unruly-engine/issues/new/choose) describing your use case. |
+| 🐛 **Found a bug?** | [Search the issues](https://github.com/brantunger/unruly-engine/issues) for it, then [open a bug report](https://github.com/brantunger/unruly-engine/issues/new/choose). |
+| ✨ **Have an idea?** | [Open a feature request](https://github.com/brantunger/unruly-engine/issues/new/choose) with your use case. |
 | 🔒 **Found a vulnerability?** | Don't open an issue. Follow [SECURITY.md](SECURITY.md). |
 | 🩹 **Spotted a doc problem?** | Fixes to the README, `docs/` and Javadoc are as welcome as code. |
-| 🙋 **Want something to work on?** | Look for issues labelled [good first issue][good-first-issue] or [help wanted][help-wanted], and comment on one to claim it. |
+| 🙋 **Want something to work on?** | Pick an issue labelled [good first issue][good-first-issue] or [help wanted][help-wanted], and comment to claim it. |
 
 [good-first-issue]:
   https://github.com/brantunger/unruly-engine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22
@@ -31,7 +31,7 @@ taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## 🚀 Your first pull request
 
-The whole path, from an issue to a release:
+The path from an issue to a release:
 
 ```mermaid
 flowchart TD
@@ -60,8 +60,7 @@ flowchart TD
 5. **Make the change** and its docs: [Documentation](#-documentation).
 6. **Run `./gradlew clean build`**: [When the gate fails](#-when-the-gate-fails).
 7. **Open a pull request** with a [Conventional title](#-commit-and-pr-titles), and fill in the template.
-8. **Wait for CI** and the title check; a maintainer then squash-merges the PR, and
-   [RELEASING.md](RELEASING.md) takes over.
+8. **Wait for CI** and the title check; a maintainer squash-merges, and [RELEASING.md](RELEASING.md) takes over.
 
 ## 💻 Development setup
 
@@ -69,7 +68,7 @@ You need **JDK 21, 21.0.8 or later,** installed: the build compiles with a Java 
 download, so a missing JDK fails the build naming the version. Only `-PtestJdk=N` needs JDK N.
 
 In an IDE, import the project as a Gradle build: the build scripts and `buildSrc`'s convention plugins are Kotlin
-DSL (`.gradle.kts`). IntelliJ IDEA then completes code in them; Eclipse and VS Code only highlight their syntax.
+DSL (`.gradle.kts`), which IntelliJ IDEA code-completes; Eclipse and VS Code only highlight.
 
 ```bash
 git clone https://github.com/<your-username>/unruly-engine.git
@@ -84,13 +83,14 @@ cd unruly-engine
 | The coverage report | `./gradlew jacocoTestReport` | `./gradlew jacocoTestReport` | `gradlew jacocoTestReport` |
 | The tests on JDK 26 | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` | `./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` | `gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26` |
 
-`:core:test`, `:mvel:test` and `:test-kit:test` are separate tasks, so `--tests` has to name a class the project
-holds, or Gradle reports `No tests found for given includes`. [Where things live](#-where-things-live) says which
-project a test belongs to; an unqualified `./gradlew test` runs all three, and the benchmarks' workload test with them.
+`:core:test`, `:mvel:test` and `:test-kit:test` are separate tasks, so `--tests` must name a class of the project
+named, or Gradle reports `No tests found for given includes`;
+[Where things live](#-where-things-live) says which project holds a test. An unqualified `./gradlew test` runs all
+three, and the benchmarks' workload test.
 
 > [!WARNING]
-> In cmd.exe, single quotes aren't quotes: `--tests '*Foo*'` passes them to Gradle, which then reports
-> `No tests found for given includes`. Use double quotes there. PowerShell and bash accept either.
+> In cmd.exe, single quotes aren't quotes: `--tests '*Foo*'` passes them to Gradle, which reports
+> `No tests found for given includes`; use double quotes there. PowerShell and bash accept either.
 
 ## 📌 Where things live
 
@@ -105,15 +105,15 @@ project a test belongs to; an unqualified `./gradlew test` runs all three, and t
 
 Shared settings are in `buildSrc`'s convention plugins (`src/main/kotlin`) and classes (`src/main/java`). The
 `core` package is internal: its module exports it only to the test kit's module, and a class in it is public only
-where the builder or the test kit needs it. The constructors the test kit calls are the exception: an older kit
-may run on a newer `core`, so the build checks them against the latest release; see
+where the builder or the test kit needs it. Because an older kit may run on a newer `core`, the build checks the
+constructors the kit calls against the latest release; see
 [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core).
 
-Where does my test go? The line between `core/src/test` and `mvel/src/test` is whether the test needs MVEL, and
-`test-kit/src/test` holds the tests that use the test kit but not MVEL.
+A test goes in `mvel/src/test` if it needs MVEL, in `test-kit/src/test` if it uses the test kit without MVEL,
+otherwise in `core/src/test`.
 
 A test in `core` or `test-kit` that runs a rule names a language of its own:
-`core/src/testFixtures` has `ToyExpressionLanguage`, which evaluates a tiny syntax, and `StubExpressionLanguage`,
+`core/src/testFixtures` has `ToyExpressionLanguage`, with a tiny syntax, and `StubExpressionLanguage`,
 whose rules always match and whose actions are Java. An engine built with no language throws `The engine has no
 expression language`. The paths below are relative to `java/io/github/brantunger/unruly/` in the source set named.
 
@@ -127,12 +127,12 @@ expression language`. The paths below are relative to `java/io/github/brantunger
 | The test kit | `test-kit/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test's checks | These tests use `core`'s toy and stub languages, never MVEL, and a case that needs MVEL stays in `mvel/src/test`, as `mvel/LanguageTestContextsMvelTest` does. They can't go in `core`, because `test-kit` depends on `core` |
 | What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` in `mvel/src/test`, and for a toy language through `api/language/ToyExpressionLanguageContractTest` in `test-kit/src/test` |
 | A helper more than one source set needs | `core/src/testFixtures`, the same package | `core`'s tests see it, and `mvel` and `test-kit` get it with `testImplementation(testFixtures(project(":core")))`, so it can't drift into copies |
-| Module-path behaviour | A sample application under `mvel/src/test/resources/module-path/` | `ModulePathTest` compiles each one against the built jars and runs it in a new JVM |
+| Module-path behaviour | A sample application under `mvel/src/test/resources/module-path/` | `ModulePathTest` compiles each against the built jars and runs it in a new JVM |
 
 ## 🧪 Prove your test fails first
 
-A test that passes on `main` proves nothing about your fix, so run it there before you make the change. A worktree
-keeps your branch untouched:
+A test that passes on `main` proves nothing about your fix, so run it there first, in a worktree that keeps your
+branch untouched:
 
 ```bash
 git fetch origin
@@ -143,12 +143,12 @@ cp mvel/src/test/java/io/github/brantunger/unruly/core/NullPriorityTest.java \
 git worktree remove --force ../unruly-main
 ```
 
-A test in `core/src/test` or `test-kit/src/test` is copied to the same path under its own project instead, and run
-with `:core:test` or `:test-kit:test`.
+A test in `core/src/test` or `test-kit/src/test` is copied to the same path under its own project, and run with
+`:core:test` or `:test-kit:test`.
 
-Expect `FAILED`, and name the failing assertion in the PR description. A test that uses API your PR adds fails to
-compile on `main` instead; say so in the PR. On Windows, delete the worktree's `build` and `.gradle` directories
-first, then remove it with `git -c core.longpaths=true worktree remove --force ../unruly-main`.
+Expect `FAILED`, and name the failing assertion in the PR description; a test that uses API your PR adds fails to
+compile on `main` instead, so say that. On Windows, delete the worktree's `build` and `.gradle` directories, then
+remove it with `git -c core.longpaths=true worktree remove --force ../unruly-main`.
 
 ## ✅ Run the gate locally
 
@@ -166,13 +166,15 @@ first, then remove it with `git -c core.longpaths=true worktree remove --force .
 | 🔏 **Dependency verification** | Every dependency and plugin the build downloads has a trusted PGP signature, or otherwise matches its checksum | `gradle/verification-metadata.xml`, `gradle/verification-keyring.keys`; see [Dependency verification](docs/contributing/dependency-verification.md) |
 | 🧱 **Design rules** | Package dependencies, the API's shape, sealed contexts, nullness annotations, which NullAway enforces, engine visibility, class-file version, the test kit's links into `core` | The structural tests and NullAway, in [Build and gates](docs/contributing/build-and-gates.md#-what-build-runs) |
 
-Three things to know about the gate:
+About the gate:
 
-- Skipping the tests with `-x test` fails the coverage gate on purpose: it would have nothing to measure. Run
-  `./gradlew build -x check` to only compile and package.
-- Coverage excludes one class: the test kit's `ExpressionLanguageContractTest`, a test class whose always-throwing
-  lambdas leave instructions JaCoCo can't reach.
-- A Gradle deprecation fails every build (`org.gradle.warning.mode=fail` in `gradle.properties`).
+- `-x test` fails the coverage gate on purpose: it would have nothing to measure; `./gradlew build -x check` only
+  compiles and packages.
+- Coverage excludes one class, the test kit's `ExpressionLanguageContractTest`, whose always-throwing lambdas leave
+  instructions JaCoCo can't reach.
+- A Gradle deprecation fails the build (`org.gradle.warning.mode=fail` in `gradle.properties`): every build in CI
+  and the release, but a build-script one locally only the build that configures, as the configuration cache entry
+  is stored anyway and a rerun of the same tasks reuses it; use `--no-configuration-cache` to see it again.
 
 > [!IMPORTANT]
 > A line over 120 columns in a main, test or test-fixtures source fails Checkstyle; only `package` and `import` lines
@@ -182,8 +184,8 @@ On every pull request and push to `main` or `develop`, CI runs `./gradlew build 
 Linux, Windows and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check;
 [docs-only and release pull requests](docs/contributing/build-and-gates.md#-ci) run less. It also checks PR titles,
 broken links, CRLF line endings and the workflows, and warns about the changed pages' style. A merge needs the
-`ci-result` and `pr-title` checks green: the `main-require-green-ci` ruleset requires them. The reports, caches and
-artifacts are described in [Build and gates](docs/contributing/build-and-gates.md).
+`ci-result` and `pr-title` checks green, as the `main-require-green-ci` ruleset requires.
+[Build and gates](docs/contributing/build-and-gates.md) describes the reports, caches and artifacts.
 
 ## 🩺 When the gate fails
 
@@ -206,8 +208,8 @@ artifacts are described in [Build and gates](docs/contributing/build-and-gates.m
 | A result you don't believe | — | Add `--rerun`, or `--no-build-cache --no-configuration-cache`, to rebuild from scratch |
 
 > [!TIP]
-> Coverage is the gate that most often fails. When it does, `./gradlew jacocoTestReport` and the HTML report show
-> the uncovered lines and branches in every artifact at once.
+> Coverage fails most often; `./gradlew jacocoTestReport` and its HTML report show the uncovered lines and branches
+> in every artifact at once.
 
 ## 🎯 Design principles
 
@@ -218,15 +220,15 @@ artifacts are described in [Build and gates](docs/contributing/build-and-gates.m
 
 - **Any language, not just MVEL.** Code, Javadoc and messages in `unruly-engine-core` must not assume MVEL. What is
   only true of MVEL goes in the `mvel` package and [docs/languages/mvel.md](docs/languages/mvel.md).
-- **Framework-neutral.** Prefer a plain hook every framework can call over an integration with one framework.
-  Propose an integration in an issue before building it.
+- **Framework-neutral.** Prefer a plain hook every framework can call over an integration with one; propose an
+  integration in an issue before building it.
 - **Breaking changes are visible.** The callout above says what each one needs;
-  [API compatibility](docs/contributing/api-compatibility.md) says how the check decides what is a break.
+  [API compatibility](docs/contributing/api-compatibility.md) says how the check decides what breaks.
 
 ## 📝 Commit and PR titles
 
-PRs are squash-merged using **the PR title as the commit message**, and that message is the only input to the
-release automation. Titles must follow [Conventional Commits](https://www.conventionalcommits.org/):
+PRs are squash-merged with **the PR title as the commit message**, the only input to the release automation. Titles
+follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```text
 <type>: <lowercase description with no trailing period>
@@ -242,25 +244,23 @@ The type decides the next version:
 | `deps: bump mvel2 to 2.5.4` | No release, and not listed in the changelog |
 | `docs: clarify first-match semantics` | No release, and not listed in the changelog |
 
-The other accepted types are `perf`, `refactor`, `test`, `build`, `ci`, `chore` and `revert`. Like `deps` and
-`docs`, none of them cuts a release or appears in the changelog; their changes ship with the next `feat:` or
-`fix:` release. Only `feat` and `fix` may carry the breaking-change `!`: release-please would read `deps!:` or
-`chore!:` as a major release too, so the title check rejects it. A malformed title fails the title check, so it's
-caught before it can silently skip a release.
+The other accepted types, `perf`, `refactor`, `test`, `build`, `ci`, `chore` and `revert`, cut no release and don't
+appear in the changelog either; their changes ship with the next `feat:` or `fix:` release. Only `feat` and `fix`
+may carry the breaking-change `!`: release-please would read `deps!:` as a major release too, so the title check
+rejects it. A malformed title fails the check too, so it's caught before it can silently skip a release.
 
 ## 📚 Documentation
 
 - The **README** is the landing page: features, installation, quick start and core concepts.
 - The **guides** in [`docs/`](docs/README.md) hold the details.
 - The **Javadoc** in each jar project's `src/main/java` is published to
-  [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all the
-  modules. `./gradlew clean build` generates it too, and fails on any warning.
+  [GitHub Pages](https://brantunger.github.io/unruly-engine/latest/) on each release, as one site for all modules;
+  `./gradlew clean build` generates it too and fails on any warning.
 
-When writing docs, follow the [docs style guide](docs/contributing/style.md): the page template, emojis, callouts,
-diagrams, examples and a checklist to run before you open a pull request. Its
-[Javadoc](docs/contributing/style.md#-javadoc) section lists the Javadoc rules:
+Docs follow the [docs style guide](docs/contributing/style.md): the page template, emojis, callouts, diagrams,
+examples and a pre-PR checklist. Its [Javadoc](docs/contributing/style.md#-javadoc) section lists the Javadoc rules:
 
-- A class's Javadoc opens with one sentence of purpose, then, only where they apply and in this order: who
+- A class's Javadoc opens with one sentence of purpose, then, where they apply and in this order: who
   implements it, which threads call it, nullness beyond `@NullMarked`, and `@see` links to the guide that owns the
   topic.
 - `@throws` lists every exception the method throws, in the words of
@@ -272,6 +272,6 @@ diagrams, examples and a checklist to run before you open a pull request. Its
 
 ## 📄 License
 
-By contributing, you agree that your contributions are licensed under the
-[Apache License, Version 2.0](LICENSE), the license of 2.0.0 and later. Releases up to and including 1.8.0 were
-made under the GNU General Public License v3.0.
+By contributing, you agree your contributions are licensed under the
+[Apache License, Version 2.0](LICENSE), the license of 2.0.0 and later; releases through 1.8.0 were made under the
+GNU General Public License v3.0.

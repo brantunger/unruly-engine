@@ -27,8 +27,8 @@ while MVEL is the [default language](../glossary.md#default-language). Then, in 
 2. **MVEL checks the names its rules' text holds.** A fact whose name the text of the list's MVEL conditions and
    actions holds, as a name or in a word, must be one MVEL can read as that fact; see
    [Fact names MVEL rejects](#-fact-names-mvel-rejects). Any other fact isn't checked by MVEL; see
-   [Which fact names MVEL checks](#-which-fact-names-mvel-checks). A word too long to scan makes MVEL check every
-   fact ([When MVEL checks every fact](#when-mvel-checks-every-fact)).
+   [Which fact names MVEL checks](#-which-fact-names-mvel-checks), and a word too long to scan makes MVEL
+   [check every fact](#when-mvel-checks-every-fact).
 
 ```mermaid
 flowchart TD
@@ -54,11 +54,11 @@ flowchart TD
 ```
 
 A rejected fact fails `run()` with `IllegalArgumentException` before any condition runs. A
-[declared fact](../facts.md#-declaring-facts) is checked the same way when a rule list is compiled: `load()` throws a
+[declared fact](../facts.md#-declaring-facts) is checked the same way when a rule list compiles: `load()` throws a
 `RuleCompilationException` for it, and `validate()` returns one.
 
 When a rule of the list fails to compile, MVEL can't say what its rules read, so `load()` and `validate()` check
-every declared fact's name with it: their failures can include one such as
+every declared fact's name: their failures can include one such as
 `Declared fact 'empty' can't be used`.
 
 > [!NOTE]
@@ -73,15 +73,15 @@ every declared fact's name with it: their failures can include one such as
 These rules apply to a fact whose name the rule list's MVEL text holds. A declared fact that breaks them fails
 `load()` with `Declared fact 'Math' can't be used: ...`.
 
-A name must be a Java identifier. `my-fact` would read as `my - fact`, so it's rejected with the message below. So is
-`2nd` where a rule's text holds it, such as in a comment: code that reads it, such as `2nd == 1`, fails `load()` with
+A name must be a Java identifier: `my-fact` would read as `my - fact`, so it's rejected with the message below, as is
+`2nd` where a rule's text holds it, even a comment; code that reads it, such as `2nd == 1`, fails `load()` with
 `invalid number literal: 2nd`.
 
 ```text
 'my-fact' is not a valid fact name: rules can only refer to a fact named with a Java identifier
 ```
 
-MVEL reads these as something else first, so they're rejected too:
+MVEL reads these as something else, so they're rejected too:
 
 | Kind | Names |
 | --- | --- |
@@ -112,7 +112,7 @@ message, prefixed by `Declared fact '...' can't be used:`.
 > A fact named like a function an action defines, `bonus` with `def bonus(score) { ... }`, isn't rejected: every run
 > supplying it fails the action with `duplicate function: bonus`. Name them differently.
 
-**An inline import**, written in a condition's or action's own text, counts for that expression alone. MVEL reads the
+**An inline import**, in a condition's or action's own text, counts for that expression alone: MVEL reads the
 imported name there, never the fact, so the expression rejects a fact named like:
 
 - the class of `import acme.Bar;`: `Bar`;
@@ -125,8 +125,8 @@ imported name there, never the fact, so the expression rejects a fact named like
 
 The import's words hold the name, so the first two always reject the fact. A class of the package the
 expression doesn't use stays a fact name: with `import java.util.*; output.put('n', new ArrayList().size())` in one
-rule and `Date == 1` in another, a fact `Date` is accepted, and the second rule reads it. A field the expression
-doesn't read stays one too: with `import java.lang.Math.*; output.put('r', 'E')`, a fact `E` is accepted.
+rule and `Date == 1` in another, a fact `Date` is accepted and the second rule reads it. A field the expression
+doesn't read stays a fact name too: with `import java.lang.Math.*; output.put('r', 'E')`, a fact `E` is accepted.
 
 With [strong typing](mvel.md#-strong-typing), which makes declared facts inputs of every expression, a declared fact
 named like such a field fails `load()` wherever the importing expression's text holds its name, even in a comment or
@@ -134,8 +134,8 @@ string, and always once that text has a word [too long to scan](#when-mvel-check
 
 Where the importing expression names the class, method or field, the run rejects the fact for every rule. Such a
 fact was accepted up to 2.30.5, or up to 2.30.6 for a field or constant, and the importing expression never saw it.
-MVEL loads `acme.Bar` for its fields with its own class loader, not the `load()` thread's context class
-loader, so a class only the latter reaches brings in none, though the import still compiles.
+MVEL loads `acme.Bar` for its fields with its own class loader, not the `load()` thread's, so a class only the
+latter reaches brings in none, though the import still compiles.
 
 **Package roots** are per rule list: the first part of each class `load()` or `validate()` looks up as it compiles
 a rule. That's a class found through a package import (`acme` for `Order` with `imports("acme.orders")`), nested in an
@@ -154,7 +154,7 @@ import. The message says why, even for a class name:
 'java' cannot be used as a fact name: the rules use a class whose package starts with 'java', and MVEL would read the fact in the class's place
 ```
 
-**A class with no package**, one in the default package, has no package root, so its own name counts instead, per rule
+**A class with no package**, in the default package, has no package root, so its own name counts instead, per rule
 list. A fact `Foo` is rejected once `load()` or `validate()`, compiling a rule, looks up the class `Foo`, as for
 `Foo.LIMIT == 7` or `new Foo().v == 7`. A nested class `Foo$Inner` counts as `Foo`. Where no import names the class,
 the message names it:
@@ -165,8 +165,8 @@ the message names it:
 
 ## 🔍 Which fact names MVEL checks
 
-As `load()` or `validate()` compiles each condition and action, MVEL scans its text for the names a rule could read a
-fact by. Strings and comments are scanned too. The names are:
+As `load()` or `validate()` compiles each condition and action, MVEL scans its text, strings and comments included,
+for the names a rule could read a fact by:
 
 - each identifier, such as `applicant` and `creditScore` in `applicant.creditScore`;
 - each piece and each span of a word, as below;
@@ -203,8 +203,7 @@ part of an identifier, as `««` in `x^««b`, or MVEL may still read it whole:
 So `(,a) == 5` gives `,a` but not `(,a` or `,a)`. From 2.29.0 to 2.30.9, `x^««b` didn't give `««b`,
 nor `x-««b` from 2.29.16.
 
-MVEL checks only the facts named in that set. So, unless
-[MVEL checks every fact](#when-mvel-checks-every-fact):
+MVEL checks only the facts named in that set, so, unless [MVEL checks every fact](#when-mvel-checks-every-fact):
 
 - another language's rules in the same list can read a fact `in`, when no MVEL rule's text holds `in`;
 - a name with a space or a line break, such as `first name`, is never rejected by MVEL, as no piece, span or
@@ -216,7 +215,7 @@ MVEL checks only the facts named in that set. So, unless
 
 In a word with many characters that aren't part of an identifier and that a span may hold inside it, such as minus
 signs, dots, backslashes or no-break spaces, or with many `++`, `--` or assignments, or with several `isdef`s, the
-spans can grow as the square of the characters that aren't part of an identifier.
+spans can grow as the square of those characters.
 
 So the scan gives up on any word of more than 1,000 characters, or with more than 64 such characters, each one just
 after `isdef` counted twice: the most characters and dot-separated parts an import may have. A word at both limits
@@ -225,10 +224,14 @@ gives up to 2,209 names; one with 64 minus signs gives 2,145, scanned in about 0
 Once one condition or action gives up, MVEL can't tell which facts the rule list reads, so it checks every fact, as
 it did up to 2.28.0: each run's facts and each declared fact. A fact such as `in` or `Math`, which no MVEL rule names,
 is then rejected for that rule list, with each name its inline imports give. Such a word is most often a long string
-literal without spaces, such as Base64 data. To keep the narrower check, pass that value as a fact instead.
+literal without spaces, such as Base64 data; to keep the narrower check, pass that value as a fact instead.
 
-`load()` and `validate()` log this once each time they compile such a rule list, at DEBUG on the engine's logger
-`io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule, in one of these lines:
+With a package import outside `java.`, checking every fact also looks each distinct fact name up as a class in that
+package, under any loader; one that keeps a lock object per name, such as Spring Boot's, then grows with the names
+runs pass in; see [Class loaders](../thread-safety.md#-class-loaders).
+
+`load()` and `validate()` log this once per compilation of such a rule list, at DEBUG on the engine's logger
+`io.github.brantunger.unruly.engine`, naming the first such condition or action and its rule, in one of:
 
 ```text
 MVEL checks every fact for this rule list: the condition of rule 'm' has a word of more than 1000 characters, too long to scan for the names it reads
@@ -240,14 +243,14 @@ See [Logging setup](../listeners-and-logging.md#-logging-setup).
 ### A best effort both ways
 
 The scan finds extra names, such as the words of a comment, and spans MVEL reads as several names, such as `my-fact`
-in `my-fact-1`. That's harmless: a fact by such a name is checked, as every fact was up to 2.28.0. It leaves out the
-spans MVEL can't read as one name, such as `,a#b` in `1-,a#b` or `«»` in `x^«»`, so a fact by such a
-name is accepted, as from 2.29.0 to 2.29.4.
+in `my-fact-1`. That's harmless: such a fact is checked, as every fact was up to 2.28.0. It leaves out spans MVEL
+can't read as one name, such as `,a#b` in `1-,a#b` or `«»` in `x^«»`, so such a fact is accepted, as from 2.29.0 to
+2.29.4.
 
-It can miss a name with MVEL's whitespace inside it, as no word holds one. A line break is such a character, and
-`isdef` reads a name up to a comment, even one on a later line. The condition `isdef ,a//c`, a line break, then
-`/**/` reads a fact named by that whole text. Unless
-[MVEL checks every fact](#when-mvel-checks-every-fact), a fact by such a name isn't checked, so the rule reads it.
+It can miss a name with MVEL's whitespace inside it, as no word holds one: a line break is such a character, and
+`isdef` reads a name up to a comment, even on a later line. The condition `isdef ,a//c`, a line break, then
+`/**/` reads a fact named by that whole text. Unless [MVEL checks every fact](#when-mvel-checks-every-fact), such a
+fact isn't checked, so the rule reads it.
 
 > [!WARNING]
 > This departs from the [`factNamesRead()` contract](custom.md#-fact-names), which asks a language for more names,

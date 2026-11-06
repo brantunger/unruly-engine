@@ -1,7 +1,7 @@
 # 🧵 Thread safety
 
 An engine is built once and shared by every thread in your application. This page says what that promises, what stays
-yours, and what happens when you reload or close an engine while runs are going.
+yours, and what happens when you reload or close an engine under runs.
 
 **Who it's for:** application developers sharing an engine across threads, or reloading rules in a running
 application.
@@ -27,34 +27,34 @@ one run does.
 | Method | Thread-safe? | When to call it |
 | --- | :---: | --- |
 | `RulesEngineBuilder` methods and `build()` | ❌ | During setup, on one thread. The engine it builds is thread-safe. |
-| `load()` | ✅ | During setup, and again at any time to reload. When several threads call it at once, the last to finish compiling wins. |
-| `validate()` | ✅ | At any time, from any thread. It compiles and discards, and changes nothing. |
+| `load()` | ✅ | During setup, and at any time to reload; of concurrent loads, the last to finish compiling wins. |
+| `validate()` | ✅ | At any time, from any thread: it compiles and discards, changing nothing. |
 | `run()`, `runWithResult()` | ✅ | From any number of threads, once `load()` has returned. |
-| `rules()` | ✅ | At any time. Before the first `load()` it reports no rules; after `close()` it throws. |
-| `close()` | ✅ | Once the engine is no longer needed. It returns at once, and runs already going finish with their rules. |
+| `rules()` | ✅ | At any time: no rules before the first `load()`; after `close()` it throws. |
+| `close()` | ✅ | When the engine is no longer needed; it returns at once, and runs in progress finish with their rules. |
 
 An engine's languages, imports, listeners, [copy limit](glossary.md#copy-limit), copies at load, run timeout, output
-type, output writer, declared facts and language options are all fixed when it's built. Only `load()` changes
-anything afterwards.
+type, output writer, declared facts and language options are fixed when it's built; only `load()` changes anything
+afterwards.
 
-Interrupting the thread a run is on, or giving the run a timeout, stops it **between rules and when an expression
-returns**; see [What stops a run](stopping-runs.md#-what-stops-a-run). Whether a running expression can be stopped
-depends on the language: MVEL can't, so an MVEL rule that loops for ever still blocks its thread; run rules you don't
-trust in a process of their own.
+An interrupt or a run timeout stops a run **between rules and when an expression returns**; see
+[What stops a run](stopping-runs.md#-what-stops-a-run). Whether a running expression can be stopped depends on the
+language: MVEL can't, so a rule that loops for ever blocks its thread; run rules you don't trust in a process of
+their own.
 
 ### What you must keep thread-safe
 
 The engine protects its own state. These parts are yours:
 
-- **Facts:** a store can serve one run after another, and concurrent runs can share a store that nothing changes; a
-  new store for each run is the simplest way to stay safe. Don't share mutable fact objects between concurrent runs.
-  See [Reusing and sharing a store](facts.md#-reusing-and-sharing-a-store).
+- **Facts:** a store can serve one run after another, and concurrent runs can share one that nothing changes; a new
+  store per run is simplest. Don't share mutable fact objects between concurrent runs; see
+  [Reusing and sharing a store](facts.md#-reusing-and-sharing-a-store).
 
-- **The output supplier:** it must return a new object on every call. A shared instance would be changed by several
+- **The output supplier:** must return a new object on every call; a shared instance would be changed by several
   runs at once.
 - **A custom `OutputWriter`:** one instance sets properties for every run, on many threads at once. The
   `OutputConverter` it's given is thread-safe.
-- **Listeners:** the same listener instance is called from every thread running the engine.
+- **Listeners:** one instance is called from every thread running the engine.
 
 ## 🛑 Lifecycle and closing
 
@@ -87,9 +87,9 @@ stateDiagram-v2
 | Loaded | Runs the rules | Compiles the new list, then swaps it in | The loaded rules, their checksum and load time |
 | Closed | `IllegalStateException`, at once | `IllegalStateException`, at once, without compiling the list | `IllegalStateException` |
 
-A `run()` before the first `load()` fails **at once**: it doesn't wait for a `load()` that is still compiling on
-another thread. Load your rules before the application accepts traffic. `validate()` works in every state but
-Closed, and changes none of them.
+A `run()` before the first `load()` fails **at once**, without waiting for a `load()` still compiling on another
+thread: load your rules before the application accepts traffic. `validate()` works in every state but Closed, and
+changes none.
 
 ### Closing
 
@@ -118,27 +118,26 @@ sequenceDiagram
 - Every new `run()`, `runWithResult()`, `load()`, `validate()` and `rules()` throws `IllegalStateException("The engine
   is closed")` at once. `load()` compiles nothing and logs no ERROR, even for a list that wouldn't compile; a `null`
   list still throws `NullPointerException`.
-- A **nested run** started from an action or a listener of a run that is still going throws it too: it reads the
-  engine's current rules, and a closed engine has none.
+- A **nested run** started from an action or a listener of a run still going throws it too: it reads the engine's
+  current rules, and a closed engine has none.
 
-A run that had read the engine's rules but not yet borrowed a copy of them when `close()` retired them may still use
-them, even after `close()` has returned, if a run of them is still going when it borrows, as after a
+A run that read the engine's rules but hadn't yet borrowed a copy when `close()` retired them may still use them,
+even after `close()` returned, if a run of them is still going when it borrows, as after a
 [reload](#-reloading-rules-while-running). Otherwise it reads them again, finds a closed engine, and throws the same
-`IllegalStateException`. One whose thread was interrupted, or whose deadline has passed, stops there instead, with a
-message saying the rules were closed by a reload or by `close()`; see
-[What stops a run](stopping-runs.md#-what-stops-a-run).
+`IllegalStateException`; one whose thread was interrupted, or whose deadline has passed, stops there instead, with a
+message saying a reload or `close()` closed the rules; see [What stops a run](stopping-runs.md#-what-stops-a-run).
 
-A `load()` that found the engine still open isn't stopped by `close()`. If it fails, it throws what it would on an open
-engine, such as `RuleCompilationException`. If it succeeds, its rules are either dropped with the same
-`IllegalStateException` or, if it swapped them in just before `close()`, closed with the rest: never served.
+A `load()` that found the engine open isn't stopped by `close()`: if it fails, it throws what it would on an open
+engine, such as `RuleCompilationException`; if it succeeds, its rules are dropped with the same
+`IllegalStateException` or, if swapped in just before `close()`, closed with the rest, never served.
 
-Each run's sessions are closed as it returns, or kept for a run still waiting for a copy of the same rules. Any copies
+Each run's sessions are closed as it returns, or kept for a run still waiting for a copy of the same rules; copies
 still kept, then the languages' compilers, are closed after the last run leaves. A failure to close a session or a
 compiler is logged at WARN, unless a [nested run](nested-runs.md#-what-is-logged) logged it, and doesn't fail the run,
 `load()` or `close()` that closes them, unless it's a [fatal error](glossary.md#fatal-error).
 
-`RulesEngine` is `AutoCloseable`, so an engine for a short task fits a try-with-resources block. Closing an engine
-twice does nothing the second time, unless the first stopped part way.
+`RulesEngine` is `AutoCloseable`, so an engine for a short task fits a try-with-resources block. Closing twice does
+nothing the second time, unless the first stopped part way.
 
 A [fatal error](glossary.md#fatal-error) from closing sessions or compilers is rethrown once everything else is closed,
 by the call or run that closes them; see [A fatal error while closing](error-handling.md#-a-fatal-error-while-closing).
@@ -153,13 +152,13 @@ executor.awaitTermination(30, TimeUnit.SECONDS);       // the runs in progress f
 engine.close();                                        // nothing is lost
 ```
 
-In a web application, use your server's graceful shutdown so requests drain before the engine bean is destroyed; see
+In a web application, let the server's graceful shutdown drain requests before the engine bean is destroyed; see
 [Shutting down](spring-boot.md#-shutting-down) for Spring Boot.
 
 ## 🔄 Reloading rules while running
 
-`load()` compiles the whole new list first, then swaps it in with a single atomic write, together with the fact-name
-checks of the languages its rules use.
+`load()` compiles the whole new list, then swaps it in with one atomic write, together with the fact-name checks of
+the languages its rules use.
 
 ```mermaid
 sequenceDiagram
@@ -189,61 +188,69 @@ For the runs:
 For the load itself:
 
 - If the new list fails to compile, or a language fails to create or warm up a session for a copy at load, nothing
-  is swapped, the old rules stay in place, and the sessions and compilers the failed load created are closed.
+  is swapped: the old rules stay, and the sessions and compilers the failed load created are closed.
 - A [fatal error while closing](error-handling.md#-a-fatal-error-while-closing) the replaced rules is thrown after the
   swap: the new rules serve. Otherwise, a failure that stopped retiring part way is logged at WARN and retried later.
 
-- When two threads call `load()` at once, both compile the list they were given, and the one that finishes last wins:
-  the last to swap in its rules, after making any copies at load.
+- When two threads call `load()` at once, both compile their lists, and the last to swap in its rules, after making
+  any copies at load, wins.
 - Each condition and action is compiled on its own, so one rule's variables and inline `import` statements never
   change how another rule or a later reload compiles.
 
 > [!WARNING]
-> A nested run uses the engine's rules **as they are when it starts**, not the outer run's. After a reload, a nested
-> run can use newer rules, which the outer run's checksum doesn't describe.
+> A nested run uses the engine's rules **as they are when it starts**, not the outer run's: after a reload, newer
+> rules, which the outer run's checksum doesn't describe.
 
-At the swap, the replaced list is retired, and its idle [compiled copies](compiled-copies.md) are closed at once, even
-when runs wait on it. Runs that were waiting on it, for a place under a copy limit or a build slot, still finish on it.
-While any of them waits, a copy given back is kept for them, about one for each up to the limit, so they reuse the
-copies they have rather than each building one.
+At the swap, the replaced list is retired and its idle [compiled copies](compiled-copies.md) closed at once, even
+when runs wait on it. Runs waiting on it, for a place under a copy limit or a build slot, still finish on it, and
+while any waits, a copy given back is kept for them, about one each up to the limit, so they reuse copies rather
+than each building one.
 
 Under `maxCopies(n)`, the replaced list never has more than `n` copies, apart from
-[extra copies](glossary.md#extra-copy). The last run to leave it closes the copies still kept. Its compilers are
-closed once, after both that run and the `load()` closing the idle copies are done, by whichever finishes second.
+[extra copies](glossary.md#extra-copy). The last run to leave it closes the copies still kept, and its compilers are
+closed once, by whichever of that run and the `load()` closing the idle copies finishes second.
 
 A run that read the engine's rules just before the swap uses that list only while a run of it is still going, and may
 then take a kept copy or build one; when the list is already closed, the run starts again on the new rules, unless
-its thread was interrupted or its deadline has passed, when it stops there instead. Copies aren't carried over, so the
-first runs after each `load()` build them again, unless the engine was built with
+its thread was interrupted or its deadline has passed, when it stops there. Copies aren't carried over: the first
+runs after each `load()` build them again, unless the engine was built with
 [`copiesAtLoad(n)`](compiled-copies.md#making-copies-at-load), when `load()` builds them before the swap.
 
 ## 📑 Compiled copies
 
 Every run shares the rules as `load()` compiled them. What an expression language changes while its expressions run
 lives in a *[session](glossary.md#session)*, and a **compiled copy** of the rules is one session for each language the
-rules use. Each `run()` borrows a copy that no other run is using, makes a new one if every copy is busy (as the first
-run after `load()` does, unless the engine [makes copies at load](compiled-copies.md#making-copies-at-load)), and gives
-it back when it finishes.
+rules use. Each `run()` borrows a copy no other run is using, makes one if every copy is busy (as the first run after
+`load()` does, unless the engine [makes copies at load](compiled-copies.md#making-copies-at-load)), and gives it back
+when it finishes.
 
-How many copies an engine keeps, how to limit them and what a run waits for when they run out are on their own page:
-[Compiled copies](compiled-copies.md). What changes when runs come from virtual threads is on
-[Virtual threads](virtual-threads.md).
+Copy count, limits and what a run waits for when they run out: [Compiled copies](compiled-copies.md). Runs from
+virtual threads: [Virtual threads](virtual-threads.md).
 
 ## 🌳 Class loaders
 
-The classes of your facts and of your output object must be reachable from the **context class loader of the thread
-that calls `load()`**. `load()` captures that loader and gives it to every expression language to find classes with.
+Your facts' and output object's classes must be reachable from the **context class loader of the thread that calls
+`load()`**: `load()` captures that loader and gives it to every expression language to find classes with.
 Unless rules name MVEL's classes, it needn't see MVEL, or may hold a copy: generated code uses the engine's.
 `RulesEngineBuilder` has no class-loader option; this loader is the only control.
 
 This matters when the fact classes live apart from the application: in a plugin or tenant jar, a container's
 application class loader or a test harness that isolates each case. Load the rules with that loader in place, then
-restore the old one:
+restore the old one. A package import needs it at `load()` only.
+
+A single-class import of one of them, `imports("com.plugin.Applicant")`, needs it around `build()` too, or the name
+is imported as a package, silently, and rules using the class fail at `run()` with
+`could not resolve class: Applicant`. With it at `build()` but not `load()`, they fail at `run()` naming the class
+in full, `could not resolve class: com.plugin.Applicant`.
 
 ```java
 ClassLoader original = Thread.currentThread().getContextClassLoader();
 Thread.currentThread().setContextClassLoader(pluginLoader);   // the loader that holds Applicant and LoanDecision
+RulesEngine<LoanDecision> engine;
 try {
+    engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+            .imports("com.plugin.Applicant")                  // build() looks a single class up with this loader
+            .build();                                         // and imports a name it can't see as a package
     engine.load(rules);                                       // load() captures it
 } finally {
     Thread.currentThread().setContextClassLoader(original);
@@ -251,16 +258,16 @@ try {
 ```
 
 > [!IMPORTANT]
-> Wrap `load()`, not `run()`. The engine reads a context class loader in `build()`, `load()` and `validate()` only.
-> MVEL itself may still use the running thread's: it does for a class a rule creates with `new` that the loader
-> `load()` captured didn't find, such as a class defined at run time (below).
+> Wrap `load()`, and `build()` for a single-class import, not `run()`. The engine reads a context class loader in
+> `build()`, `load()` and `validate()` only. MVEL itself may still use the running thread's, for a class a rule
+> creates with `new` that the loader `load()` captured didn't find, such as one defined at run time (below).
 
 - `validate(rules)` captures a loader the same way, on whichever thread calls it.
 - `build()` uses the **building** thread's context class loader, for the engine's languages and for an import that
   names a single class. Imported packages are looked up with the **loading** thread's. A second copy of a
   language, or of `unruly-engine-core`, on the building thread's loader is skipped; see
   [How the engine picks a language](languages/README.md#-how-the-engine-picks-a-language).
-- A thread with no context class loader leaves the engine using this library's own class loader.
+- A thread with no context class loader leaves the engine using this library's own.
 
 In MVEL, the loader `load()` captured finds by name only classes with `.class` files when the loading thread's is
 one of the JDK's own (application or platform), or a `java.net.URLClassLoader` made with `new URLClassLoader(...)` or
@@ -278,6 +285,11 @@ and each name may leave a lock object in a parallel-capable one or, as it delega
 application loader included. The [fact-name check](languages/mvel-fact-names.md) asks them too, with the same `java.`
 exception, per fact name and imported package: a fact named like a class they define with no class file is rejected.
 
+The names checked are usually those in the rules' text. When MVEL
+[checks every fact](languages/mvel-fact-names.md#when-mvel-checks-every-fact), it is every fact name of every run, so
+with a package import outside `java.` the lock objects grow with the distinct fact names passed in, such as request
+bodies' keys: about 49 MB for 200,000 names in one measurement.
+
 With MVEL's JIT made the default again, a loader set around `run()` instead fails the rule, and closing the engine
 doesn't release the one `load()` captured: the JIT holds it; see
 [The dynamic optimizer and class loaders](languages/mvel.md#the-dynamic-optimizer-and-class-loaders).
@@ -286,7 +298,7 @@ doesn't release the one `load()` captured: the JIT holds it; see
 
 | Gotcha | What happens | Do this instead |
 | --- | --- | --- |
-| **`close()` doesn't drain** | Runs in progress finish, but nothing waits for them | Stop the work reaching the engine, then close; see [Draining before you close](#draining-before-you-close) |
+| **`close()` doesn't drain** | Runs in progress finish, but nothing waits for them | Stop the work reaching the engine first; see [Draining before you close](#draining-before-you-close) |
 | **The context class loader set around `run()`** | With MVEL's JIT made the default again, the rule works for about 50 quick runs and then fails for ever, with a fact or output class not found | Set it around `load()`; see [Class loaders](#-class-loaders) |
 | **A reload reaches nested runs** | After a `load()`, a run started from an action or a listener uses the new rules, which the outer run's checksum doesn't describe | Reload between requests, or record each run's `ruleSetChecksum()` |
 
@@ -296,17 +308,16 @@ doesn't release the one `load()` captured: the JIT holds it; see
 
 They finish and return their results. `close()` returns at once. See [Closing](#closing).
 
-### Can I call `load()` while runs are happening, or from two threads at once?
+### Can I call `load()` during runs, or from two threads at once?
 
-Yes to both. Runs in progress keep their rules, and of two concurrent loads the one that finishes last wins. See
+Yes to both: runs in progress keep their rules, and of two concurrent loads the last to finish wins. See
 [Reloading rules while running](#-reloading-rules-while-running).
 
 ### Can a run start before the first `load()` finishes?
 
-No. It throws `IllegalStateException("load() must be called before run()")` straight away, rather than waiting for the
-load.
+No: it throws `IllegalStateException("load() must be called before run()")` at once, without waiting for the load.
 
 ### Can an action call `load()` or `close()` on its own engine?
 
-Yes, without deadlocking: the engine holds its lock only for the swap itself. The run finishes with the rules it
-started with. After `close()`, though, a run that action starts fails; see [Closing](#closing).
+Yes, without deadlocking: the engine holds its lock only for the swap. The run finishes with the rules it started
+with; a run the action starts after `close()` fails; see [Closing](#closing).

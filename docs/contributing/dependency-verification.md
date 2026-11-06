@@ -25,11 +25,27 @@ in its diff.
 The build checks every dependency and plugin it downloads, including those of `buildSrc`, against
 [`gradle/verification-metadata.xml`](../../gradle/verification-metadata.xml): a PGP signature where the file is
 signed, and a sha256 checksum where it isn't. The public keys it checks signatures with are in
-[`gradle/verification-keyring.keys`](../../gradle/verification-keyring.keys). Both files are committed.
+[`gradle/verification-keyring.keys`](../../gradle/verification-keyring.keys). Both files are committed. The one
+exception is the metadata's `<trusted-artifacts>` block: its three `<trust>` rules accept every `-sources.jar` and
+`-javadoc.jar`, and the `gradle:gradle` component, without a check. No task of the build downloads any of them.
 
 A signed file is covered by a `<trusted-key>` line, which trusts a key for a whole group, for a group and name, or
 for one version, or by a `<pgp>` entry of its own. The files nobody signs upstream, and the dependency-graph plugin,
 have a checksum instead.
+
+The trust rules are there, most likely, for an IDE sync, which may download every dependency's sources and javadoc
+jars through the same verification; an IntelliJ-based IDE may also fetch the Gradle distribution's sources,
+`gradle-<version>-src.zip`, as `gradle:gradle`. The rules came with no recorded reason, and such a sync hasn't been
+tried here.
+
+A signed component's `<trusted-key>` covers its sources and javadoc jars as well, but those of an unsigned component,
+whose checksums are for its main jar and pom only, and Gradle's sources, which aren't signed
+([gradle/gradle#32178](https://github.com/gradle/gradle/issues/32178)), have no entry, so without the rules a sync
+that fetched them would fail.
+
+The build passes without the rules, and a sources or javadoc jar is never on a compile or runtime classpath, so
+trusting them costs no build input; what it costs is that a tampered one would go unnoticed, as
+[Gradle's guide](https://docs.gradle.org/current/userguide/securing_dependencies.html#sec:skipping-javadocs) says.
 
 Key servers are off (`<key-servers enabled="false"/>`), so a build never fetches a key. Only the
 [regeneration command](#-how-to-regenerate) does.
@@ -153,12 +169,13 @@ nothing when a trusted key already covers it. Stop and find out why when the dif
 | A new `<ignored-key>` | Gradle couldn't use that key, so the file is checked by its checksum only |
 | A new checksum for a component a `<trusted-key>` covers | With `reason="Artifact is not signed"`, the new version is unsigned. With no `reason`, check that the file's `.asc` is on Maven Central |
 | A changed checksum for a version that already had one | The same published file changed its contents, which a repository never should |
-| A `<trust>` or `<trusted-artifacts>` entry | It turns verification off for everything it matches |
+| A `<trust>` entry beyond the three already there | It turns verification off for everything it matches |
 
 As committed, the metadata has two `<ignored-key>` entries, both Gradle Inc. keys for the
-[dependency-graph plugin](#-the-dependency-graph-plugin), no `<trust>` and no `<trusted-artifacts>`. Five signed
-files also have a checksum with no `reason`, which Gradle wrote: this project's three 2.2.0 jars,
-`mvel2-2.5.4.Final.pom` and `slf4j-api-2.0.19.pom`. The element names are those of
+[dependency-graph plugin](#-the-dependency-graph-plugin), and the `<trusted-artifacts>` block with the three rules
+[What the build checks](#-what-the-build-checks) explains. 432 files also have a checksum with no `reason`, which
+Gradle wrote: each in a component whose key a `<trusted-key>` or `<pgp>` entry also trusts, as `itu-1.14.0.jar`'s
+is for 1.14.0. The element names are those of
 [Gradle's verification metadata](https://docs.gradle.org/current/userguide/dependency_verification.html).
 
 ## 🤖 The dependency-graph plugin
