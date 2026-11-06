@@ -279,6 +279,41 @@ class ContractKitChecksTest {
         };
     }
 
+    /**
+     * Wraps a language so that each of its conditions and actions first converts every fact, once a run, with
+     * {@link FactProperties#toData} in {@link EvaluationContext#runScoped}, as a language that reads only maps does
+     * when it converts the whole fact map, and so calls every fact's getters before the run's first expression
+     * (#1383).
+     */
+    private static ExpressionLanguage readingFactsFirst(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                ExpressionCompiler compiler = language.newCompiler(context);
+                Object key = new Object();
+                return new ForwardingExpressionCompiler(compiler) {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        CompiledCondition condition = compiler.compileCondition(expression);
+                        return (evaluation, session) -> {
+                            evaluation.runScoped(key, () -> FactProperties.toData(evaluation.facts(), 2));
+                            return condition.evaluate(evaluation, session);
+                        };
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        CompiledAction action = compiler.compileAction(expression);
+                        return (actionContext, session) -> {
+                            actionContext.runScoped(key, () -> FactProperties.toData(actionContext.facts(), 2));
+                            return action.execute(actionContext, session);
+                        };
+                    }
+                };
+            }
+        };
+    }
+
     /** Wraps a language so that its compiler's newSession() returns what {@code sessions} supplies. */
     static ExpressionLanguage withSessions(ExpressionLanguage language, Supplier<Session> sessions) {
         return new ForwardingExpressionLanguage(language) {
@@ -3737,11 +3772,13 @@ class ContractKitChecksTest {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(language, "nestedRunFailureRethrownAsIs"));
 
-        assertTrue(failure.getMessage().startsWith("the action whose getter threw the nested run's failure on failed"
+        assertTrue(failure.getMessage().startsWith("the rule whose getter threw the nested run's failure on failed"
                 + " with words of the language's own around that failure, which the engine logs a second time: throw"
                 + " what reached the expression, or a wrapper with exactly its message, so that the failure starts"
-                + " \"Failed to execute action for rule 'outer': a nested run() failed: \", but it was: Failed to"
-                + " execute action for rule 'outer': toy action failed: "), failure.getMessage());
+                + " \"Failed to execute action for rule 'outer': a nested run() failed: \", or \"Failed to evaluate"
+                + " condition for rule 'outer': a nested run() failed: \" for a language that reads every fact before"
+                + " its first expression, but it was: Failed to execute action for rule 'outer': toy action failed: "),
+                failure.getMessage());
         assertTrue(failure.getMessage().contains("(after a nested run() failed: "), failure.getMessage());
         assertInstanceOf(RuleExecutionException.class, failure.getCause());
     }
@@ -3778,8 +3815,8 @@ class ContractKitChecksTest {
         AssertionFailedError failure = assertThrows(AssertionFailedError.class,
                 () -> runCheck(language, "nestedRunFailureRethrownAsIs"));
 
-        assertEquals("the run around the run that failed inside its action didn't fail, though the getter its action"
-                + " read threw the nested run's failure: it returned {}", failure.getMessage());
+        assertEquals("the run around the failed nested run didn't fail, though the getter its rule read threw the"
+                + " nested run's failure: it returned {}", failure.getMessage());
         assertInstanceOf(RuleExecutionException.class, failure.getCause());
     }
 
@@ -3795,6 +3832,28 @@ class ContractKitChecksTest {
                 return language;
             }
         }));
+    }
+
+    @Test
+    @DisplayName("a language that converts every fact before its first expression, and so meets a nested run's failure"
+            + " in the outer rule's condition, passes every check (#1383)")
+    void factsReadFirstPasses() {
+        ExpressionLanguage language = readingFactsFirst(new ToyExpressionLanguage());
+        ExpressionLanguage withConjunctions = ToyConjunctionsContractTest.conjunctions(language);
+
+        assertAll(
+                () -> assertEquals(List.of(), failedChecks(new ToyExpressionLanguageContractTest() {
+                    @Override
+                    protected ExpressionLanguage language() {
+                        return language;
+                    }
+                })),
+                () -> assertEquals(List.of(), failedChecks(new ToyConjunctionsContractTest() {
+                    @Override
+                    protected ExpressionLanguage language() {
+                        return withConjunctions;
+                    }
+                })));
     }
 
     @Test

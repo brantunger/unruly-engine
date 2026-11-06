@@ -903,7 +903,7 @@ public abstract class ExpressionLanguageContractTest {
             try {
                 nestedOutput = nestedRun.get();
             } catch (RuntimeException e) {
-                // Kept for the check: the engine would report it as the outer action's failure.
+                // Kept for the check: the engine would report it as the outer rule's failure.
                 nestedFailure = e;
                 if (rethrows) {
                     throw e;
@@ -2680,16 +2680,20 @@ public abstract class ExpressionLanguageContractTest {
      * it again, when the language throws what reached it, or a wrapper with exactly its message. A language that
      * throws an exception of its own, with words of its own around the message, such as SpEL's
      * {@code EL1021E: A problem occurred whilst attempting to access the property 'value': ...}, has the engine log
-     * that exception's message, with the nested failure in a note after it: the failure is logged twice. So the check
-     * requires the outer run's failure to start with the engine's own form, and to carry the nested run's failure in
-     * its cause chain. Its message contains {@code a nested run() failed: } in the second case too, inside the note.
-     * As in {@code nestedRunFailsInsideAnAction}, the check is skipped when the nested run neither fails nor reads the
-     * getter that throws, and fails when it reads it and doesn't fail, or fails for another reason.
+     * that exception's message, with the nested failure in a note after it: the failure is logged twice. A language
+     * that reads every fact before its first expression, as one that converts the facts with
+     * {@code FactProperties.toData} does, reads {@code nest.value} in the outer rule's condition, and meets the failure
+     * there, so the engine's own form starts {@code Failed to evaluate condition} rather than
+     * {@code Failed to execute action}. So the check requires the outer run's failure to start with the engine's own
+     * form for the action or the condition, and to carry the nested run's failure in its cause chain. Its message
+     * contains {@code a nested run() failed: } in the second case too, inside the note. As in
+     * {@code nestedRunFailsInsideAnAction}, the check is skipped when the nested run neither fails nor reads the getter
+     * that throws, and fails when it reads it and doesn't fail, or fails for another reason.
      */
     @Test
-    @DisplayName("a run that fails inside an action, and whose failure the getter that started it throws on, fails the"
-            + " action with the engine's own message, not words of the language's around it, which log the failure"
-            + " twice")
+    @DisplayName("a rule whose getter starts a run that fails, and throws that run's failure on, fails with the"
+            + " engine's own message, in its action or, for a language that reads every fact before its first"
+            + " expression, its condition, not words of the language's around it, which log the failure twice")
     // By identity: the instance the nested run threw is what the failure must carry.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
     void nestedRunFailureRethrownAsIs() throws Exception {
@@ -2715,24 +2719,27 @@ public abstract class ExpressionLanguageContractTest {
             assertNestedRunFailed(nest, failing, IN_AN_ACTION);
             RuntimeException nested = Objects.requireNonNull(nest.nestedFailure);
             if (failure == null) {
-                throw new AssertionFailedError("the run around the run that failed inside its action didn't fail,"
-                        + " though the getter its action read threw the nested run's failure: it returned "
+                throw new AssertionFailedError("the run around the failed nested run didn't fail, though the getter"
+                        + " its rule read threw the nested run's failure: it returned "
                         + describe(output.get()), nested);
             }
             if (!(failure instanceof RuleExecutionException ruleFailure) || !OUTER.equals(ruleFailure.getRuleName())) {
-                throw new AssertionFailedError("the run around the run that failed inside its action failed, but not"
-                        + " with a RuleExecutionException naming rule outer: " + describe(failure), failure);
+                throw new AssertionFailedError("the run around the failed nested run failed, but not with a"
+                        + " RuleExecutionException naming rule outer: " + describe(failure), failure);
             }
-            String expected = "Failed to execute action for rule 'outer': a nested run() failed: ";
+            String inAction = "Failed to execute action for rule 'outer': a nested run() failed: ";
+            // A language that reads every fact before its first expression reads nest.value in the condition.
+            String inCondition = "Failed to evaluate condition for rule 'outer': a nested run() failed: ";
             String message = message(failure);
-            if (!message.startsWith(expected)) {
-                throw new AssertionFailedError("the action whose getter threw the nested run's failure on failed with"
+            if (!message.startsWith(inAction) && !message.startsWith(inCondition)) {
+                throw new AssertionFailedError("the rule whose getter threw the nested run's failure on failed with"
                         + " words of the language's own around that failure, which the engine logs a second time:"
                         + " throw what reached the expression, or a wrapper with exactly its message, so that the"
-                        + " failure starts \"" + expected + "\", but it was: " + message, failure);
+                        + " failure starts \"" + inAction + "\", or \"" + inCondition + "\" for a language that reads"
+                        + " every fact before its first expression, but it was: " + message, failure);
             }
             if (Throwables.causeChain(failure).stream().noneMatch(cause -> cause == nested)) {
-                throw new AssertionFailedError("the action whose getter threw the nested run's failure on failed"
+                throw new AssertionFailedError("the rule whose getter threw the nested run's failure on failed"
                         + " without that failure in its cause chain: " + describe(failure), failure);
             }
         });

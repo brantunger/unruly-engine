@@ -174,8 +174,10 @@ public sealed interface EvaluationContext
 
     /**
      * Returns the value kept under {@code key} for this run, making it with {@code init} the first time any condition
-     * or action of the run asks for it. So a language that converts the facts before it evaluates an expression, such
-     * as with {@link FactProperties#toData}, can convert them once per run rather than once per expression.
+     * or action of the run asks for it. So a language whose runtime can only take copied values, as
+     * {@link FactProperties#toData} makes them, can convert the facts once per run rather than once per expression.
+     * Converting them calls every getter, so one that throws fails every run, even if no rule reads it: a language
+     * that can read the one property an expression names reads it with {@link FactProperties#read} instead.
      *
      * <p>
      * Every condition and action of one {@code run()} shares the values: the evaluation context and each action context

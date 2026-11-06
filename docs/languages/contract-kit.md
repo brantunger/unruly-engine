@@ -73,11 +73,11 @@ gets the BOM's version, whatever order you declare them in:
 > Without the BOM, when a POM doesn't name `unruly-engine-core` itself, the first dependency it declares that
 > brings in core sets core's version: `unruly-engine`, `unruly-engine-test` or a third-party language. An older one
 > declared first downgrades core, for the application too, so a newer engine runs on an older core. Import the BOM
-> whenever anything in the build brings in `unruly-engine-core`, a third-party language included.
+> whenever anything in the build brings in `unruly-engine-core`.
 
-A `<version>` written on a dependency beats the BOM, so leave it off. The engine's own POMs don't import the BOM:
-your POM must. A build that can't import it can instead declare `unruly-engine` before the kit and any third-party
-language, keep the versions equal, or pin `unruly-engine-core` in `<dependencyManagement>`.
+A dependency's own `<version>` beats the BOM, so leave it off. The engine's own POMs don't import the BOM: your POM
+must. A build that can't import it can instead declare `unruly-engine` before the kit and any third-party language,
+keep the versions equal, or pin `unruly-engine-core` in `<dependencyManagement>`.
 
 Gradle takes the highest version of core, whatever the order, so the BOM is optional there. To keep the modules at
 one version, add `implementation platform('io.github.brantunger:unruly-engine-bom:<version>')` and declare them
@@ -133,7 +133,7 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `nestedRunInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null` | A run that a getter starts inside a condition, on the same thread, and the outer run each give their own output |
 | `nestedRunFailsInsideACondition` | `factProperty`, `factEquals`, `bothConditions`, `putFact` | `bothConditions()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still fires its rule |
 | `nestedRunFailsInsideAnAction` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | The nested run fails with a `RuleExecutionException` carrying what its `nest.value` threw, and the outer run still gets the action's value |
-| `nestedRunFailureRethrownAsIs` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | A getter that throws the nested run's failure on fails the outer run with a `RuleExecutionException` starting `Failed to execute action for rule 'outer': a nested run() failed: `, that failure in its cause chain |
+| `nestedRunFailureRethrownAsIs` | `factEquals`, `putFact`, `putFactProperty` | `putFactProperty()` returns `null`, or its nested run neither fails nor reads `nest.value` | A getter that throws the nested run's failure on fails the outer run with a `RuleExecutionException` starting `Failed to execute action for rule 'outer': a nested run() failed: ` (`Failed to evaluate condition` for one that reads every fact first), that failure in its cause chain |
 | `endlessActionStopsAtTimeout` | `alwaysTrue`, `endlessAction` | `endlessAction()` returns `null`, the default | With `runTimeout` of 200 ms, the run of a rule with that action, on a thread of its own, fails within 30 seconds with a `RuleExecutionException` caused by a `TimeoutException`, and leaves that thread not interrupted |
 
 When your compiler returns a set from `factNamesRead()`, `unusableFactNameRejected` and `unreservedOutputReadAsFact`
@@ -161,8 +161,8 @@ return; a language whose whole numbers are `Integer`s or `Long`s needs no conver
 these if it opts in without one.
 
 The check writes the fact through the action `putFact("creditScore", "x")` builds, so that action must return its
-property through `ActionResult.set(...)`: the engine converts and writes only the properties an action returns that way,
-and `ActionResult.done()` carries none. A language whose actions change the output in place never reaches
+property through `ActionResult.set(...)`: the engine converts and writes only properties returned that way, and
+`ActionResult.done()` carries none. A language whose actions change the output in place never reaches
 `convertOutput`, fails the check with `the whole Double 1.0 didn't reach setCreditScore(int)`, and leaves
 `convertsOutputNumbers()` `false`.
 
