@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * How the engine tells the error a native image built with strict reachability metadata throws for a name it has no
  * metadata for: by its class's name alone. The tests' stand-in for that error has the name. What each lookup does with
  * it is {@code StrictMetadataImportTest}'s, {@code StrictMetadataSupertypeTest}'s, {@code StrictMetadataBridgeTest}'s,
- * {@code RunClassesTest}'s and mvel's {@code LanguageDiscoveryTest}'s to check.
+ * {@code FirstUseClassesTest}'s and mvel's {@code LanguageDiscoveryTest}'s to check.
  */
 @DisplayName("only GraalVM's MissingReflectionRegistrationError, told by its class's name, is a name an image has no"
         + " metadata for (#951)")

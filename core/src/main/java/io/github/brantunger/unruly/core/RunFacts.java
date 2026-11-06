@@ -32,7 +32,7 @@ final class RunFacts {
     private final RunContext parent;
     private final RunTally tally;
     private final RuleSelection selection;
-    private final LoggedFailures.Runs runs;
+    private final FailureLog.Runs runs;
 
     /**
      * @param values       The fact values the run was given, unwrapped
@@ -46,11 +46,11 @@ final class RunFacts {
      * @param selection    Which rules the run uses, and which it skips
      * @param runs         What is in progress on the run's thread, which the run marks each of its call-outs with, so
      *                     a rule's condition or action, a listener callback or the output supplier or writer looks
-     *                     nothing up to mark it (see {@link LoggedFailures#callOut()})
+     *                     nothing up to mark it (see {@link FailureLog#callOut()})
      */
     private RunFacts(Map<String, Object> values, Map<String, Object> forListeners, EngineEvaluationContext evaluation,
                      Deadline deadline, long runId, RunContext parent, RunTally tally, RuleSelection selection,
-                     LoggedFailures.Runs runs) {
+                     FailureLog.Runs runs) {
         this.values = values;
         this.forListeners = forListeners;
         this.evaluation = evaluation;
@@ -72,11 +72,11 @@ final class RunFacts {
      * @param parent       The run this one was started from, or {@code null}
      * @param tally        What the run counts as it goes
      * @param selection    Which rules the run uses
-     * @param runs         What {@link LoggedFailures#enter()} returned when the run started
+     * @param runs         What {@link FailureLog#enter()} returned when the run started
      * @return The run's facts
      */
     static RunFacts of(Map<String, Object> values, Map<String, Object> forListeners, Deadline deadline, long runId,
-                       RunContext parent, RunTally tally, RuleSelection selection, LoggedFailures.Runs runs) {
+                       RunContext parent, RunTally tally, RuleSelection selection, FailureLog.Runs runs) {
         RunState run = new RunState(deadline, new RunScope(), selection.startedAt(), selection.tags());
         return new RunFacts(values, forListeners, new EngineEvaluationContext(values, run), deadline, runId, parent,
                 tally, selection, runs);
@@ -123,7 +123,7 @@ final class RunFacts {
     }
 
     /** What is in progress on the run's thread, which the run marks each of its call-outs with. */
-    LoggedFailures.Runs runs() {
+    FailureLog.Runs runs() {
         return runs;
     }
 }

@@ -976,11 +976,11 @@ class RuleSetTest {
         AtomicReference<Error> leaving = new AtomicReference<>();
         // retire() has read that no part is done when the run leaves, the last to, and counts the idle copies'
         // part, so retire()'s compare-and-set fails, and it reads the parts again.
-        Faults.watch(Faults.Step.PARTS_DONE_READ, () -> leaving.set(rules.release(copy)));
+        FaultInjection.watch(FaultInjection.Step.PARTS_DONE_READ, () -> leaving.set(rules.release(copy)));
         try {
             assertNull(rules.retire(), "no fatal error retiring");
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertNull(leaving.get(), "no fatal error leaving");
@@ -997,7 +997,7 @@ class RuleSetTest {
         AtomicReference<Holder> other = new AtomicReference<>();
         // This run has read the count when the other run, on a thread of its own, counts itself, so this run's
         // compare-and-set fails, and it reads the count again.
-        Faults.watch(Faults.Step.USERS_READ, () -> {
+        FaultInjection.watch(FaultInjection.Step.USERS_READ, () -> {
             try {
                 other.set(holdOneCopy(rules));
             } catch (InterruptedException e) {
@@ -1008,7 +1008,7 @@ class RuleSetTest {
         try {
             copy = rules.borrow(deadline());
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
         assertNotNull(other.get(), "the other run never got its copy");
         assertNull(rules.retire(), "no fatal error retiring");
@@ -1032,7 +1032,7 @@ class RuleSetTest {
         AtomicReference<Throwable> otherLeaving = new AtomicReference<>();
         // This run has read the count when the other run leaves, so this run's compare-and-set fails, and it reads
         // the count again: then it is the last, with the rule set retired.
-        Faults.watch(Faults.Step.USERS_READ, () -> {
+        FaultInjection.watch(FaultInjection.Step.USERS_READ, () -> {
             try {
                 other.giveBack();
             } catch (InterruptedException | AssertionError e) {
@@ -1043,7 +1043,7 @@ class RuleSetTest {
         try {
             fatal = rules.release(copy);
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertNull(otherLeaving.get(), "the other run failed to leave");
@@ -1062,11 +1062,11 @@ class RuleSetTest {
         AtomicReference<Error> leaving = new AtomicReference<>();
         // retire() has read that a run uses the rule set when it leaves, the last to, before the rule set is marked,
         // so retire()'s compare-and-set fails, and it reads that no run uses it.
-        Faults.watch(Faults.Step.USERS_READ, () -> leaving.set(rules.release(copy)));
+        FaultInjection.watch(FaultInjection.Step.USERS_READ, () -> leaving.set(rules.release(copy)));
         try {
             assertNull(rules.retire(), "no fatal error retiring");
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertNull(leaving.get(), "no fatal error leaving");

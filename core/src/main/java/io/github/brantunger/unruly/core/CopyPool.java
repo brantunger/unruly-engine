@@ -375,7 +375,7 @@ final class CopyPool {
             forgetIfIdle(runs[0]);
             throw e;
         } catch (Throwable t) {
-            Failures.throwIfPresent(failedBorrow(t, loan));
+            FailurePolicy.throwIfPresent(failedBorrow(t, loan));
             throw t;
         }
     }
@@ -393,10 +393,11 @@ final class CopyPool {
     }
 
     // Uncounts a run whose borrow failed, gives back and closes what the loan still holds, and leaves the rule set,
-    // returning the fatal Error to throw in place of failure, if closing threw one (see Failures.closingInsteadOf).
-    // Uncounted first, with no call, so the run never stays counted. The interrupt status is set again before anything
-    // is closed, if an interrupt caused the failure, so that closing sees it. Each step is in a finally of the one
-    // before, so one that fails, as one that runs out of stack does, doesn't keep the next from running.
+    // returning the fatal Error to throw in place of failure, if closing threw one
+    // (see FailurePolicy.closingInsteadOf). Uncounted first, with no call, so the run never stays counted. The
+    // interrupt status is set again before anything is closed, if an interrupt caused the failure, so that closing sees
+    // it. Each step is in a finally of the one before, so one that fails, as one that runs out of stack does, doesn't
+    // keep the next from running.
     private Error failedBorrow(Throwable failure, Loan loan) {
         int[] runs = loan.runs;
         runs[0]--;
@@ -408,17 +409,17 @@ final class CopyPool {
                 giveBack(loan);
             } finally {
                 try {
-                    Failures.keepInterruptStatus(failure);
+                    FailurePolicy.keepInterruptStatus(failure);
                 } finally {
                     try {
                         fatal = closeTaken(loan);
                     } finally {
-                        fatal = Failures.first(fatal, leave());
+                        fatal = FailurePolicy.first(fatal, leave());
                     }
                 }
             }
         }
-        return Failures.closingInsteadOf(failure, fatal);
+        return FailurePolicy.closingInsteadOf(failure, fatal);
     }
 
     // Closes the sessions a failed borrow took or made and neither lent nor closed, forgetting them first so they are
@@ -442,7 +443,7 @@ final class CopyPool {
      * @param count How many copies to make; zero makes none
      * @throws RuleExecutionException if a language throws or returns {@code null} from {@code newSession()}, or
      *                                throws from {@code warmUp()}. It's logged at ERROR, unless a {@code run()} the
-     *                                language started logged it (see {@link LoggedFailures}), and the copies already
+     *                                language started logged it (see {@link FailureLog}), and the copies already
      *                                made, the one that failed too, even if only some of its sessions were made, stay
      *                                idle for {@link #retire()} to close. A fatal {@link Error} is rethrown
      *                                unchanged.
@@ -479,14 +480,14 @@ final class CopyPool {
 
     private static void warmUp(String language, ExpressionCompiler compiler, Session session) {
         try {
-            LoggedFailures.callOut();
+            FailureLog.callOut();
             compiler.warmUp(session);
         } catch (Throwable e) {
-            Failures.keepInterruptStatus(e);
+            FailurePolicy.keepInterruptStatus(e);
             String msg = "The '" + Text.quote(language) + "' expression language failed to warm up a session: "
-                    + NestedFailures.describeCallOut(e, true);
-            Failures.reportCalledCodeFailure(msg, e);
-            throw NestedFailures.report(msg, e);
+                    + CauseChains.describeCallOut(e, true);
+            FailurePolicy.reportCalledCodeFailure(msg, e);
+            throw CauseChains.report(msg, e);
         }
     }
 
@@ -526,7 +527,7 @@ final class CopyPool {
                 try {
                     giveBack(borrowed.loan);
                 } finally {
-                    fatal = Failures.first(fatal, leave());
+                    fatal = FailurePolicy.first(fatal, leave());
                 }
             }
         }
@@ -542,7 +543,7 @@ final class CopyPool {
     // can't take, as when it runs out of stack or memory before the stack has changed, is closed too, rather than lost
     // with its sessions open, and what the stack threw is logged at WARN, and returned first if it's fatal. Once the
     // stack has changed, nothing is left to fail (see OneStepStack, #1220). An overflow in that log call loses only the
-    // line (see Failures.logWarn, #1217).
+    // line (see FailurePolicy.logWarn, #1217).
     // Any Throwable: the sessions must be closed however keeping them fails, and the run must still leave.
     private Error keep(Map<String, Session> sessions) {
         if (isRetired() && idle.size() >= keptForWaiters()) {
@@ -552,10 +553,10 @@ final class CopyPool {
             idle.add(sessions);
         } catch (Throwable t) {
             Error closeFatal = Closing.sessions(sessions);
-            Failures.keepInterruptStatus(t);
-            Failures.logWarn(log, "A copy of the rules couldn't be kept for a later run, so its sessions were closed:"
-                    + " {}", NestedFailures.describe(t));
-            return Failures.first(Failures.fatalError(t), closeFatal);
+            FailurePolicy.keepInterruptStatus(t);
+            FailurePolicy.logWarn(log, "A copy of the rules couldn't be kept for a later run, so its sessions were"
+                    + " closed: {}", CauseChains.describe(t));
+            return FailurePolicy.first(FailurePolicy.fatalError(t), closeFatal);
         }
         return null;
     }
@@ -627,11 +628,11 @@ final class CopyPool {
                 // in leave().
                 try {
                     if (!marked) {
-                        Faults.at(Faults.Step.RETIRE_MARKED);
+                        FaultInjection.at(FaultInjection.Step.RETIRE_MARKED);
                         int count;
                         do {
                             count = users.get();
-                            Faults.reached(Faults.Step.USERS_READ);
+                            FaultInjection.reached(FaultInjection.Step.USERS_READ);
                         } while (!users.compareAndSet(count, count == 0 ? CLOSED : count | RETIRED));
                         unused = count == 0;
                         marked = true;
@@ -668,7 +669,7 @@ final class CopyPool {
             if (copyTaken == null) {
                 break;
             }
-            Faults.at(Faults.Step.COPY_TAKEN);
+            FaultInjection.at(FaultInjection.Step.COPY_TAKEN);
             taken.add(copyTaken);
             copyTaken = null;
         }
@@ -691,19 +692,19 @@ final class CopyPool {
             }
         } finally {
             try {
-                fatal = Failures.first(fatal, closeAll(retiredCopies));
+                fatal = FailurePolicy.first(fatal, closeAll(retiredCopies));
             } finally {
                 // Nothing more, unless closing one of them threw: then the rest.
-                fatal = Failures.first(fatal, closeAll(retiredCopies));
+                fatal = FailurePolicy.first(fatal, closeAll(retiredCopies));
             }
         }
         if (marked) {
             try {
-                Faults.at(Faults.Step.RETIRED_COPIES_CLOSED);
-                fatal = Failures.first(fatal, partDone(COPIES_TAKEN_CLOSED));
+                FaultInjection.at(FaultInjection.Step.RETIRED_COPIES_CLOSED);
+                fatal = FailurePolicy.first(fatal, partDone(COPIES_TAKEN_CLOSED));
             } finally {
                 if (unused) {
-                    fatal = Failures.first(fatal, closeUnused());
+                    fatal = FailurePolicy.first(fatal, closeUnused());
                 }
             }
         }
@@ -887,7 +888,7 @@ final class CopyPool {
     // would, and a failure that isn't fatal is kept under a fatal Error from closing. Warning is inside the try for the
     // same reason. Sessions closed here are forgotten, so the failed borrow doesn't close them again.
     private Copy copy(Loan loan, Kind kind, boolean warnOnOverflow) {
-        Faults.at(Faults.Step.COPY_LENT);
+        FaultInjection.at(FaultInjection.Step.COPY_LENT);
         Map<String, Session> sessions = loan.sessions;
         Copy copy;
         try {
@@ -905,7 +906,7 @@ final class CopyPool {
             try {
                 giveBack(loan);
             } finally {
-                Failures.throwIfPresent(Failures.closingInsteadOf(t, closeTaken(loan)));
+                FailurePolicy.throwIfPresent(FailurePolicy.closingInsteadOf(t, closeTaken(loan)));
             }
             throw t;
         }
@@ -935,13 +936,13 @@ final class CopyPool {
 
     private void warnAboutOverflow() {
         if (warnedAboutOverflow.compareAndSet(false, true)) {
-            Failures.logWarn(log, "All {} compiled copies of the rules were in use for {} ms without one being given"
-                            + " back, so this run made an extra copy instead of waiting for ever. A rule or listener"
-                            + " that waits for a run of this engine on another thread causes that; so does a rule"
-                            + " slower than the wait; and so does a language's Session.close() that is slow, when a run"
-                            + " of a rule list a reload replaced closes its copy before it gives its permit back. If"
-                            + " runs are meant to wait for each other, build the engine with a larger maxCopies(n), or"
-                            + " with unlimitedCopies() if it runs on a thread pool.",
+            FailurePolicy.logWarn(log, "All {} compiled copies of the rules were in use for {} ms without one being"
+                            + " given back, so this run made an extra copy instead of waiting for ever. A rule or"
+                            + " listener that waits for a run of this engine on another thread causes that; so does a"
+                            + " rule slower than the wait; and so does a language's Session.close() that is slow, when"
+                            + " a run of a rule list a reload replaced closes its copy before it gives its permit back."
+                            + " If runs are meant to wait for each other, build the engine with a larger maxCopies(n),"
+                            + " or with unlimitedCopies() if it runs on a thread pool.",
                     copyLimit.maxCopies(), stallWindow);
         }
     }
@@ -955,7 +956,7 @@ final class CopyPool {
             if (count == CLOSED) {
                 return false;
             }
-            Faults.reached(Faults.Step.USERS_READ);
+            FaultInjection.reached(FaultInjection.Step.USERS_READ);
         } while (!users.compareAndSet(count, count + 1));
         return true;
     }
@@ -973,7 +974,7 @@ final class CopyPool {
         do {
             count = users.get();
             left = count - 1 == RETIRED ? CLOSED : count - 1;
-            Faults.reached(Faults.Step.USERS_READ);
+            FaultInjection.reached(FaultInjection.Step.USERS_READ);
         } while (!users.compareAndSet(count, left));
         if (left == CLOSED) {
             return closeUnused();
@@ -990,7 +991,7 @@ final class CopyPool {
         try {
             fatal = closeAll(idle);
         } finally {
-            fatal = Failures.first(fatal, partDone(IDLE_CLOSED));
+            fatal = FailurePolicy.first(fatal, partDone(IDLE_CLOSED));
         }
         return fatal;
     }
@@ -1007,7 +1008,7 @@ final class CopyPool {
         int done;
         do {
             done = partsDone.get();
-            Faults.reached(Faults.Step.PARTS_DONE_READ);
+            FaultInjection.reached(FaultInjection.Step.PARTS_DONE_READ);
         } while (!partsDone.compareAndSet(done, done | part));
         return (done | part) == BOTH_PARTS ? closeCompilers() : null;
     }
@@ -1017,7 +1018,7 @@ final class CopyPool {
         Error fatal = null;
         for (Map.Entry<String, ExpressionCompiler> compiler = openCompilers.poll(); compiler != null;
                 compiler = openCompilers.poll()) {
-            fatal = Failures.first(fatal, Closing.compiler(compiler.getKey(), compiler.getValue()));
+            fatal = FailurePolicy.first(fatal, Closing.compiler(compiler.getKey(), compiler.getValue()));
         }
         return fatal;
     }
@@ -1025,10 +1026,10 @@ final class CopyPool {
     // Closes every copy in the queue, even after one throws a fatal Error, and returns the first such error. A copy is
     // taken from the queue as it's closed, so if closing one throws, the rest are still there to close.
     private static Error closeAll(Queue<Map<String, Session>> copies) {
-        Faults.at(Faults.Step.COPIES_CLOSING);
+        FaultInjection.at(FaultInjection.Step.COPIES_CLOSING);
         Error fatal = null;
         for (Map<String, Session> sessions = copies.poll(); sessions != null; sessions = copies.poll()) {
-            fatal = Failures.first(fatal, Closing.sessions(sessions));
+            fatal = FailurePolicy.first(fatal, Closing.sessions(sessions));
         }
         return fatal;
     }
@@ -1052,7 +1053,7 @@ final class CopyPool {
         Held held = loan.held;
         if (held != Held.NOTHING) {
             StackHeadroom.checkGiveBack();
-            Faults.at(Faults.Step.GIVING_BACK);
+            FaultInjection.at(FaultInjection.Step.GIVING_BACK);
             loan.held = Held.NOTHING;
             giveBack(held);
         }
@@ -1086,7 +1087,7 @@ final class CopyPool {
             addSessions(sessions);
             return sessions;
         } catch (Throwable t) {
-            Failures.throwIfPresent(Failures.closingInsteadOf(t, Closing.sessions(sessions)));
+            FailurePolicy.throwIfPresent(FailurePolicy.closingInsteadOf(t, Closing.sessions(sessions)));
             throw t;
         }
     }
@@ -1106,26 +1107,26 @@ final class CopyPool {
      * Creates one language's session for a new copy. A failure fails the run that needed the copy, and is logged at
      * ERROR first, unless it's the failure of a {@code run()} or a {@code load()} the language started, which that
      * run or load logged, or a fatal error that run logged, unless the language wrapped it in an exception with a
-     * message of its own (see {@link LoggedFailures}). A fatal {@link Error}, thrown or found among the causes of what
-     * the language throws or suppressed on them (see {@link Failures#fatalError}), is then rethrown unchanged. No
+     * message of its own (see {@link FailureLog}). A fatal {@link Error}, thrown or found among the causes of what
+     * the language throws or suppressed on them (see {@link FailurePolicy#fatalError}), is then rethrown unchanged. No
      * listener is told: no callback has been sent for the run yet.
      */
     private static Session newSession(String language, ExpressionCompiler compiler) {
         String failed = "The '" + Text.quote(language) + "' expression language ";
         Session session;
         try {
-            LoggedFailures.callOut();
+            FailureLog.callOut();
             session = compiler.newSession();
         } catch (Throwable e) {
-            Failures.keepInterruptStatus(e);
-            String msg = failed + "failed to create a session: " + NestedFailures.describeCallOut(e, false);
-            Failures.reportCalledCodeFailure(msg, e);
-            throw NestedFailures.report(msg, e);
+            FailurePolicy.keepInterruptStatus(e);
+            String msg = failed + "failed to create a session: " + CauseChains.describeCallOut(e, false);
+            FailurePolicy.reportCalledCodeFailure(msg, e);
+            throw CauseChains.report(msg, e);
         }
         if (session == null) {
             String msg = failed + "returned no session";
-            Failures.logError(log, msg);
-            throw NestedFailures.report(msg, null);
+            FailurePolicy.logError(log, msg);
+            throw CauseChains.report(msg, null);
         }
         return session;
     }

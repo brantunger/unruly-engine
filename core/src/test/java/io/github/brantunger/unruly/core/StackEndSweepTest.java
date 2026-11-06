@@ -288,8 +288,8 @@ class StackEndSweepTest {
         if (Cancellation.deadlineFrom(null) != Deadline.NONE) {
             left.add("the thread's deadline");
         }
-        if (loggedFailuresRecordLeft()) {
-            left.add("the thread's LoggedFailures record of runs in progress");
+        if (failureLogRecordLeft()) {
+            left.add("the thread's FailureLog record of runs in progress");
         }
         if (runCountedOnThread(held)) {
             left.add("the thread's count of runs in progress");
@@ -318,9 +318,9 @@ class StackEndSweepTest {
 
     // With no run in progress the thread has no record, and recording an exception the engine built then finds none
     // to record it in.
-    private static boolean loggedFailuresRecordLeft() {
+    private static boolean failureLogRecordLeft() {
         try {
-            LoggedFailures.builtByEngine(new IllegalStateException("probe"));
+            FailureLog.builtByEngine(new IllegalStateException("probe"));
             return true;
         } catch (NullPointerException e) {
             return false;
@@ -333,7 +333,7 @@ class StackEndSweepTest {
             rules.release(rules.borrow(PASSED));
             return true;
         } catch (TimeoutException e) {
-            Failures.throwIfPresent(rules.leaveAfterStop());
+            FailurePolicy.throwIfPresent(rules.leaveAfterStop());
             return false;
         } catch (InterruptedException e) {
             throw new AssertionError(e);
@@ -361,11 +361,11 @@ class StackEndSweepTest {
                     CopyPool.Copy second = rules.borrow(PASSED);
                     int permits = (first.held() == CopyPool.Held.PERMIT ? 1 : 0)
                             + (second.held() == CopyPool.Held.PERMIT ? 1 : 0);
-                    Failures.throwIfPresent(rules.release(second));
-                    Failures.throwIfPresent(rules.release(first));
+                    FailurePolicy.throwIfPresent(rules.release(second));
+                    FailurePolicy.throwIfPresent(rules.release(first));
                     return permits;
                 } catch (TimeoutException e) {
-                    Failures.throwIfPresent(rules.leaveAfterStop());
+                    FailurePolicy.throwIfPresent(rules.leaveAfterStop());
                     return 0;
                 }
             }).get();

@@ -89,26 +89,26 @@ final class RetireQueue {
     }
 
     private Throwable retireEachClaimed(long claim) {
-        Faults.at(Faults.Step.CLAIMED_RETIRING);
+        FaultInjection.at(FaultInjection.Step.CLAIMED_RETIRING);
         Error fatal = null;
         Throwable failure = null;
         for (CopyPool rules = claimed(claim); rules != null; rules = claimed(claim)) {
             try {
-                fatal = Failures.first(fatal, rules.retire());
+                fatal = FailurePolicy.first(fatal, rules.retire());
             } catch (Throwable t) {
                 // Any Throwable: the rest are retired all the same, and what it was is reported once they are.
-                Error thrownFatal = Failures.fatalError(t);
+                Error thrownFatal = FailurePolicy.fatalError(t);
                 if (thrownFatal == null) {
-                    Failures.keepAlso(t, failure);
+                    FailurePolicy.keepAlso(t, failure);
                     failure = t;
                 } else {
-                    fatal = Failures.first(fatal, thrownFatal);
+                    fatal = FailurePolicy.first(fatal, thrownFatal);
                 }
             } finally {
                 settle(rules);
             }
         }
-        Failures.keepAlso(fatal, failure);
+        FailurePolicy.keepAlso(fatal, failure);
         return fatal != null ? fatal : failure;
     }
 
@@ -134,7 +134,7 @@ final class RetireQueue {
             CopyPool rules = unretired;
             while (rules != null) {
                 CopyPool next = rules.nextUnretired;
-                Faults.at(Faults.Step.SETTLING);
+                FaultInjection.at(FaultInjection.Step.SETTLING);
                 if (rules.retiredForGood()) {
                     if (previous == null) {
                         unretired = next;

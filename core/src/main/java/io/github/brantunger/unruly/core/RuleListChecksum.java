@@ -15,7 +15,7 @@ import java.util.List;
  * Computes the checksum that identifies a loaded rule list, as
  * {@link io.github.brantunger.unruly.api.RuleSetInfo#checksum()} describes it.
  */
-final class Checksums {
+final class RuleListChecksum {
 
     /** The algorithm the checksum is documented to use. */
     static final String SHA_256 = "SHA-256";
@@ -34,7 +34,7 @@ final class Checksums {
     // Shifted right by the number of bytes, the ones the first byte starts with: 110, 1110 or 11110.
     private static final int LEAD_ONES = 0xff00;
 
-    private Checksums() {
+    private RuleListChecksum() {
     }
 
     /**
@@ -78,7 +78,7 @@ final class Checksums {
     private static void writeTags(ByteArrayOutputStream bytes, Rule rule) {
         writeLength(bytes, rule.getTags().size());
         rule.getTags().stream()
-                .map(Checksums::utf8)
+                .map(RuleListChecksum::utf8)
                 .sorted(Arrays::compareUnsigned)
                 .forEach(utf8 -> {
                     writeLength(bytes, utf8.length);

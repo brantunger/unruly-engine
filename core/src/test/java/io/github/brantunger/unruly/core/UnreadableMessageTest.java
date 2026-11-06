@@ -473,7 +473,7 @@ class UnreadableMessageTest {
     void describedAsTheRootCause() {
         assertEquals("java.lang.RuntimeException (caused by " + Nasty.class.getName()
                         + ": (message unavailable: java.lang.NullPointerException))",
-                NestedFailures.describe(new RuntimeException(null, new Nasty())));
+                CauseChains.describe(new RuntimeException(null, new Nasty())));
     }
 
     @Test
@@ -483,8 +483,8 @@ class UnreadableMessageTest {
         Nasty nasty = new Nasty(new IllegalStateException("boom"));
         String described = nasty() + " (caused by java.lang.IllegalStateException: boom)";
 
-        assertEquals(described, NestedFailures.describe(nasty));
-        assertEquals(described, Failures.describeWithClass(nasty));
+        assertEquals(described, CauseChains.describe(nasty));
+        assertEquals(described, FailurePolicy.describeWithClass(nasty));
     }
 
     @Test
@@ -492,7 +492,7 @@ class UnreadableMessageTest {
     void describedInTheMiddleOfAChain() {
         RuntimeException top = new RuntimeException("top", new Nasty(new IllegalStateException("boom")));
 
-        assertEquals("top (caused by java.lang.IllegalStateException: boom)", NestedFailures.describe(top));
+        assertEquals("top (caused by java.lang.IllegalStateException: boom)", CauseChains.describe(top));
     }
 
     /** An exception whose {@code getMessage()} and {@code toString()} throw {@code failure}, such as a fatal error. */
@@ -760,7 +760,7 @@ class UnreadableMessageTest {
         FatalText failure = new FatalText(new OutOfMemoryError("reading"));
         AtomicReference<Error> result = new AtomicReference<>();
 
-        Outcome<Throwable> outcome = capture(() -> result.set(Failures.closingInsteadOf(failure, closeFatal)));
+        Outcome<Throwable> outcome = capture(() -> result.set(FailurePolicy.closingInsteadOf(failure, closeFatal)));
 
         assertEquals(null, outcome.thrown() == null ? null : outcome.thrown().getClass().getName());
         assertSame(closeFatal, result.get());
@@ -774,7 +774,7 @@ class UnreadableMessageTest {
     void describedAboveAnotherUnreadableMessage() {
         assertEquals(Nasty.class.getName() + UNAVAILABLE + " (caused by " + OtherNasty.class.getName()
                 + ": (message unavailable: java.lang.NullPointerException))",
-                NestedFailures.describe(new Nasty(new OtherNasty())));
+                CauseChains.describe(new Nasty(new OtherNasty())));
     }
 
     @Test
@@ -782,7 +782,7 @@ class UnreadableMessageTest {
     void describedUnderAWrapperWithItsMessage() {
         assertEquals(Delegating.class.getName() + UNAVAILABLE + " (caused by " + Nasty.class.getName()
                 + ": (message unavailable: java.lang.NullPointerException))",
-                NestedFailures.describe(new Delegating(new Nasty())));
+                CauseChains.describe(new Delegating(new Nasty())));
     }
 
     @Test

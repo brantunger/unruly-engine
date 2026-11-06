@@ -1238,10 +1238,10 @@ class CloseEverySessionTest {
         AtomicReference<Error> returned = new AtomicReference<>();
         Outcome<Throwable> outcome;
         try {
-            Faults.inject(Faults.Step.FAILURE_LOGGED, 1, new StackOverflowError());
+            FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, new StackOverflowError());
             outcome = capture(() -> returned.set(rules.release(copy)));
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertNull(outcome.thrown(), "the overflow in the log call isn't what the run gets");
@@ -1262,10 +1262,10 @@ class CloseEverySessionTest {
         StackOverflowError overflow = new StackOverflowError();
         Throwable thrown;
         try {
-            Faults.inject(Faults.Step.STACK_CHANGING, 1, overflow);
+            FaultInjection.inject(FaultInjection.Step.STACK_CHANGING, 1, overflow);
             thrown = thrownBy(() -> rules.borrow(Deadline.NONE));
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertSame(overflow, thrown);
@@ -1289,10 +1289,10 @@ class CloseEverySessionTest {
         AtomicReference<Error> returned = new AtomicReference<>();
         Outcome<Throwable> outcome;
         try {
-            Faults.inject(Faults.Step.STACK_CHANGING, 1, new StackOverflowError("keeping the copy"));
+            FaultInjection.inject(FaultInjection.Step.STACK_CHANGING, 1, new StackOverflowError("keeping the copy"));
             outcome = capture(() -> returned.set(rules.release(copy)));
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
 
         assertNull(outcome.thrown());
@@ -1425,7 +1425,7 @@ class CloseEverySessionTest {
         InterruptedException interrupted = new InterruptedException();
         AtomicBoolean status = new AtomicBoolean();
         Thread thread = new Thread(() -> {
-            Failures.closingInsteadOf(interrupted, fatal);
+            FailurePolicy.closingInsteadOf(interrupted, fatal);
             status.set(Thread.currentThread().isInterrupted());
         });
 
@@ -2086,7 +2086,7 @@ class CloseEverySessionTest {
         IllegalStateException failure = new IllegalStateException("the engine is closed");
         AtomicReference<Error> result = new AtomicReference<>();
 
-        String logs = logsOf(() -> result.set(Failures.closingInsteadOf(failure, fatal)));
+        String logs = logsOf(() -> result.set(FailurePolicy.closingInsteadOf(failure, fatal)));
 
         assertSame(fatal, result.get());
         assertEquals(0, fatal.getSuppressed().length);
@@ -2101,7 +2101,7 @@ class CloseEverySessionTest {
         OutOfMemoryError fatal = new OutOfMemoryError("closing");
         IllegalStateException failure = new IllegalStateException("the engine is closed");
 
-        String logs = logsOf(() -> Failures.closingInsteadOf(failure, fatal));
+        String logs = logsOf(() -> FailurePolicy.closingInsteadOf(failure, fatal));
 
         assertArrayEquals(new Throwable[] {failure}, fatal.getSuppressed());
         assertEquals("", logs);
@@ -2162,14 +2162,14 @@ class CloseEverySessionTest {
     @DisplayName("a fatal Error that carries more exceptions than the engine reads still carries a second one")
     void fatalCarryingManyStillCarriesASecond() {
         OutOfMemoryError first = new OutOfMemoryError("first");
-        for (int i = 0; i < Failures.MAX_EXCEPTIONS_READ; i++) {
+        for (int i = 0; i < FailurePolicy.MAX_EXCEPTIONS_READ; i++) {
             first.addSuppressed(new IllegalStateException("kept " + i));
         }
         OutOfMemoryError second = new OutOfMemoryError("second");
 
-        String logs = logsOf(() -> assertSame(first, Failures.first(first, second)));
+        String logs = logsOf(() -> assertSame(first, FailurePolicy.first(first, second)));
 
-        assertSame(second, first.getSuppressed()[Failures.MAX_EXCEPTIONS_READ]);
+        assertSame(second, first.getSuppressed()[FailurePolicy.MAX_EXCEPTIONS_READ]);
         assertEquals("", logs);
     }
 
@@ -2183,7 +2183,7 @@ class CloseEverySessionTest {
         first.addSuppressed(shared);
         OutOfMemoryError second = new OutOfMemoryError("second");
 
-        Failures.first(first, second);
+        FailurePolicy.first(first, second);
 
         assertArrayEquals(new Throwable[] {shared, second}, first.getSuppressed());
     }
@@ -2216,7 +2216,7 @@ class CloseEverySessionTest {
         OutOfMemoryError second = new OutOfMemoryError("closing the compiler");
         AtomicReference<Error> result = new AtomicReference<>();
 
-        String logs = logsOf(() -> result.set(Failures.first(first, second)));
+        String logs = logsOf(() -> result.set(FailurePolicy.first(first, second)));
 
         assertSame(first, result.get());
         assertEquals(0, first.getSuppressed().length);

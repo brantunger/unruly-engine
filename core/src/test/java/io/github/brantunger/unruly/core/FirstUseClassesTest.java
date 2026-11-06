@@ -11,13 +11,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * #911: how {@code RunClasses} initializes what a lookup can't reach, what isn't there, and what it can only name in a
- * native image. Which classes it initializes is {@code FirstRunClassInitializationTest}'s to check. #1115: that it
+ * #911: how {@code FirstUseClasses} initializes what a lookup can't reach, what isn't there, and what it can only name
+ * in a native image. Which classes it initializes is {@code FirstRunClassInitializationTest}'s to check. #1115: that it
  * reads no class's methods in a native image, and that a reflective call that throws is ignored.
  */
-@DisplayName("RunClasses initializes a class a lookup can't reach by name, skips one that isn't there, and names none"
-        + " in a native image, nor reads any method (#911, #951, #1115)")
-class RunClassesTest {
+@DisplayName("FirstUseClasses initializes a class a lookup can't reach by name, skips one that isn't there, and names"
+        + " none in a native image, nor reads any method (#911, #951, #1115)")
+class FirstUseClassesTest {
 
     private static final String IMAGE_CODE = "org.graalvm.nativeimage.imagecode";
 
@@ -46,7 +46,7 @@ class RunClassesTest {
         }
     }
 
-    // Not public, as Unreachable isn't, and only ever given to RunClasses in a native image.
+    // Not public, as Unreachable isn't, and only ever given to FirstUseClasses in a native image.
     private static final class UnreachableInImage {
         static {
             UNREACHABLE_IN_IMAGE_INITIALIZED.set(true);
@@ -60,7 +60,7 @@ class RunClassesTest {
         }
     }
 
-    // Only ever named, so nothing but RunClasses initializes it.
+    // Only ever named, so nothing but FirstUseClasses initializes it.
     private static final class Named {
         static {
             NAMED_INITIALIZED.set(true);
@@ -77,8 +77,8 @@ class RunClassesTest {
     @Test
     @DisplayName("a class the lookup can't reach is initialized by name, and a name no class has is skipped")
     void unreachableAndMissing() {
-        RunClasses.initialize(MethodHandles.publicLookup(), List.of(Unreachable.class),
-                List.of(RunClassesTest.class.getName() + "$Missing"));
+        FirstUseClasses.initialize(MethodHandles.publicLookup(), List.of(Unreachable.class),
+                List.of(FirstUseClassesTest.class.getName() + "$Missing"));
 
         assertTrue(INITIALIZED.get());
     }
@@ -88,7 +88,8 @@ class RunClassesTest {
     void nativeImage() {
         System.setProperty(IMAGE_CODE, "runtime");
         try {
-            RunClasses.initialize(MethodHandles.lookup(), List.of(Reachable.class), List.of(Named.class.getName()));
+            FirstUseClasses.initialize(MethodHandles.lookup(), List.of(Reachable.class),
+                    List.of(Named.class.getName()));
         } finally {
             System.clearProperty(IMAGE_CODE);
         }
@@ -103,7 +104,7 @@ class RunClassesTest {
     void nativeImageUnreachable() {
         System.setProperty(IMAGE_CODE, "runtime");
         try {
-            RunClasses.initialize(MethodHandles.publicLookup(), List.of(UnreachableInImage.class), List.of());
+            FirstUseClasses.initialize(MethodHandles.publicLookup(), List.of(UnreachableInImage.class), List.of());
         } finally {
             System.clearProperty(IMAGE_CODE);
         }
@@ -129,7 +130,7 @@ class RunClassesTest {
         };
         System.setProperty(IMAGE_CODE, "runtime");
         try {
-            RunClasses.readMembers(unread);
+            FirstUseClasses.readMembers(unread);
         } finally {
             System.clearProperty(IMAGE_CODE);
         }
@@ -138,7 +139,7 @@ class RunClassesTest {
     @Test
     @DisplayName("a method called reflectively that throws is called, and what it throws ignored (#1115)")
     void invokedMethodThrows() throws NoSuchMethodException {
-        assertDoesNotThrow(() -> RunClasses.invoke(Throwing.class.getMethod("fail"), new Throwing()));
+        assertDoesNotThrow(() -> FirstUseClasses.invoke(Throwing.class.getMethod("fail"), new Throwing()));
     }
 
     @Test
@@ -146,7 +147,7 @@ class RunClassesTest {
     void nativeImageBuild() {
         System.setProperty(IMAGE_CODE, "buildtime");
         try {
-            RunClasses.initialize(MethodHandles.lookup(), List.of(), List.of(NamedWhileBuilding.class.getName()));
+            FirstUseClasses.initialize(MethodHandles.lookup(), List.of(), List.of(NamedWhileBuilding.class.getName()));
         } finally {
             System.clearProperty(IMAGE_CODE);
         }

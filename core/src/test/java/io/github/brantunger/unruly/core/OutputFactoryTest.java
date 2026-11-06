@@ -90,14 +90,14 @@ class OutputFactoryTest {
         RulesEngine<Map<String, Object>> engine = engineWith(ENGINES.get(0), () -> {
             throw boom;
         }, "true");
-        Faults.inject(Faults.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
+        FaultInjection.inject(FaultInjection.Step.FAILURE_DESCRIBING, 1, new OutOfMemoryError("describing"));
         try {
             RuleExecutionException ex = assertThrows(RuleExecutionException.class, () -> engine.run(new FactMap<>()));
 
             assertEquals("Output factory threw java.lang.IllegalStateException", ex.getMessage());
             assertSame(boom, ex.getCause());
         } finally {
-            Faults.clear();
+            FaultInjection.clear();
         }
     }
 

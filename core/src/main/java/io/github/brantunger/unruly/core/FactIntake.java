@@ -39,9 +39,9 @@ final class FactIntake {
      * Creates the fact intake of an engine. Built with the engine, so {@code FactIntake} itself is loaded then, not by
      * a run, which may be nested deep in another run's stack (see StackHeadroom). The build loads {@link FactNames}
      * before this, as {@link ReservedNames} reads the reserved names with it, and initializes
-     * {@link FactNames.Problem} with the classes engines use (see RunClasses), and {@code FactIntake} itself neither
-     * loads a class nor bootstraps a lambda the first time a run's fact name is rejected or a run's fact declared
-     * with a primitive type is widened.
+     * {@link FactNames.Problem} with the classes engines use (see FirstUseClasses), and {@code FactIntake} itself
+     * neither loads a class nor bootstraps a lambda the first time a run's fact name is rejected or a run's fact
+     * declared with a primitive type is widened.
      *
      * @param log      The engine's logger
      * @param settings The engine's settings: its declared facts, whether a run may supply only those, and the fact
@@ -68,14 +68,14 @@ final class FactIntake {
      * Java widens to that type, such as an {@link Integer} for a {@code long}, is widened here, so listeners and
      * languages see only the declared type; its value in the store isn't changed. Any other value is kept as it is,
      * for {@link #checkDeclaredType(String, Object)} to judge. Reading the store and reading each fact are call-outs
-     * of the run (see {@link LoggedFailures#callOut()}).
+     * of the run (see {@link FailureLog#callOut()}).
      *
      * @param facts The key/value fact store
      * @param runs  What is in progress on the run's thread, which marks each call-out
      * @return A map of fact names to their values, which may hold a {@code null} name a custom store allowed
      * @throws NullPointerException if the store's {@link FactStore#asMap()} returns {@code null}
      */
-    Map<String, Object> factValues(FactStore<?> facts, LoggedFailures.Runs runs) {
+    Map<String, Object> factValues(FactStore<?> facts, FailureLog.Runs runs) {
         Map<String, Object> entryMap = new HashMap<>();
         runs.callOut();
         Map<String, ? extends FactReference<?>> view = Objects.requireNonNull(facts.asMap(),
@@ -167,7 +167,7 @@ final class FactIntake {
      *                                  the name throws anything else
      */
     void checkFactNames(Map<String, Object> values, Map<String, ExpressionCompiler> checks,
-                        Map<String, Set<String>> namesRead, Map<String, String> reserved, LoggedFailures.Runs runs) {
+                        Map<String, Set<String>> namesRead, Map<String, String> reserved, FailureLog.Runs runs) {
         // Every name first, as the names the engine's languages reserve for every rule list were, before any language
         // checks one. Asked only when a language reserves one, so a run of any other engine allocates nothing here.
         if (!reserved.isEmpty()) {
@@ -188,14 +188,14 @@ final class FactIntake {
 
     /**
      * Logs the failure of a run whose facts the engine rejects, and records it as logged, so the code around a nested
-     * run that rejects its facts doesn't log it again (see {@link LoggedFailures}).
+     * run that rejects its facts doesn't log it again (see {@link FailureLog}).
      *
      * @param msg Why the facts were rejected
      * @return The exception to throw
      */
     private IllegalArgumentException rejectedFact(String msg) {
-        Failures.logError(log, msg);
-        return LoggedFailures.loggedByRun(new IllegalArgumentException(msg));
+        FailurePolicy.logError(log, msg);
+        return FailureLog.loggedByRun(new IllegalArgumentException(msg));
     }
 
     /**
@@ -215,7 +215,7 @@ final class FactIntake {
             return;
         }
         // Concatenated, not formatted: String.formatted() has the JDK initialize Formatter's classes, which a run
-        // that rejects a fact would be the first to use (see RunClasses).
+        // that rejects a fact would be the first to use (see FirstUseClasses).
         String why = primitiveFacts.containsKey(name) && Widening.isPrimitiveLike(value)
                 ? " (" + Widening.ONLY_WIDENED + ")" : "";
         throw rejectedFact("Fact '" + Text.quote(name) + "' was declared as " + declared.getName()
@@ -253,11 +253,11 @@ final class FactIntake {
      * {@link IllegalArgumentException}, which is returned as is. Anything else a language throws, a {@link Throwable}
      * that is neither an exception nor an error too, is returned as an {@code IllegalArgumentException} naming the fact
      * and the language, except a fatal {@link Error}, thrown or among the causes of what the language throws, or
-     * suppressed on them (see {@link Failures#fatalError}), a rejection included, which is logged and rethrown. A
+     * suppressed on them (see {@link FailurePolicy#fatalError}), a rejection included, which is logged and rethrown. A
      * failure of a {@code run()} or a {@code load()} the check started, and a fatal error that run logged, isn't logged
      * a second time, and a rejection this logs is recorded as logged, so the code around a nested run doesn't log it
-     * again (see {@link LoggedFailures}). Each language's check is a call-out of the run, load or validation (see
-     * {@link LoggedFailures#callOut()}).
+     * again (see {@link FailureLog}). Each language's check is a call-out of the run, load or validation (see
+     * {@link FailureLog#callOut()}).
      *
      * @param log       The engine's logger
      * @param name      The fact's name
@@ -271,7 +271,7 @@ final class FactIntake {
      */
     static IllegalArgumentException factNameRejection(Logger log, String name, Map<String, ExpressionCompiler> checks,
                                                       Map<String, Set<String>> namesRead, boolean logged,
-                                                      LoggedFailures.Runs runs) {
+                                                      FailureLog.Runs runs) {
         for (Map.Entry<String, ExpressionCompiler> check : checks.entrySet()) {
             // Looked up only when a compiler said which facts its rules read, so a run of any other engine allocates
             // nothing here.
@@ -292,7 +292,7 @@ final class FactIntake {
 
     /**
      * Checks a fact name with one language, as
-     * {@link #factNameRejection(Logger, String, Map, Map, boolean, LoggedFailures.Runs)} describes.
+     * {@link #factNameRejection(Logger, String, Map, Map, boolean, FailureLog.Runs)} describes.
      *
      * @param log      The engine's logger
      * @param name     The fact's name
@@ -305,24 +305,24 @@ final class FactIntake {
      */
     private static IllegalArgumentException factNameRejection(Logger log, String name, String language,
                                                               ExpressionCompiler compiler, boolean logged,
-                                                              LoggedFailures.Runs runs) {
+                                                              FailureLog.Runs runs) {
         Throwable failure;
         try {
             runs.callOut();
             compiler.checkFactName(name);
             return null;
         } catch (IllegalArgumentException e) {
-            if (Failures.fatalError(e) == null) {
+            if (FailurePolicy.fatalError(e) == null) {
                 // An interrupt the language wrapped, or left suppressed, in its rejection is put back, as for any
                 // other exception it throws.
-                Failures.keepInterruptStatus(e);
+                FailurePolicy.keepInterruptStatus(e);
                 // The language wrote this message and it names the fact, so it's escaped before it's logged. The
                 // exception is returned as it came, so a caller still reads exactly what the language said. A failed
                 // run() or load() the check started has already logged its failure; the language's own instance is
                 // what's recorded as logged here.
-                if (logged && NestedFailures.nestedRunFailure(e) == null) {
-                    Failures.logError(log, NestedFailures.describe(e));
-                    LoggedFailures.loggedByRun(e);
+                if (logged && CauseChains.nestedRunFailure(e) == null) {
+                    FailurePolicy.logError(log, CauseChains.describe(e));
+                    FailureLog.loggedByRun(e);
                 }
                 return e;
             }
@@ -331,17 +331,17 @@ final class FactIntake {
         } catch (Throwable e) {
             failure = e;
         }
-        Failures.keepInterruptStatus(failure);
+        FailurePolicy.keepInterruptStatus(failure);
         String msg = "The '" + Text.quote(language) + "' expression language failed to check fact name '"
-                + Text.quote(name) + "': " + NestedFailures.describeCallOut(failure, true);
-        Error fatal = Failures.fatalError(failure);
-        boolean logs = (logged || fatal != null) && NestedFailures.unlogged(failure);
+                + Text.quote(name) + "': " + CauseChains.describeCallOut(failure, true);
+        Error fatal = FailurePolicy.fatalError(failure);
+        boolean logs = (logged || fatal != null) && CauseChains.unlogged(failure);
         if (logs) {
-            Failures.logError(log, msg);
+            FailurePolicy.logError(log, msg);
         }
-        Failures.throwIfPresent(fatal);
-        // The engine's words around what the language threw, which may be a nested run's failure (see LoggedFailures).
-        IllegalArgumentException rejected = LoggedFailures.builtByEngine(new IllegalArgumentException(msg, failure));
-        return logs ? LoggedFailures.loggedByRun(rejected) : rejected;
+        FailurePolicy.throwIfPresent(fatal);
+        // The engine's words around what the language threw, which may be a nested run's failure (see FailureLog).
+        IllegalArgumentException rejected = FailureLog.builtByEngine(new IllegalArgumentException(msg, failure));
+        return logs ? FailureLog.loggedByRun(rejected) : rejected;
     }
 }

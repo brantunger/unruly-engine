@@ -295,7 +295,7 @@ class FactPropertiesFailureLogTest {
             Item down = new Item(() -> {
                 throw new IllegalStateException("price service down");
             });
-            for (int i = 0; i <= LoggedFailures.MAX_LOGGED; i++) {
+            for (int i = 0; i <= FailureLog.MAX_LOGGED; i++) {
                 assertThrows(IllegalStateException.class, () -> FactProperties.read(down, "price"));
             }
             throw nested;

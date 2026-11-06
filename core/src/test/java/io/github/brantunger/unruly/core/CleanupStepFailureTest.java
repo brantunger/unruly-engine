@@ -37,8 +37,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #839 and #841: one step of a run's, a load's or a close's set-up or clean-up fails, as a {@link StackOverflowError}
- * or an {@link OutOfMemoryError} can at any call, made to fail at a normal depth through {@link Faults}. Each test
- * names the state the failure used to leave taken: the step after the one that fails must still run, a step whose
+ * or an {@link OutOfMemoryError} can at any call, made to fail at a normal depth through {@link FaultInjection}. Each
+ * test names the state the failure used to leave taken: the step after the one that fails must still run, a step whose
  * failure left something taken must be tried again, and a retirement that failed part way must be finished later.
  * {@code StackEndSweepTest} shows the same with real overflows, at the end of the stack.
  */
@@ -132,7 +132,7 @@ class CleanupStepFailureTest {
 
     @AfterEach
     void takeBackTheFault() {
-        Faults.clear();
+        FaultInjection.clear();
     }
 
     @SuppressWarnings("unchecked")
@@ -161,10 +161,10 @@ class CleanupStepFailureTest {
                 CopyPool.Copy second = rules.borrow(PASSED);
                 free.set((first.held() == CopyPool.Held.PERMIT ? 1 : 0)
                         + (second.held() == CopyPool.Held.PERMIT ? 1 : 0));
-                Failures.throwIfPresent(rules.release(second));
-                Failures.throwIfPresent(rules.release(first));
+                FailurePolicy.throwIfPresent(rules.release(second));
+                FailurePolicy.throwIfPresent(rules.release(first));
             } catch (TimeoutException e) {
-                Failures.throwIfPresent(rules.leaveAfterStop());
+                FailurePolicy.throwIfPresent(rules.leaveAfterStop());
                 free.set(0);
             } catch (InterruptedException e) {
                 throw new AssertionError(e);
@@ -183,7 +183,7 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> timed = engine(language);
         CoreRulesEngine<Object> untimed = engine(language);
         OutOfMemoryError failure = new OutOfMemoryError("counting the run");
-        Faults.inject(Faults.Step.RUN_COUNTED, 1, failure);
+        FaultInjection.inject(FaultInjection.Step.RUN_COUNTED, 1, failure);
 
         assertSame(failure, assertThrows(OutOfMemoryError.class,
                 () -> timed.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofNanos(1)))));
@@ -201,7 +201,7 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> timed = engine(language);
         CoreRulesEngine<Object> untimed = engine(language);
-        Faults.inject(Faults.Step.DEADLINE_SET, 1, new OutOfMemoryError("setting the deadline"));
+        FaultInjection.inject(FaultInjection.Step.DEADLINE_SET, 1, new OutOfMemoryError("setting the deadline"));
 
         assertThrows(OutOfMemoryError.class,
                 () -> timed.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofNanos(1))));
@@ -216,7 +216,7 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> timed = engine(language);
         CoreRulesEngine<Object> untimed = engine(language);
-        Faults.inject(Faults.Step.RUN_UNCOUNTED, 1, new StackOverflowError("uncounting the run"));
+        FaultInjection.inject(FaultInjection.Step.RUN_UNCOUNTED, 1, new StackOverflowError("uncounting the run"));
 
         assertThrows(StackOverflowError.class,
                 () -> timed.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofNanos(1))));
@@ -238,7 +238,7 @@ class CleanupStepFailureTest {
         });
         engine.load(RULES);
         // The first deadline set is the run's own, as it starts; the second opens the scope listeners hear it in.
-        Faults.inject(Faults.Step.DEADLINE_SET, 2, new StackOverflowError("opening the run's scope"));
+        FaultInjection.inject(FaultInjection.Step.DEADLINE_SET, 2, new StackOverflowError("opening the run's scope"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
 
@@ -259,7 +259,8 @@ class CleanupStepFailureTest {
         });
         engine.load(RULES);
         // The first deadline put back is the scope's, as it closes; the run's own is put back after it.
-        Faults.inject(Faults.Step.DEADLINE_PUT_BACK, 1, new StackOverflowError("closing the run's scope"));
+        FaultInjection.inject(FaultInjection.Step.DEADLINE_PUT_BACK, 1,
+                new StackOverflowError("closing the run's scope"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
 
@@ -275,7 +276,7 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language);
         language.failSessions = true;
         // The run takes the only permit, fails to make its copy, and the first give-back of the permit fails.
-        Faults.inject(Faults.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
+        FaultInjection.inject(FaultInjection.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
 
         TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
 
@@ -293,13 +294,13 @@ class CleanupStepFailureTest {
                 new InternalError("giving back the permit"))) {
             Counting language = new Counting();
             CoreRulesEngine<Object> engine = engine(language);
-            Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
+            FaultInjection.inject(FaultInjection.Step.GIVING_BACK, 1, giving);
 
             assertSame(giving, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
 
             assertEquals(1, freePermits(engine), "the permit is back, once");
             engine.close();
-            Faults.clear();
+            FaultInjection.clear();
         }
     }
 
@@ -313,14 +314,14 @@ class CleanupStepFailureTest {
         for (InternalError giving : List.of(new InternalError(new StackOverflowError()), fatal)) {
             Counting language = new Counting();
             CoreRulesEngine<Object> engine = engine(language);
-            Faults.inject(Faults.Step.GIVING_BACK, 1, giving);
-            Faults.injectThen(Faults.Step.RUN_ENDING_COMBINED, combining);
+            FaultInjection.inject(FaultInjection.Step.GIVING_BACK, 1, giving);
+            FaultInjection.injectThen(FaultInjection.Step.RUN_ENDING_COMBINED, combining);
 
             assertSame(giving == fatal ? fatal : combining, EngineLogs.thrownBy(() -> engine.run(new FactMap<>())));
 
             assertEquals(1, freePermits(engine), "the permit is back, once");
             engine.close();
-            Faults.clear();
+            FaultInjection.clear();
         }
     }
 
@@ -330,7 +331,7 @@ class CleanupStepFailureTest {
     void aRunWhosePermitFailsToGoBackStillLeavesTheRulesAndGivesItBack() throws InterruptedException {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
-        Faults.inject(Faults.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
+        FaultInjection.inject(FaultInjection.Step.GIVING_BACK, 1, new StackOverflowError("giving back the permit"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
 
@@ -345,13 +346,13 @@ class CleanupStepFailureTest {
     void aGiveBackThatFailsOnceThePermitIsBackNeverGivesItBackTwice() throws InterruptedException {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
-        Faults.inject(Faults.Step.PERMIT_RELEASED, 1, new StackOverflowError("waking a waiting run"));
+        FaultInjection.inject(FaultInjection.Step.PERMIT_RELEASED, 1, new StackOverflowError("waking a waiting run"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
         assertEquals(1, freePermits(engine), "a run that gives back its copy gives the permit back once");
 
         language.failSessions = true;
-        Faults.inject(Faults.Step.PERMIT_RELEASED, 1, new StackOverflowError("waking a waiting run"));
+        FaultInjection.inject(FaultInjection.Step.PERMIT_RELEASED, 1, new StackOverflowError("waking a waiting run"));
         TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
         language.failSessions = false;
         assertEquals(1, freePermits(engine), "a failed borrow gives the permit back once");
@@ -369,7 +370,7 @@ class CleanupStepFailureTest {
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         // A virtual thread without a limit takes the only build slot to make its copy, fails to make it, and the
         // first give-back of the slot fails.
-        Throwable failure = failVirtualBorrow(rules, Faults.Step.GIVING_BACK);
+        Throwable failure = failVirtualBorrow(rules, FaultInjection.Step.GIVING_BACK);
 
         assertInstanceOf(StackOverflowError.class, failure, "the borrow failed as the give-back did");
         assertOneSlot(permits);
@@ -384,7 +385,7 @@ class CleanupStepFailureTest {
         CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withPermits(permits).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
 
-        Throwable failure = failVirtualBorrow(rules, Faults.Step.SLOT_RELEASED);
+        Throwable failure = failVirtualBorrow(rules, FaultInjection.Step.SLOT_RELEASED);
 
         assertInstanceOf(StackOverflowError.class, failure, "the borrow failed as the give-back did");
         assertOneSlot(permits);
@@ -392,7 +393,7 @@ class CleanupStepFailureTest {
 
     // Borrows on a virtual thread, which takes a build slot, with the step failing on that thread; returns what the
     // borrow threw.
-    private static Throwable failVirtualBorrow(CopyPool rules, Faults.Step step) throws InterruptedException {
+    private static Throwable failVirtualBorrow(CopyPool rules, FaultInjection.Step step) throws InterruptedException {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread run = Thread.ofVirtual().unstarted(() -> TestLogs.logsOf(() -> {
             try {
@@ -401,7 +402,7 @@ class CleanupStepFailureTest {
                 failure.set(t);
             }
         }));
-        Faults.inject(run, step, 1, new StackOverflowError("giving back the slot"));
+        FaultInjection.inject(run, step, 1, new StackOverflowError("giving back the slot"));
         run.start();
         run.join(TimeUnit.SECONDS.toMillis(10));
         return failure.get();
@@ -419,7 +420,7 @@ class CleanupStepFailureTest {
     void lendingThatFailsClosesTheSessionsAndGivesBackThePermit() throws InterruptedException {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
-        Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
+        FaultInjection.inject(FaultInjection.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
 
         assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>()));
 
@@ -438,8 +439,9 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language);
         // Lending fails with the copy's sessions recorded in the loan, and the failed borrow's own give-back of the
         // permit, the first reach of the step, fails too.
-        Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
-        Faults.injectThen(Faults.Step.GIVING_BACK, new StackOverflowError("giving back the permit again"));
+        FaultInjection.inject(FaultInjection.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
+        FaultInjection.injectThen(FaultInjection.Step.GIVING_BACK,
+                new StackOverflowError("giving back the permit again"));
 
         TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.run(new FactMap<>())));
 
@@ -461,8 +463,8 @@ class CleanupStepFailureTest {
             throw new IllegalStateException("closing the session");
         };
         InternalError logging = new InternalError("logging the warning");
-        Faults.inject(Faults.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
-        Faults.injectThen(Faults.Step.FAILURE_LOGGED, logging);
+        FaultInjection.inject(FaultInjection.Step.COPY_LENT, 1, new StackOverflowError("lending the copy"));
+        FaultInjection.injectThen(FaultInjection.Step.FAILURE_LOGGED, logging);
 
         AtomicReference<InternalError> thrown = new AtomicReference<>();
         TestLogs.logsOf(() -> thrown.set(assertThrows(InternalError.class, () -> engine.run(new FactMap<>()))));
@@ -483,7 +485,7 @@ class CleanupStepFailureTest {
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         StackOverflowError failure = new StackOverflowError("marking the rule set retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, failure);
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, failure);
 
         assertSame(failure, assertThrows(StackOverflowError.class, rules::retire));
         assertFalse(rules.retiredForGood(), "the rule set isn't retired");
@@ -504,7 +506,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the rules retired"));
 
         assertThrows(StackOverflowError.class, engine::close);
 
@@ -521,7 +524,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the replaced rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the replaced rules retired"));
 
         String logs = TestLogs.logsOf(() -> assertDoesNotThrow(() -> engine.load(reloaded)));
 
@@ -544,7 +548,7 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         OutOfMemoryError failure = new OutOfMemoryError("marking the replaced rules retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, failure);
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, failure);
 
         assertSame(failure, assertThrows(OutOfMemoryError.class, () -> engine.load(reloaded)));
 
@@ -559,7 +563,7 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
-        Faults.inject(Faults.Step.COPIES_PREPARED, 1, new StackOverflowError("making the copies"));
+        FaultInjection.inject(FaultInjection.Step.COPIES_PREPARED, 1, new StackOverflowError("making the copies"));
 
         assertThrows(StackOverflowError.class, () -> engine.load(RULES));
 
@@ -573,7 +577,8 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language, 1, new RuleListener() {
         });
         language.failSessions = true;
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the failed rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the failed rules retired"));
 
         String logs = TestLogs.logsOf(() -> assertThrows(StackOverflowError.class, () -> engine.load(RULES)));
 
@@ -594,8 +599,8 @@ class CleanupStepFailureTest {
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
         StackOverflowError retiring = new StackOverflowError("marking the failed rules retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
-        Faults.injectThen(Faults.Step.FAILURE_LOGGED, new StackOverflowError("logging the warning"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, retiring);
+        FaultInjection.injectThen(FaultInjection.Step.FAILURE_LOGGED, new StackOverflowError("logging the warning"));
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
@@ -617,7 +622,7 @@ class CleanupStepFailureTest {
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
         StackOverflowError retiring = new StackOverflowError("marking the failed rules retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, retiring);
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
@@ -640,7 +645,7 @@ class CleanupStepFailureTest {
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
         OutOfMemoryError retiring = new OutOfMemoryError("marking the failed rules retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, retiring);
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
@@ -684,7 +689,7 @@ class CleanupStepFailureTest {
         // Suppression disabled, as on an OutOfMemoryError the JVM keeps ready, with a fatal error in its chain.
         Error failure = new Error("making the copies", new OutOfMemoryError("a session"), false, false) {
         };
-        Faults.inject(Faults.Step.COPIES_PREPARED, 1, failure);
+        FaultInjection.inject(FaultInjection.Step.COPIES_PREPARED, 1, failure);
         language.closeFailure = new OutOfMemoryError("closing the compiler");
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
@@ -715,7 +720,7 @@ class CleanupStepFailureTest {
         OutOfMemoryError failure = new OutOfMemoryError("making a session");
         language.sessionFailure = failure;
         StackOverflowError retiring = new StackOverflowError("retiring the claimed rules");
-        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, retiring);
+        FaultInjection.inject(FaultInjection.Step.CLAIMED_RETIRING, 1, retiring);
 
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         String logs = TestLogs.logsOf(() -> thrown.set(assertThrows(Throwable.class, () -> engine.load(RULES))));
@@ -736,7 +741,7 @@ class CleanupStepFailureTest {
         });
         language.failSessions = true;
         StackOverflowError retiring = new StackOverflowError("retiring the claimed rules");
-        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, retiring);
+        FaultInjection.inject(FaultInjection.Step.CLAIMED_RETIRING, 1, retiring);
 
         String logs = TestLogs.logsOf(
                 () -> assertSame(retiring, assertThrows(StackOverflowError.class, () -> engine.load(RULES))));
@@ -757,7 +762,7 @@ class CleanupStepFailureTest {
         });
         language.failSessions = true;
         OutOfMemoryError retiring = new OutOfMemoryError("marking the failed rules retired");
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, retiring);
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1, retiring);
 
         TestLogs.logsOf(() -> assertSame(retiring, assertThrows(OutOfMemoryError.class, () -> engine.load(RULES))));
 
@@ -805,7 +810,8 @@ class CleanupStepFailureTest {
         rules.set(TestRuleSets.ruleSet(List.of(), Map.of("a", compiler))
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build());
         rules.get().prepareCopies(1);
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the rule set retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the rule set retired"));
 
         assertThrows(StackOverflowError.class, rules.get()::retire);
 
@@ -821,7 +827,8 @@ class CleanupStepFailureTest {
         CopyPool rules = TestRuleSets.ruleSet(List.of(), Map.of("counting", language.compiler()))
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
-        Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("counting the copies closed"));
+        FaultInjection.inject(FaultInjection.Step.RETIRED_COPIES_CLOSED, 1,
+                new StackOverflowError("counting the copies closed"));
 
         assertThrows(StackOverflowError.class, rules::retire);
         assertFalse(rules.retiredForGood(), "the rule set isn't retired for good");
@@ -842,7 +849,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
-        Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("counting the copies closed"));
+        FaultInjection.inject(FaultInjection.Step.RETIRED_COPIES_CLOSED, 1,
+                new StackOverflowError("counting the copies closed"));
 
         assertThrows(StackOverflowError.class, engine::close);
 
@@ -859,13 +867,15 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         List<Rule> third = List.of(Rule.builder().ruleName("r3").priority(1).condition("c").action("a").build());
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the first rules retired"));
         TestLogs.logsOf(() -> engine.load(second));
         OutOfMemoryError closing = new OutOfMemoryError("closing a compiler");
         language.closeFailure = closing;
         // The third load retires the rules it replaced first, whose compiler throws the fatal error, and then the
         // first rules, left by the second load, whose retiring fails again.
-        Faults.inject(Faults.Step.RETIRE_MARKED, 2, new StackOverflowError("marking the first rules retired again"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 2,
+                new StackOverflowError("marking the first rules retired again"));
 
         OutOfMemoryError thrown = assertThrows(OutOfMemoryError.class,
                 () -> TestLogs.logsOf(() -> engine.load(third)));
@@ -892,7 +902,7 @@ class CleanupStepFailureTest {
             }
         });
         StackOverflowError fault = new StackOverflowError("counting the run");
-        Faults.inject(other, Faults.Step.RUN_COUNTED, 1, fault);
+        FaultInjection.inject(other, FaultInjection.Step.RUN_COUNTED, 1, fault);
 
         assertDoesNotThrow(() -> engine.run(new FactMap<>()), "the step doesn't fail on this thread");
         other.start();
@@ -912,12 +922,13 @@ class CleanupStepFailureTest {
         try {
             // The engine's only permit, held on a thread of its own, so the run waits for it until its deadline.
             CopyPool.Copy held = holder.submit(() -> engine.currentRules().borrow(Deadline.NONE)).get();
-            Faults.inject(Faults.Step.INTERRUPT_KEPT, 1, new StackOverflowError("setting the interrupt status"));
+            FaultInjection.inject(FaultInjection.Step.INTERRUPT_KEPT, 1,
+                    new StackOverflowError("setting the interrupt status"));
 
             TestLogs.logsOf(() -> assertThrows(StackOverflowError.class,
                     () -> engine.runWithResult(new FactMap<>(), RunOptions.withTimeoutOf(Duration.ofMillis(1)))));
 
-            holder.submit(() -> Failures.throwIfPresent(engine.currentRules().release(held))).get();
+            holder.submit(() -> FailurePolicy.throwIfPresent(engine.currentRules().release(held))).get();
         } finally {
             holder.shutdown();
         }
@@ -933,7 +944,7 @@ class CleanupStepFailureTest {
                 .withLimit(CopyLimit.of(3)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(3);
         // The second copy taken fails to be set aside, with the first set aside and the third still idle.
-        Faults.inject(Faults.Step.COPY_TAKEN, 2, new StackOverflowError("setting a copy aside"));
+        FaultInjection.inject(FaultInjection.Step.COPY_TAKEN, 2, new StackOverflowError("setting a copy aside"));
 
         assertThrows(StackOverflowError.class, rules::retire);
         assertEquals(3, language.sessionsClosed.get(), "every copy is closed: those taken, and the one still idle");
@@ -953,7 +964,7 @@ class CleanupStepFailureTest {
                 .withLimit(CopyLimit.of(1)).withStallWindow(TimeUnit.MINUTES.toMillis(5)).build();
         rules.prepareCopies(1);
         // Closing the copies it took fails both times it's tried.
-        Faults.inject(Thread.currentThread(), Faults.Step.COPIES_CLOSING, 1, 2,
+        FaultInjection.inject(Thread.currentThread(), FaultInjection.Step.COPIES_CLOSING, 1, 2,
                 new StackOverflowError("closing the copies"));
 
         assertThrows(StackOverflowError.class, rules::retire);
@@ -978,7 +989,7 @@ class CleanupStepFailureTest {
         // Retired with the run in progress, so the run is the last to leave, and closing the idle copies as it leaves
         // fails. Injected after retire(), which reaches the step itself.
         assertNull(rules.retire(), "no fatal error");
-        Faults.inject(Faults.Step.COPIES_CLOSING, 1, new StackOverflowError("closing the idle copies"));
+        FaultInjection.inject(FaultInjection.Step.COPIES_CLOSING, 1, new StackOverflowError("closing the idle copies"));
 
         assertThrows(StackOverflowError.class, () -> rules.release(copy));
 
@@ -992,7 +1003,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         engine.run(new FactMap<>());
-        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, new StackOverflowError("retiring the rules claimed"));
+        FaultInjection.inject(FaultInjection.Step.CLAIMED_RETIRING, 1,
+                new StackOverflowError("retiring the rules claimed"));
 
         assertThrows(StackOverflowError.class, engine::close);
 
@@ -1008,7 +1020,8 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> reloaded = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
-        Faults.inject(Faults.Step.CLAIMED_RETIRING, 1, new StackOverflowError("retiring the rules claimed"));
+        FaultInjection.inject(FaultInjection.Step.CLAIMED_RETIRING, 1,
+                new StackOverflowError("retiring the rules claimed"));
 
         String logs = TestLogs.logsOf(() -> assertDoesNotThrow(() -> engine.load(reloaded)));
 
@@ -1055,10 +1068,12 @@ class CleanupStepFailureTest {
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
         List<Rule> third = List.of(Rule.builder().ruleName("r3").priority(1).condition("c").action("a").build());
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the first rules retired"));
         TestLogs.logsOf(() -> engine.load(second));
         // The third load's own rules to retire, the second, fail this time, and the first, behind them, don't.
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the second rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the second rules retired"));
 
         TestLogs.logsOf(() -> engine.load(third));
 
@@ -1074,11 +1089,13 @@ class CleanupStepFailureTest {
         Counting language = new Counting();
         CoreRulesEngine<Object> engine = engine(language);
         List<Rule> second = List.of(Rule.builder().ruleName("r2").priority(1).condition("c").action("a").build());
-        Faults.inject(Faults.Step.RETIRE_MARKED, 1, new StackOverflowError("marking the first rules retired"));
+        FaultInjection.inject(FaultInjection.Step.RETIRE_MARKED, 1,
+                new StackOverflowError("marking the first rules retired"));
         TestLogs.logsOf(() -> engine.load(second));
         // close() retires the second rules, and then fails at the first, behind them in the list, as it takes the
         // second out of it: the first stays in the list.
-        Faults.inject(Faults.Step.SETTLING, 2, new StackOverflowError("taking the rules out of the list"));
+        FaultInjection.inject(FaultInjection.Step.SETTLING, 2,
+                new StackOverflowError("taking the rules out of the list"));
 
         assertThrows(StackOverflowError.class, engine::close);
 
@@ -1096,7 +1113,8 @@ class CleanupStepFailureTest {
         engine.load(second);
         assertEquals(1, language.compilersClosed.get(), "the first rules are retired");
         // close() takes the second rules out of the list, which has only them: the step is reached once.
-        Faults.inject(Faults.Step.SETTLING, 2, new StackOverflowError("taking the rules out of the list"));
+        FaultInjection.inject(FaultInjection.Step.SETTLING, 2,
+                new StackOverflowError("taking the rules out of the list"));
 
         assertDoesNotThrow(engine::close);
 
@@ -1120,13 +1138,14 @@ class CleanupStepFailureTest {
         AtomicReference<Throwable> closeFailure = new AtomicReference<>();
         language.onSessionClose = () -> {
             if (nested.compareAndSet(false, true)) {
-                Faults.inject(Faults.Step.SETTLING, 3, new StackOverflowError("settling the load's rules"));
+                FaultInjection.inject(FaultInjection.Step.SETTLING, 3,
+                        new StackOverflowError("settling the load's rules"));
                 try {
                     engine.close();
                 } catch (Throwable t) {
                     closeFailure.set(t);
                 } finally {
-                    Faults.clear();
+                    FaultInjection.clear();
                 }
             }
         };

@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
  * </p>
  *
  * <p>
- * The class is initialized when the first engine is built (see {@link RunClasses}), so a run never registers the
+ * The class is initialized when the first engine is built (see {@link FirstUseClasses}), so a run never registers the
  * events: registering takes more stack than the stack-headroom check makes room for (see StackHeadroom), and a
  * {@link StackOverflowError} in it would leave this class unusable for the life of the JVM.
  * </p>

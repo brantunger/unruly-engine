@@ -11,13 +11,13 @@ package io.github.brantunger.unruly.core;
  * A failure a {@code run()} reports, when it was started on the same thread while another run is in progress, from a
  * condition, an action, the output supplier, a listener callback or a language, is logged by that nested run, which
  * throws a {@link ReportedFailure} that the code around it finds in the cause chain of what it caught (see
- * {@link NestedFailures#nestedRunFailure}). A nested run that rejects its facts, and a nested {@code load()} that
+ * {@link CauseChains#nestedRunFailure}). A nested run that rejects its facts, and a nested {@code load()} that
  * fails, throw the exception their callers expect instead, an {@link IllegalArgumentException} or a
  * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, so nothing on it says it was logged: the
  * place that logs one records it here, and the code around it finds it in the cause chain all the same. So does a
- * fatal {@link Error}, which is rethrown unchanged (see {@link Failures#fatalError}): the first place that logs one
- * records it here, and every other place on the same thread that catches the same instance leaves it out, unless code
- * wrapped it in an exception that says something of its own: that place logs that, with the error as a note (see
+ * fatal {@link Error}, which is rethrown unchanged (see {@link FailurePolicy#fatalError}): the first place that logs
+ * one records it here, and every other place on the same thread that catches the same instance leaves it out, unless
+ * code wrapped it in an exception that says something of its own: that place logs that, with the error as a note (see
  * {@link #loggedAt}), and rethrows the error all the same. The record is for the thread, whichever
  * engine runs there, and holds the very instances that were logged: an equal one is still news.
  * </p>
@@ -25,7 +25,7 @@ package io.github.brantunger.unruly.core;
  * <p>
  * The record is per thread: a run on another thread, such as one an action hands to an executor, isn't nested. It
  * logs what it throws on that thread, and the run that waits for it logs it again unless it's that run's
- * {@link ReportedFailure}, which {@link NestedFailures#nestedRunFailure} finds on any thread: a fatal {@link Error}, or
+ * {@link ReportedFailure}, which {@link CauseChains#nestedRunFailure} finds on any thread: a fatal {@link Error}, or
  * an exception thrown as is, such as for facts that run rejected, is logged twice. It's forgotten when the outermost
  * run on the thread ends, because the JVM throws the {@link OutOfMemoryError} it keeps ready for when it has no memory
  * left again and again, and a later run must log it again, as it must an exception kept from an earlier run and
@@ -54,7 +54,7 @@ package io.github.brantunger.unruly.core;
  * <p>
  * Where each failure was logged is recorded too, as how deep the run that logged it was and when, for the code that
  * wraps one in an exception that says something of its own, which names it as a note (see
- * {@link NestedFailures#describe}).
+ * {@link CauseChains#describe}).
  * The time is marked each time a run hands control to code it doesn't own, a call-out: a condition, an action, the
  * output supplier or writer, a listener callback, the clock, a fact store's {@code asMap()} or a fact's
  * {@code getValue()} as the facts are read, and a language preparing itself at its first use, creating its compiler,
@@ -81,7 +81,7 @@ package io.github.brantunger.unruly.core;
  * forgets them with the rest.
  * </p>
  */
-final class LoggedFailures {
+final class FailureLog {
 
     /**
      * How many of the failures nested runs and loads logged a thread remembers, how many of the fatal errors runs
@@ -109,7 +109,7 @@ final class LoggedFailures {
     // count of runs on a thread.
     private static final ThreadLocal<Runs> RUNS = new ThreadLocal<>();
 
-    private LoggedFailures() {
+    private FailureLog() {
     }
 
     /**
@@ -197,7 +197,7 @@ final class LoggedFailures {
 
         /**
          * Records the failures logged deeper than a run that starts as logged at the depth it starts at (see
-         * {@link LoggedFailures#enter()}).
+         * {@link FailureLog#enter()}).
          *
          * @param depth How deep the run starts
          */
@@ -219,13 +219,13 @@ final class LoggedFailures {
      * {@value #MAX_LOGGED} {@link ReportedFailure}s runs built, in a ring created with the first of those, each of
      * these with how deep the run that logged it was, lowered as for a fatal error, and when, and the last
      * {@value #MAX_LOGGED} exceptions the engine built around a failure, in a ring created with the first of those.
-     * When is a count of the call-outs started on the thread (see {@link LoggedFailures#callOut()}). The count the
+     * When is a count of the call-outs started on the thread (see {@link FailureLog#callOut()}). The count the
      * innermost run had reached when its call-out in progress started is kept too, and, once a run is nested, the
      * count each run around it fewer than {@value #MARKED_DEPTHS} deep had reached, to take up again when the run
      * nested in it ends, and when each fatal error was logged, in an array created when the first nested run starts, so
      * a run that starts none allocates nothing for them, and recording an {@link OutOfMemoryError} still allocates
      * nothing: a fatal error the outermost run logs is never below a run, and needs no count. A run keeps this from
-     * {@link LoggedFailures#enter()} until {@link LoggedFailures#leave()}, so marking its call-outs looks nothing up.
+     * {@link FailureLog#enter()} until {@link FailureLog#leave()}, so marking its call-outs looks nothing up.
      */
     static final class Runs {
         // Which outermost run this is, so a ReportedFailure built in an earlier one on this thread is told apart;
@@ -260,7 +260,7 @@ final class LoggedFailures {
 
         /**
          * Marks a call-out of the innermost run in progress on this thread starting, as
-         * {@link LoggedFailures#callOut()} does, for a run that holds what {@link LoggedFailures#enter()} returned.
+         * {@link FailureLog#callOut()} does, for a run that holds what {@link FailureLog#enter()} returned.
          *
          * @return How many call-outs have started on this thread, to take this one up again with {@link #resume}
          */
@@ -300,7 +300,7 @@ final class LoggedFailures {
      * @return What is in progress on this thread, for the run to mark its call-outs with until it ends
      */
     static Runs enter() {
-        Faults.at(Faults.Step.RUN_COUNTED);
+        FaultInjection.at(FaultInjection.Step.RUN_COUNTED);
         Runs runs = RUNS.get();
         if (runs == null) {
             runs = new Runs();
@@ -363,13 +363,13 @@ final class LoggedFailures {
             // A nested run is ending, which created the array when it started.
             runs.callStart = runs.stamps[OUTER_CALL_STARTS + runs.depth];
         }
-        Faults.at(Faults.Step.RUN_UNCOUNTED);
+        FaultInjection.at(FaultInjection.Step.RUN_UNCOUNTED);
     }
 
     /**
      * Marks a call-out of the innermost run in progress on this thread starting, just before the run hands control to
      * code it doesn't own: a condition, an action, a listener callback, a language and the like (see
-     * {@link LoggedFailures}). What a run that code starts logs from then on is below the run, and what was logged
+     * {@link FailureLog}). What a run that code starts logs from then on is below the run, and what was logged
      * before isn't, however deep the run that logged it, until the next call-out of the same run starts. A run marks a
      * call-out through what {@link #enter()} returned where it holds that; this looks it up, for code that's called
      * from more than one run, or outside any: with none in progress, nothing is marked.
@@ -403,7 +403,7 @@ final class LoggedFailures {
      * this very instance, and it's one of the last {@value #MAX_LOGGED} fatal errors logged there; another logged
      * since, such as by a nested run, doesn't make it news. One logged before those is logged again, and recorded in
      * place of the oldest. Every caller is inside a run, a {@code load()} or a {@code validate()} on this thread, so
-     * there is always one in progress (see {@link NestedFailures#unlogged}).
+     * there is always one in progress (see {@link CauseChains#unlogged}).
      *
      * @param fatal The fatal error
      * @return {@code true} if the caller logs it
@@ -457,8 +457,8 @@ final class LoggedFailures {
 
     /**
      * Tells where a fatal {@link Error} that was logged already on this thread was logged, for the code that wraps it
-     * in an exception of its own (see {@link NestedFailures#describe}), and whether it was (see
-     * {@link NestedFailures#logged}): below what the call-out in progress in the innermost
+     * in an exception of its own (see {@link CauseChains#describe}), and whether it was (see
+     * {@link CauseChains#logged}): below what the call-out in progress in the innermost
      * run in progress started (see {@link #callOut()}), a {@code run()} or a {@code load()}, named for what it started,
      * however deep below that it was logged, or not below it. A level's own fatal error, such as the one in the failure
      * a listener is told of, is never nested, nor is one logged by a run that had ended before that call-out started,
@@ -526,8 +526,8 @@ final class LoggedFailures {
      * Records a {@link ReportedFailure} a run has just built, with how deep that run is, in place of the oldest once
      * {@value #MAX_LOGGED} are, so a run that reads it later in the same outermost run on this thread tells whether a
      * run it started logged it (see {@link #loggedBelow(ReportedFailure)}). The outermost run records one too, as its
-     * own code may read it. Nothing is recorded when no run is in progress. Only {@link NestedFailures#report} and
-     * {@link NestedFailures#stop} call this, once for each failure they build, so every {@link ReportedFailure} is
+     * own code may read it. Nothing is recorded when no run is in progress. Only {@link CauseChains#report} and
+     * {@link CauseChains#stop} call this, once for each failure they build, so every {@link ReportedFailure} is
      * recorded.
      *
      * @param failure The failure, which the run logs
@@ -555,7 +555,7 @@ final class LoggedFailures {
      * Tells whether a failure a nested run or load logged, as {@link #find} found it, was logged below the call-out in
      * progress in the innermost run in progress on this thread (see {@link #callOut()}): by a run that call-out
      * started, however deep below it, rather than by a run that had ended before it started, as one an earlier sibling
-     * or an earlier call-out of the same run started had, however deep that run was. Only {@link NestedFailures#below}
+     * or an earlier call-out of the same run started had, however deep that run was. Only {@link CauseChains#below}
      * asks, while the run that found it is still in progress.
      *
      * @param logged What {@link #find} returned
@@ -614,7 +614,7 @@ final class LoggedFailures {
 
     /**
      * Finds one exception among the failures nested runs and loads on this thread logged, as
-     * {@link NestedFailures#below} asks of each link of a cause chain.
+     * {@link CauseChains#below} asks of each link of a cause chain.
      *
      * @param thrown One link of a cause chain
      * @return What was recorded when that very instance was logged, or {@code null} if it wasn't, was logged before
@@ -671,7 +671,7 @@ final class LoggedFailures {
 
     /**
      * Tells whether one link of a cause chain is an exception the engine built around a failure on this thread (see
-     * {@link #builtByEngine}), as {@link NestedFailures#below} asks of each link above a nested failure.
+     * {@link #builtByEngine}), as {@link CauseChains#below} asks of each link above a nested failure.
      *
      * @param link One link of a cause chain
      * @return {@code true} if the engine recorded that very instance, and it's one of the last {@value #MAX_LOGGED};

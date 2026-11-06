@@ -797,9 +797,10 @@ final class FirstRunScenario {
         sessions.refusing = thread;
         thread.start();
         await(sessions.entered);
-        Faults.inject(Faults.Step.RETIRED_COPIES_CLOSED, 1, new StackOverflowError("thrown by the scenario"));
+        FaultInjection.inject(FaultInjection.Step.RETIRED_COPIES_CLOSED, 1,
+                new StackOverflowError("thrown by the scenario"));
         retiring.load(List.of(Rule.builder().ruleName("replaces").condition("x").action("x").build()));
-        Faults.clear();
+        FaultInjection.clear();
         holder.release();
         mark(STEP + RETIRED_BORROW_FAILS);
         sessions.go.countDown();

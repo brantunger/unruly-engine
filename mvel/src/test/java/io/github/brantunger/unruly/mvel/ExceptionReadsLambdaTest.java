@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * describes an MVEL rule that fails to compile, and so runs only when a load or {@code validate()} fails, nor does
  * {@link MessageQuotes}, which writes the message that rejects a fact's name, an option or an import. This reads
  * their class files, and those of their nested classes, from the directory or jar each was loaded from, as core's
- * {@code FailureCodeLambdaTest} reads {@code Failures}', and fails if one names {@code LambdaMetafactory}, as the
+ * {@code FailureCodeLambdaTest} reads {@code FailurePolicy}'s, and fails if one names {@code LambdaMetafactory}, as the
  * constant pool does for a call site linked to it, if a method of one has any other {@code invokedynamic}, which the
  * JVM links the same way, or if the class itself isn't read. {@link FailureMethodLambdaTest} checks
  * {@link MvelAnalysis}' methods that read a compile error, and {@link MvelCompileErrors#translate} by name.

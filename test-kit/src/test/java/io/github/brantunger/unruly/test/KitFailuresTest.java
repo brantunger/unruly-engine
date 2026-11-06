@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("KitFailures describes what a language threw, and attaches what closing threw to a check's failure")
 class KitFailuresTest {
 
-    /** How many different exceptions the engine reads to find a fatal error, as core's Failures has it. */
+    /** How many different exceptions the engine reads to find a fatal error, as core's FailurePolicy has it. */
     private static final int MAX_EXCEPTIONS_READ = 10_000;
 
     /** An exception whose getCause() throws, as a broken language's may. */

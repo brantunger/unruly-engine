@@ -18,7 +18,7 @@ import java.util.TreeSet;
  * its imports looked up, the names its languages reserve, and the settings it keeps as the builder gave them, checked
  * against each other. Its compiler of rule lists, its fact intake and its rule-set lifecycle are built from them.
  * Resolved before the classes engines use that have a static initializer are initialized, by an engine created
- * without {@link Engines}, so it has none itself (see {@link RunClasses}). A plain class, not a record: nothing
+ * without {@link Engines}, so it has none itself (see {@link FirstUseClasses}). A plain class, not a record: nothing
  * compares or prints one, and a record's own methods would link through {@code ObjectMethods}, which can fail for good
  * when first called deep in the stack (#996).
  */

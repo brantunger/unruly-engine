@@ -28,9 +28,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * #1208: an overflow inside the engine's own call that logs a failure at ERROR, or a warning at WARN, as the first
  * message a JVM logs can overflow deep in a stack, loses the line, not the failure: the caller still gets what it would
  * have got, with the line logged. {@link DeepFirstErrorLogTest} overflows the log call for real, in a new JVM; these
- * tests make it fail with {@link Faults}, in this one, so each way the log call can fail is checked here: an overflow,
- * an {@link InternalError} around one, as the JDK throws in place of an overflow it hits defining a hidden class, which
- * are both caught, and an {@link InternalError} that isn't, which is thrown as it was before.
+ * tests make it fail with {@link FaultInjection}, in this one, so each way the log call can fail is checked here: an
+ * overflow, an {@link InternalError} around one, as the JDK throws in place of an overflow it hits defining a hidden
+ * class, which are both caught, and an {@link InternalError} that isn't, which is thrown as it was before.
  */
 @DisplayName("an overflow in the call that logs a failure loses the line, not the failure (#1208)")
 class FailureLogOverflowTest {
@@ -42,15 +42,15 @@ class FailureLogOverflowTest {
     private static final Supplier<Map<String, Object>> OUTPUT = Map::of;
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {"an overflow", "an InternalError around an overflow"})
     @DisplayName("a load whose log call overflows throws its failure, without its line")
     void loadKeepsItsFailure(String lost) {
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, overflow(lost));
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, overflow(lost));
 
         Outcome<RuleCompilationException> outcome = capture(RuleCompilationException.class,
                 () -> failingToCompile().load(List.of(rule())));
@@ -65,7 +65,7 @@ class FailureLogOverflowTest {
     void runKeepsTheRulesFailure(String lost) {
         RulesEngine<Map<String, Object>> engine = failingToRun();
         engine.load(List.of(rule()));
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, overflow(lost));
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, overflow(lost));
 
         Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
                 () -> engine.run(new FactMap<>()));
@@ -78,7 +78,7 @@ class FailureLogOverflowTest {
     @DisplayName("an InternalError from the log call that isn't an overflow is thrown, as before")
     void otherInternalErrorThrown() {
         InternalError internal = new InternalError("not an overflow");
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, internal);
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, internal);
 
         Outcome<InternalError> outcome = capture(InternalError.class,
                 () -> failingToCompile().load(List.of(rule())));
@@ -90,7 +90,7 @@ class FailureLogOverflowTest {
     @DisplayName("a line lost in a load nested in a run stays lost: the run around it takes it for logged")
     void lostLineInNestedLoadStaysLost() {
         RulesEngine<Map<String, Object>> engine = loadingInAction();
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, new StackOverflowError());
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, new StackOverflowError());
 
         Outcome<RuleExecutionException> outcome = capture(RuleExecutionException.class,
                 () -> engine.run(new FactMap<>()));
@@ -124,7 +124,7 @@ class FailureLogOverflowTest {
     @DisplayName("a run whose warning about a listener overflows goes on, without the warning")
     void runGoesOnWithoutTheWarning(String lost) {
         RulesEngine<Map<String, Object>> engine = listenerThrowing();
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, overflow(lost));
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, overflow(lost));
 
         Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 
@@ -137,7 +137,7 @@ class FailureLogOverflowTest {
     void otherInternalErrorFromWarningThrown() {
         RulesEngine<Map<String, Object>> engine = listenerThrowing();
         InternalError internal = new InternalError("not an overflow");
-        Faults.inject(Faults.Step.FAILURE_LOGGED, 1, internal);
+        FaultInjection.inject(FaultInjection.Step.FAILURE_LOGGED, 1, internal);
 
         Outcome<Throwable> outcome = capture(() -> engine.run(new FactMap<>()));
 

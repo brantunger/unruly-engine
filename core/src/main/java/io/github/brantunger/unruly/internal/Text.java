@@ -21,8 +21,8 @@ public final class Text {
     public static final int MAX_NAME_LENGTH = 200;
 
     /**
-     * How much of an exception's message an error message includes; see {@link #truncate} and {@code core.Failures}.
-     * {@code MessageText} publishes it.
+     * How much of an exception's message an error message includes; see {@link #truncate} and
+     * {@code core.FailurePolicy}. {@code MessageText} publishes it.
      */
     public static final int MAX_DESCRIPTION_LENGTH = 1_000;
 

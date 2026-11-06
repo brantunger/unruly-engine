@@ -25,12 +25,12 @@ import java.util.Set;
  * reads it, and text is shortened and escaped as {@link Text} does it; {@code api.language} publishes both, and
  * {@link FatalErrors} the search for a fatal error made here.
  */
-final class Failures {
+final class FailurePolicy {
 
     /**
      * How many different exceptions, through causes and suppressed exceptions, the engine reads to learn whether one
      * already reaches another (see {@link #reaches}), or to find a fatal {@link Error} or any {@link Error} suppressed
-     * in what was caught (see {@link #fatalError} and {@link NestedFailures#errorInChain}); one past that many isn't
+     * in what was caught (see {@link #fatalError} and {@link CauseChains#errorInChain}); one past that many isn't
      * found.
      */
     static final int MAX_EXCEPTIONS_READ = 10_000;
@@ -44,7 +44,7 @@ final class Failures {
     static final int STOP = 3;
     static final int SAME = 4;
 
-    private Failures() {
+    private FailurePolicy() {
     }
 
     /**
@@ -365,7 +365,7 @@ final class Failures {
 
     /**
      * What the steps that end a run threw, each kept where it was caught, which can't fail again, and combined last,
-     * as {@link Failures#fatalFirst} combines two: the first fatal {@link Error} wins, or else the first failure,
+     * as {@link FailurePolicy#fatalFirst} combines two: the first fatal {@link Error} wins, or else the first failure,
      * carrying the rest. The run makes it before it holds anything, a copy of the rules or a value, so that ending a
      * run that has run out of memory allocates nothing until what the steps threw is combined (#855), and adds what
      * each step threw, or {@code null}, in order: {@link #add} is assignments and the instanceof checks of
@@ -383,13 +383,13 @@ final class Failures {
         // for the last resort of result().
         private Throwable fatal;
         // Where combining can be made to fail.
-        private final Faults.Step combining;
+        private final FaultInjection.Step combining;
 
         /**
          * @param steps     How many steps end the run, each added once, with what it threw or {@code null}
          * @param combining The step a test makes fail where what they threw is combined
          */
-        Teardown(int steps, Faults.Step combining) {
+        Teardown(int steps, FaultInjection.Step combining) {
             this.thrown = new Throwable[steps];
             this.combining = combining;
         }
@@ -412,14 +412,14 @@ final class Failures {
          *
          * @return What the caller throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error}
          *         a step threw, or else the first other throwable, either carrying the rest as suppressed exceptions
-         *         (see {@link Failures#fatalFirst}); the fatal error itself when the first failure holds one, carrying
-         *         it (see {@link Failures#fatalError}), as a run that fails with one throws it. If combining them
-         *         fails, the first fatal error met is returned alone, or else what combining threw.
+         *         (see {@link FailurePolicy#fatalFirst}); the fatal error itself when the first failure holds one,
+         *         carrying it (see {@link FailurePolicy#fatalError}), as a run that fails with one throws it. If
+         *         combining them fails, the first fatal error met is returned alone, or else what combining threw.
          */
         // Any Throwable: combining allocates, and the last resort must return whatever stopped it.
         Throwable result() {
             try {
-                Faults.at(combining);
+                FaultInjection.at(combining);
                 Throwable ending = null;
                 for (int i = 0; i < steps; i++) {
                     ending = fatalFirst(ending, thrown[i]);
@@ -614,7 +614,7 @@ final class Failures {
     }
 
     /**
-     * Returns the text of a nested failure for the note {@link NestedFailures#describe} adds after an exception's own
+     * Returns the text of a nested failure for the note {@link CauseChains#describe} adds after an exception's own
      * message: the text {@link #loggedText} returns, shortened to {@value Text#MAX_DESCRIPTION_LENGTH} characters as a
      * whole before it's escaped, as {@link Text#quoteAll} shortens a list, because the nested failure may itself hold
      * news, run after run. The engine wrote most of that text and escaped it already, a {@link ReportedFailure}'s
@@ -638,7 +638,7 @@ final class Failures {
     /**
      * Returns the text a nested run or load logged a failure with, as the run around it names it: the message of a
      * {@link ReportedFailure}, which the engine wrote, or else the exception described as
-     * {@link NestedFailures#describe} describes one whose cause chain holds no nested failure, which escapes a message
+     * {@link CauseChains#describe} describes one whose cause chain holds no nested failure, which escapes a message
      * a language wrote and shortens it as {@link Text#clip} shortens it, never inside an escape: the engine wrote most
      * such messages, such as a rule that fails to compile or a fact it rejects, and escaped the names and text in them
      * already. The note of a root cause it would otherwise hide is left out when the message already has it, as a
@@ -662,7 +662,7 @@ final class Failures {
      * and message when an exception above it has none, unless the part of the first exception's text that the
      * description shows already has it, the class's name for a root cause with no message, as
      * {@code new RuntimeException(cause)}'s message has it, and the message otherwise: the first message for
-     * {@link NestedFailures#describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's
+     * {@link CauseChains#describe}, its {@code toString()} for {@link #describeWithClass}. That part is the text's
      * first {@value Text#MAX_DESCRIPTION_LENGTH} characters as {@link Text#clip} keeps them (see {@link #shownOf}),
      * searched raw, without the note of what was left out: a root cause's message found only past the cut isn't shown,
      * and searching all of a long text took time that grew with the square of its length. A message that can't be read
@@ -672,7 +672,7 @@ final class Failures {
      *
      * @param chain An exception and its causes
      * @param shown The part of the first exception's text the description shows, as {@link #shownOf} returns it, or
-     *              {@code null} if it shows none that can be read: of {@link NestedFailures#describe}'s message, or of
+     *              {@code null} if it shows none that can be read: of {@link CauseChains#describe}'s message, or of
      *              {@link #describeWithClass}'s {@code toString()}
      * @return {@code " (caused by ...)"}, or an empty string if nothing is hidden
      */
@@ -737,8 +737,8 @@ final class Failures {
     /**
      * Describes an exception with its class, as {@link Throwable#toString()} does, for a message about code the engine
      * calls outside any rule, such as the output factory: shortened to {@value Text#MAX_DESCRIPTION_LENGTH} characters,
-     * then escaped, as {@link Text#clip} does, like {@link NestedFailures#describe}, so a message the engine escaped is
-     * never cut inside an escape, and naming a root cause it would otherwise hide as {@link NestedFailures#describe}
+     * then escaped, as {@link Text#clip} does, like {@link CauseChains#describe}, so a message the engine escaped is
+     * never cut inside an escape, and naming a root cause it would otherwise hide as {@link CauseChains#describe}
      * does. The root cause counts as shown only when the part of the {@code toString()} this shows, its first
      * {@value Text#MAX_DESCRIPTION_LENGTH} characters as {@link Text#clip} keeps them, has its message, so neither a
      * class name that pushes the message past the cut nor a {@code toString()} that leaves the message out hides it.
@@ -886,7 +886,7 @@ final class Failures {
      */
     static void logError(Logger logger, String message) {
         try {
-            Faults.at(Faults.Step.FAILURE_LOGGED);
+            FaultInjection.at(FaultInjection.Step.FAILURE_LOGGED);
             logger.error(message);
         } catch (StackOverflowError ignored) {
             // Only the line is lost; the caller still has the failure.
@@ -912,7 +912,7 @@ final class Failures {
      */
     static void logWarn(Logger logger, String format, Object... arguments) {
         try {
-            Faults.at(Faults.Step.FAILURE_LOGGED);
+            FaultInjection.at(FaultInjection.Step.FAILURE_LOGGED);
             logger.warn(format, arguments);
         } catch (StackOverflowError ignored) {
             // Only the line is lost; the caller goes on.
@@ -926,20 +926,20 @@ final class Failures {
 
     /**
      * Logs the failure of code the engine calls but doesn't own, such as a language's session or the output factory,
-     * unless a nested run or load already logged it (see {@link LoggedFailures}), and rethrows a fatal {@link Error}
-     * found in its cause chain, or suppressed on it, unchanged (see {@link Failures#fatalError}). The caller keeps the
-     * interrupt status first (see {@link Failures#keepInterruptStatus}), then builds the message, as describing the
-     * failure reads what was logged before this records it, and throws a {@link ReportedFailure} with that message
-     * itself once this returns.
+     * unless a nested run or load already logged it (see {@link FailureLog}), and rethrows a fatal {@link Error}
+     * found in its cause chain, or suppressed on it, unchanged (see {@link FailurePolicy#fatalError}). The caller keeps
+     * the interrupt status first (see {@link FailurePolicy#keepInterruptStatus}), then builds the message, as
+     * describing the failure reads what was logged before this records it, and throws a {@link ReportedFailure} with
+     * that message itself once this returns.
      *
      * @param msg What failed
      * @param e   What the called code threw
      */
     static void reportCalledCodeFailure(String msg, Throwable e) {
-        if (NestedFailures.unlogged(e)) {
-            Failures.logError(Log.LOGGER, msg);
+        if (CauseChains.unlogged(e)) {
+            FailurePolicy.logError(Log.LOGGER, msg);
         }
-        Failures.throwIfPresent(Failures.fatalError(e));
+        FailurePolicy.throwIfPresent(FailurePolicy.fatalError(e));
     }
 
     /**
@@ -970,7 +970,8 @@ final class Failures {
      * The logger, in a class of its own so that this one has no static initializer: {@code api.language.Throwables}
      * reads a fatal error and an interrupt through {@link FatalErrors}, maybe before any engine is built and deep in
      * a stack, and creating the logger may start SLF4J, whose first initialization could overflow there and leave
-     * this class unusable for the life of the JVM (#1260). The engine initializes it when it's built (see RunClasses).
+     * this class unusable for the life of the JVM (#1260). The engine initializes it when it's built
+     * (see FirstUseClasses).
      */
     static final class Log {
 

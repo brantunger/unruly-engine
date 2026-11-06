@@ -39,8 +39,8 @@ class RunScopeTurnTest {
             + " running";
 
     @AfterEach
-    void clearFaults() {
-        Faults.clear();
+    void clearFaultInjection() {
+        FaultInjection.clear();
     }
 
     /** A value a language keeps for a run, known by its name. */
@@ -147,7 +147,7 @@ class RunScopeTurnTest {
         AtomicReference<Throwable> failed = new AtomicReference<>();
         // The run's thread asks for a runScoped value, and stops as the scope makes its map, until let go.
         Thread run = daemon(() -> {
-            Faults.watch(Faults.Step.RUN_SCOPE_MAP_MAKING, () -> {
+            FaultInjection.watch(FaultInjection.Step.RUN_SCOPE_MAP_MAKING, () -> {
                 making.countDown();
                 TestSupport.await(release);
             });

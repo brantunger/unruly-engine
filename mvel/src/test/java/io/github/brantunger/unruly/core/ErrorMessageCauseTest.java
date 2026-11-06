@@ -165,6 +165,6 @@ public class ErrorMessageCauseTest {
         RuntimeException outer = new RuntimeException("outer", inner);
         inner.initCause(outer);
 
-        assertEquals("outer (caused by java.lang.IllegalStateException)", NestedFailures.describe(outer));
+        assertEquals("outer (caused by java.lang.IllegalStateException)", CauseChains.describe(outer));
     }
 }

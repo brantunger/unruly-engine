@@ -19,7 +19,7 @@ class KitEngineAddedTest {
     @Test
     @DisplayName("a fatal error the engine added as suppressed isn't rethrown, direct or wrapped")
     void fatalErrorTheEngineAddedIsSkipped() {
-        ReportedFailure byEngine = NestedFailures.report("reported", null);
+        ReportedFailure byEngine = CauseChains.report("reported", null);
         byEngine.addSuppressedByEngine(new OutOfMemoryError("kept by the engine"));
         IllegalStateException wrapped = new IllegalStateException("around", byEngine);
 
@@ -33,7 +33,7 @@ class KitEngineAddedTest {
     @DisplayName("of a fatal error the engine added and one a try-with-resources added after it, the second is"
             + " rethrown")
     void fatalErrorAnythingElseAddedIsFound() {
-        ReportedFailure failure = NestedFailures.report("reported", null);
+        ReportedFailure failure = CauseChains.report("reported", null);
         failure.addSuppressedByEngine(new OutOfMemoryError("kept by the engine"));
         OutOfMemoryError added = new OutOfMemoryError("added by a try-with-resources");
         failure.addSuppressed(added);
@@ -45,13 +45,13 @@ class KitEngineAddedTest {
     @Test
     @DisplayName("an interrupt the engine added as suppressed isn't taken for one that stopped the run")
     void interruptTheEngineAddedIsSkipped() {
-        ReportedFailure byEngine = NestedFailures.report("reported", null);
+        ReportedFailure byEngine = CauseChains.report("reported", null);
         byEngine.addSuppressedByEngine(new InterruptedException("kept by the engine"));
 
         assertFalse(KitFailuresAccess.isInterrupt(byEngine));
         assertFalse(KitFailuresAccess.isInterrupt(new IllegalStateException("around", byEngine)));
 
-        ReportedFailure byOthers = NestedFailures.report("reported", null);
+        ReportedFailure byOthers = CauseChains.report("reported", null);
         byOthers.addSuppressed(new InterruptedException("added by a try-with-resources"));
         assertTrue(KitFailuresAccess.isInterrupt(byOthers));
     }

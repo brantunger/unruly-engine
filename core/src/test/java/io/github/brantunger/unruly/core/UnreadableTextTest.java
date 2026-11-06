@@ -16,11 +16,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * #579: how {@link Failures} reads an exception's message, text, cause and issues, and how the engine logs a stack
+ * #579: how {@link FailurePolicy} reads an exception's message, text, cause and issues, and how the engine logs a stack
  * trace, without letting anything those throw escape, a fatal {@link Error} too: a message becomes a note that it's
  * unavailable, a cause or issues become none, and a stack trace is left out.
  */
-@DisplayName("Failures reads what an exception says without letting a failure to read it escape")
+@DisplayName("FailurePolicy reads what an exception says without letting a failure to read it escape")
 class UnreadableTextTest {
 
     /** An exception whose {@code getMessage()}, {@code toString()} and {@code getCause()} all throw what it's given. */
@@ -167,20 +167,20 @@ class UnreadableTextTest {
     @Test
     @DisplayName("messageOr returns the message, what stands in for a missing one, or that followed by a note")
     void messageOr() {
-        assertEquals("boom", Failures.messageOr(new IllegalStateException("boom"), "none"));
-        assertEquals("none", Failures.messageOr(new IllegalStateException(), "none"));
+        assertEquals("boom", FailurePolicy.messageOr(new IllegalStateException("boom"), "none"));
+        assertEquals("none", FailurePolicy.messageOr(new IllegalStateException(), "none"));
         assertEquals("none (message unavailable: java.lang.IllegalArgumentException)",
-                Failures.messageOr(new Throwing(new IllegalArgumentException()), "none"));
+                FailurePolicy.messageOr(new Throwing(new IllegalArgumentException()), "none"));
     }
 
     @Test
     @DisplayName("textOf returns toString(), or the class name and a note if it throws, a fatal error too")
     void textOf() {
-        assertEquals("java.lang.IllegalStateException: boom", Failures.textOf(new IllegalStateException("boom")));
+        assertEquals("java.lang.IllegalStateException: boom", FailurePolicy.textOf(new IllegalStateException("boom")));
         assertEquals(Throwing.class.getName() + " (message unavailable: java.lang.NullPointerException)",
-                Failures.textOf(new Throwing(new NullPointerException())));
+                FailurePolicy.textOf(new Throwing(new NullPointerException())));
         assertEquals(Throwing.class.getName() + " (message unavailable: java.lang.InternalError)",
-                Failures.textOf(new Throwing(new InternalError("printing"))));
+                FailurePolicy.textOf(new Throwing(new InternalError("printing"))));
     }
 
     @Test
@@ -199,9 +199,9 @@ class UnreadableTextTest {
         InvalidExpressionException.Issue issue = new InvalidExpressionException.Issue(
                 InvalidExpressionException.Issue.Severity.ERROR, 1, 2, "bad");
 
-        assertEquals(List.of(issue), Failures.issuesOf(new InvalidExpressionException("bad", List.of(issue))));
-        assertEquals(List.of(), Failures.issuesOf(new ThrowingIssues(new IllegalStateException("issues"))));
-        assertEquals(List.of(), Failures.issuesOf(new ThrowingIssues(new OutOfMemoryError("issues"))));
+        assertEquals(List.of(issue), FailurePolicy.issuesOf(new InvalidExpressionException("bad", List.of(issue))));
+        assertEquals(List.of(), FailurePolicy.issuesOf(new ThrowingIssues(new IllegalStateException("issues"))));
+        assertEquals(List.of(), FailurePolicy.issuesOf(new ThrowingIssues(new OutOfMemoryError("issues"))));
     }
 
     @Test
@@ -211,13 +211,13 @@ class UnreadableTextTest {
         RuntimeException top = new RuntimeException("top",
                 new ThrowingMessage(new OutOfMemoryError("reading"), new IllegalStateException("boom")));
 
-        assertEquals("top (caused by java.lang.IllegalStateException: boom)", NestedFailures.describe(top));
+        assertEquals("top (caused by java.lang.IllegalStateException: boom)", CauseChains.describe(top));
     }
 
     @Test
     @DisplayName("guard: describe ends for a getCause() that throws a new exception whose own getCause() throws too")
     void describeEndsForCausesThatThrowForEver() {
-        assertEquals(EndlessCause.class.getName(), NestedFailures.describe(new EndlessCause()));
+        assertEquals(EndlessCause.class.getName(), CauseChains.describe(new EndlessCause()));
     }
 
     @Test
@@ -229,7 +229,7 @@ class UnreadableTextTest {
         next.thrown = top;
 
         assertEquals(LoopingCause.class.getName() + " (caused by " + LoopingCause.class.getName() + ")",
-                NestedFailures.describe(top));
+                CauseChains.describe(top));
     }
 
     @Test
@@ -241,7 +241,7 @@ class UnreadableTextTest {
         Throwable root = assertTimeoutPreemptively(Duration.ofSeconds(10), () -> Causes.rootCause(top));
 
         assertEquals(Causes.MAX_CAUSE_CHAIN_LENGTH - 1, assertInstanceOf(EndlessCauses.class, root).depth);
-        assertEquals("level 0", assertTimeoutPreemptively(Duration.ofSeconds(10), () -> NestedFailures.describe(top)));
+        assertEquals("level 0", assertTimeoutPreemptively(Duration.ofSeconds(10), () -> CauseChains.describe(top)));
     }
 
     @Test

@@ -823,7 +823,7 @@ final class MvelCompileErrors {
 
     /**
      * Names the root cause of a compile error whose description MVEL left missing, in the engine's note: its class,
-     * and its message if it has one, as {@code core.Failures} names one. Each is escaped as the engine escapes its
+     * and its message if it has one, as {@code core.FailurePolicy} names one. Each is escaped as the engine escapes its
      * messages, so the issue's description is one line too, and shortened so the note fits in the room (see
      * {@link MessageText#escapeWithin}), so the note is never cut off: the class name as a name, within what the rest
      * of the note leaves with the message's count alone, and the message within what the class name leaves.

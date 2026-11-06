@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  * thread to run one, and the threads the actions ran on end once they have had none to run for a second. The thread
  * is started, and decides to exit, in sections synchronized on one lock, as registering is, so a registration either
  * finds the thread there to wait for it or starts another. If it ever fails, it gives up its place all the same, logs
- * why, at ERROR if the failure is, or carries, a fatal {@link Error} (see {@link Failures#fatalError}) and at WARN
+ * why, at ERROR if the failure is, or carries, a fatal {@link Error} (see {@link FailurePolicy#fatalError}) and at WARN
  * otherwise, and starts another at once for the actions still pending, if it had started or logged one since it
  * started; otherwise the next registration starts another, so an error that recurs at once can't start timer after
  * timer. Either way the next timer hands to a thread each action the one that failed had found due but not handed on.
@@ -262,7 +262,7 @@ final class CancelTimer {
 
     // Holding LOCK, with no timer running. Starts one, which hasn't yet started or dropped anything.
     private static void startTimer() {
-        Faults.at(Faults.Step.CANCEL_TIMER_STARTING);
+        FaultInjection.at(FaultInjection.Step.CANCEL_TIMER_STARTING);
         Thread timer = Thread.ofPlatform().name(THREAD_NAME).daemon(true).priority(Thread.NORM_PRIORITY)
                 .inheritInheritableThreadLocals(false).unstarted(LOOP);
         // Nothing of the run that starts it: not its inheritable thread-locals, which the builder leaves out, nor its
@@ -287,7 +287,7 @@ final class CancelTimer {
     /**
      * Runs an action whose deadline had passed when it was registered, on the thread that registered it. What it
      * throws is logged at WARN and ignored, unless it is, or carries, a fatal {@link Error} (see
-     * {@link Failures#fatalError}): that error is thrown, as the engine throws one from a language's code.
+     * {@link FailurePolicy#fatalError}): that error is thrown, as the engine throws one from a language's code.
      *
      * @param action The action
      * @throws Error the fatal error the action threw
@@ -295,7 +295,7 @@ final class CancelTimer {
     static void fire(Runnable action) {
         Throwable failed = run(action);
         if (failed != null) {
-            Failures.throwIfPresent(Failures.fatalError(failed));
+            FailurePolicy.throwIfPresent(FailurePolicy.fatalError(failed));
             warn(FAILED, failed);
         }
     }
@@ -351,7 +351,7 @@ final class CancelTimer {
             ActionPool.ACTIONS.execute(new PooledAction(registration));
         } catch (Throwable e) {
             try {
-                Faults.at(Faults.Step.CANCEL_ACTION_FALLING_BACK);
+                FaultInjection.at(FaultInjection.Step.CANCEL_ACTION_FALLING_BACK);
                 Thread virtual = Thread.ofVirtual().name(ACTION_THREAD_NAME).inheritInheritableThreadLocals(false)
                         .unstarted(new Started(registration));
                 virtual.setContextClassLoader(null);
@@ -382,7 +382,7 @@ final class CancelTimer {
     private static final class ActionThreads implements ThreadFactory {
         @Override
         public Thread newThread(Runnable task) {
-            Faults.at(Faults.Step.CANCEL_ACTION_STARTING);
+            FaultInjection.at(FaultInjection.Step.CANCEL_ACTION_STARTING);
             Thread pooled = Thread.ofPlatform().name(ACTION_THREAD_NAME).daemon(true).priority(Thread.NORM_PRIORITY)
                     .inheritInheritableThreadLocals(false).unstarted(task);
             pooled.setContextClassLoader(null);
@@ -427,20 +427,21 @@ final class CancelTimer {
     // it can when the stack or the heap runs out, and the message is then lost, but never the thread that logs it.
     private static void warn(String message, Object argument) {
         try {
-            Faults.at(Faults.Step.CANCEL_FAILURE_LOGGED);
-            log.warn(message, argument instanceof Throwable failure ? Failures.describeWithClass(failure) : argument);
+            FaultInjection.at(FaultInjection.Step.CANCEL_FAILURE_LOGGED);
+            log.warn(message,
+                    argument instanceof Throwable failure ? FailurePolicy.describeWithClass(failure) : argument);
         } catch (Throwable ignored) {
             // Lost.
         }
     }
 
-    // Logs what failed, described: at ERROR if it is, or carries, a fatal error (see Failures#fatalError), which is
-    // never thrown from here, and at WARN otherwise. Any Throwable, as for warn().
+    // Logs what failed, described: at ERROR if it is, or carries, a fatal error (see FailurePolicy#fatalError), which
+    // is never thrown from here, and at WARN otherwise. Any Throwable, as for warn().
     private static void report(String message, Throwable failure) {
         try {
-            Faults.at(Faults.Step.CANCEL_FAILURE_LOGGED);
-            String described = Failures.describeWithClass(failure);
-            if (Failures.fatalError(failure) != null) {
+            FaultInjection.at(FaultInjection.Step.CANCEL_FAILURE_LOGGED);
+            String described = FailurePolicy.describeWithClass(failure);
+            if (FailurePolicy.fatalError(failure) != null) {
                 log.error(message, described);
             } else {
                 log.warn(message, described);
@@ -490,7 +491,7 @@ final class CancelTimer {
             died(e);
             return;
         }
-        Faults.reached(Faults.Step.CANCEL_TIMER_EXITED);
+        FaultInjection.reached(FaultInjection.Step.CANCEL_TIMER_EXITED);
     }
 
     // A timer that died gives up its place, and if actions are still pending, and it had started or logged one since
@@ -581,7 +582,7 @@ final class CancelTimer {
                         break;
                     }
                     waitingFor = next;
-                    Faults.reached(Faults.Step.CANCEL_TIMER_WAITING);
+                    FaultInjection.reached(FaultInjection.Step.CANCEL_TIMER_WAITING);
                     try {
                         TimeUnit.NANOSECONDS.timedWait(LOCK, left);
                     } catch (InterruptedException ignored) {
@@ -594,7 +595,7 @@ final class CancelTimer {
             for (int i = 0; i < starts; i++) {
                 start(dueAndSlow[i]);
                 dueAndSlow[i].handed = true;
-                Faults.reached(Faults.Step.CANCEL_ACTION_HANDED_OFF);
+                FaultInjection.reached(FaultInjection.Step.CANCEL_ACTION_HANDED_OFF);
             }
             // Each as running, or as not started if its thread hasn't begun to run it.
             for (int i = 1; i <= slows; i++) {

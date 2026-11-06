@@ -199,7 +199,7 @@ final class RuleExecutor<O> {
         ConditionResult condition;
         try {
             // A call-out of its own, after the listeners': what a run the condition starts logs is below it, and
-            // what one a listener or an earlier rule started logged isn't (see LoggedFailures). The rule's failure is
+            // what one a listener or an earlier rule started logged isn't (see FailureLog). The rule's failure is
             // described, and built, before onError marks the next call-out.
             facts.runs().callOut();
             condition = rule.compiledCondition().evaluateWithDetail(facts.evaluation(),
@@ -264,10 +264,10 @@ final class RuleExecutor<O> {
      *                                failure that run logged, and one of a {@code load()} it started
      *                                {@code Output factory threw: a nested load() failed: } and that load's failure;
      *                                neither is logged again, as that run or load logged it; nor is a fatal error that
-     *                                run logged (see {@link LoggedFailures}). A nested failure wrapped by the factory
+     *                                run logged (see {@link FailureLog}). A nested failure wrapped by the factory
      *                                in an exception with a message of its own reads {@code Output factory threw: },
      *                                that message and the nested failure as a note (see
-     *                                {@link NestedFailures#describe}), and is logged; a fatal error wrapped so is
+     *                                {@link CauseChains#describe}), and is logged; a fatal error wrapped so is
      *                                still rethrown.
      */
     O createOutput(RunFacts facts) {
@@ -276,17 +276,17 @@ final class RuleExecutor<O> {
             facts.runs().callOut();
             output = outputFactory.get();
         } catch (Throwable e) {
-            Failures.keepInterruptStatus(e);
+            FailurePolicy.keepInterruptStatus(e);
             // Described before reportCalledCodeFailure() asks unlogged(), which records a fatal error it's told of
             // for the first time.
             String msg = outputFailureMessage(e);
-            Failures.reportCalledCodeFailure(msg, e);
-            throw NestedFailures.report(msg, e);
+            FailurePolicy.reportCalledCodeFailure(msg, e);
+            throw CauseChains.report(msg, e);
         }
         if (output == null) {
             String msg = "Output factory returned null. It must return a new output object on every call.";
-            Failures.logError(log, msg);
-            throw NestedFailures.report(msg, null);
+            FailurePolicy.logError(log, msg);
+            throw CauseChains.report(msg, null);
         }
         return output;
     }
@@ -304,10 +304,10 @@ final class RuleExecutor<O> {
         // Built beforehand, so building it can't fail where describing did.
         String plain = "Output factory threw " + e.getClass().getName();
         try {
-            Faults.at(Faults.Step.FAILURE_DESCRIBING);
-            return NestedFailures.below(e).logged() != null || NestedFailures.wrapsLoggedFatal(e)
-                    ? "Output factory threw: " + NestedFailures.describe(e)
-                    : "Output factory threw " + Failures.describeWithClass(e);
+            FaultInjection.at(FaultInjection.Step.FAILURE_DESCRIBING);
+            return CauseChains.below(e).logged() != null || CauseChains.wrapsLoggedFatal(e)
+                    ? "Output factory threw: " + CauseChains.describe(e)
+                    : "Output factory threw " + FailurePolicy.describeWithClass(e);
         } catch (Throwable unreadable) {
             return plain;
         }
@@ -399,7 +399,7 @@ final class RuleExecutor<O> {
 
     private RuleExecutionException propertyFailure(CompiledRule rule, String property, Throwable cause) {
         return notifier.failure(rule, ExpressionKind.ACTION, "Failed to set '" + Text.quote(property)
-                + "' on the output for rule '" + rule.displayName() + "': " + NestedFailures.describe(cause), cause);
+                + "' on the output for rule '" + rule.displayName() + "': " + CauseChains.describe(cause), cause);
     }
 
     /**
@@ -458,7 +458,7 @@ final class RuleExecutor<O> {
      * Reports a condition or action that threw as its rule's failure. An overflow (see {@link Causes#isOverflow}),
      * bare or wrapped, as in an {@link InternalError} the JDK wraps one in, says the stack overflowed, unless what it
      * threw holds a nested {@code run()}'s or {@code load()}'s failure, which is described as
-     * {@link NestedFailures#describe} describes it, naming that run's or load's rule.
+     * {@link CauseChains#describe} describes it, naming that run's or load's rule.
      *
      * @param rule   The rule whose expression threw
      * @param kind   Whether the condition or the action threw
@@ -467,8 +467,8 @@ final class RuleExecutor<O> {
      */
     private RuleExecutionException expressionFailure(CompiledRule rule, ExpressionKind kind, Throwable thrown) {
         String what = kind == ExpressionKind.CONDITION ? "Failed to evaluate condition" : "Failed to execute action";
-        String why = NestedFailures.below(thrown).logged() != null ? NestedFailures.describe(thrown)
-                : NestedFailures.describeCallOut(thrown, false);
+        String why = CauseChains.below(thrown).logged() != null ? CauseChains.describe(thrown)
+                : CauseChains.describeCallOut(thrown, false);
         return notifier.failure(rule, kind, what + " for rule '" + rule.displayName() + "': " + why, thrown);
     }
 
@@ -489,13 +489,13 @@ final class RuleExecutor<O> {
      * @param thrown   What the expression threw
      * @return The exception to throw for a stopped run, or {@code null} if the caller reports the rule's failure: when
      *         the run wasn't cancelled or {@code thrown} has an {@link Error} anywhere in its cause chain, or one
-     *         suppressed on it at any depth (see {@link NestedFailures#errorInChain})
+     *         suppressed on it at any depth (see {@link CauseChains#errorInChain})
      */
     private RuleExecutionException stopped(CompiledRule rule, Deadline deadline, Throwable thrown) {
         // An interrupt the expression caught and wrapped, or left suppressed, is put back first, so it counts as one
         // here too, and an Error inside what it threw is the rule's failure as it always is, cancelled or not.
-        Failures.keepInterruptStatus(thrown);
-        ReportedFailure stop = NestedFailures.errorInChain(thrown) == null
+        FailurePolicy.keepInterruptStatus(thrown);
+        ReportedFailure stop = CauseChains.errorInChain(thrown) == null
                 ? cancellation(rule, "during", deadline, thrown) : null;
         if (stop == null) {
             return null;
@@ -539,10 +539,10 @@ final class RuleExecutor<O> {
      * @return The exception to throw, which belongs to no rule
      */
     private ReportedFailure cancelled(String msg, Exception cause, Deadline deadline, Throwable thrown) {
-        if (!NestedFailures.nestedRunStopped(thrown, deadline)) {
-            Failures.logWarn(log, msg);
+        if (!CauseChains.nestedRunStopped(thrown, deadline)) {
+            FailurePolicy.logWarn(log, msg);
         }
-        return NestedFailures.stop(msg, cause, deadline);
+        return CauseChains.stop(msg, cause, deadline);
     }
 
     /**

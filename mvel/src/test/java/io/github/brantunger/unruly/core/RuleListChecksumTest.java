@@ -21,7 +21,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("the rule-set checksum is a SHA-256 another system can reproduce")
-class ChecksumsTest {
+class RuleListChecksumTest {
 
     /** The SHA-256 of no bytes, from the algorithm's specification. */
     private static final String EMPTY_SHA_256 =
@@ -41,7 +41,7 @@ class ChecksumsTest {
 
     @Test
     @DisplayName("rules hash to the values an independent implementation of the documented layout computes")
-    void knownChecksums() {
+    void knownRuleListChecksums() {
         assertEquals("500a059b1cb5650d87d53c91d0658bba42964c122a1d491377154b455d4d004b",
                 checksumOf(Rule.builder().ruleName("ab").condition("true").action("x").build()),
                 "rule 'ab', no priority, language mvel, condition 'true', action 'x', enabled, no window, no tags");
@@ -245,15 +245,15 @@ class ChecksumsTest {
     @Test
     @DisplayName("an empty rule list hashes to the SHA-256 of no bytes")
     void emptyRules() {
-        assertEquals(EMPTY_SHA_256, Checksums.ofRules(List.of()));
-        assertEquals(EMPTY_SHA_256, Checksums.hex(Checksums.SHA_256, new byte[0]));
+        assertEquals(EMPTY_SHA_256, RuleListChecksum.ofRules(List.of()));
+        assertEquals(EMPTY_SHA_256, RuleListChecksum.hex(RuleListChecksum.SHA_256, new byte[0]));
     }
 
     @Test
     @DisplayName("a digest the JVM doesn't have is reported, rather than surfacing as a checked exception")
     void unknownAlgorithm() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> Checksums.hex("no-such-digest", new byte[0]));
+                () -> RuleListChecksum.hex("no-such-digest", new byte[0]));
 
         assertEquals("This JVM has no no-such-digest digest", ex.getMessage());
     }

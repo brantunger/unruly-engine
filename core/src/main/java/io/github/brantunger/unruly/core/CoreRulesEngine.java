@@ -124,9 +124,9 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      * @throws NullPointerException     if {@code outputFactory} is {@code null}, checked after the settings
      * @throws StackOverflowError       if this is the JVM's first engine and the thread has too little stack left to
      *                                  initialize the classes engines use, before any of them is touched (see
-     *                                  {@link RunClasses}): {@link Engines} checks that before it creates the engine,
-     *                                  and before the builder resolves its settings, and this checks it last for a
-     *                                  caller that doesn't; or if a language the engine is built to use (see
+     *                                  {@link FirstUseClasses}): {@link Engines} checks that before it creates the
+     *                                  engine, and before the builder resolves its settings, and this checks it last
+     *                                  for a caller that doesn't; or if a language the engine is built to use (see
      *                                  {@link EngineSettings#languagesInUse()}) is of a class no engine has prepared
      *                                  yet and the thread has too little stack left to prepare it, checked last,
      *                                  before any language is prepared
@@ -145,11 +145,11 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         this.executor = new RuleExecutor<>(log, notifier, engineId, configuration.outputWriter(),
                 Objects.requireNonNull(outputFactory, "outputFactory must not be null"));
         // Last, so the settings are checked first: the classes engines use that have a static initializer, which a
-        // load or a run, maybe deep in another run's stack, must not be the first to use (see RunClasses). Engines
+        // load or a run, maybe deep in another run's stack, must not be the first to use (see FirstUseClasses). Engines
         // has initialized them already, before the builder read its settings, unless the engine was created without
         // it. Then each language the engine is built to use initializes its own, before anything is compiled.
-        RunClasses.initialize();
-        RunClasses.prepare(settings.languagesInUse());
+        FirstUseClasses.initialize();
+        FirstUseClasses.prepare(settings.languagesInUse());
     }
 
     /**
@@ -225,7 +225,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      *                                in priority order, with the list cut at 1,000 characters like text copied from
      *                                an exception, and belongs to no rule; or if the output factory throws or returns
      *                                {@code null}, an action fails, or the run was cancelled before a rule. A fatal
-     *                                {@link Error} (see {@link Failures#fatalError}) from the output factory is
+     *                                {@link Error} (see {@link FailurePolicy#fatalError}) from the output factory is
      *                                rethrown unchanged, as {@link RuleExecutor#createOutput(RunFacts)} describes.
      */
     RunResult<O> fire(RuleExecutor.Matches matches, CopyPool ruleSet, CopyPool.Copy copy, RunFacts facts) {
@@ -305,7 +305,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         // the narrow window of a reload, which still records the languages it ran for that list.
         boolean firstRun = rules.loaded().languagesRan().needsRoom();
         if (firstRun) {
-            Faults.at(Faults.Step.FIRST_RUN_ROOM_CHECKING);
+            FaultInjection.at(FaultInjection.Step.FIRST_RUN_ROOM_CHECKING);
             StackHeadroom.checkFirstRun();
         }
         long runId = runIds.incrementAndGet();
@@ -330,10 +330,10 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         CopyPool.Copy copy = null;
         // What ending the run throws is kept in this, made before the run holds anything, so that ending a run that
         // has run out of memory allocates nothing until what it threw is combined (#855).
-        Failures.Teardown teardown = new Failures.Teardown(4, Faults.Step.RUN_ENDING_COMBINED);
+        FailurePolicy.Teardown teardown = new FailurePolicy.Teardown(4, FaultInjection.Step.RUN_ENDING_COMBINED);
         try {
             Cancellation.enter(deadline);
-            LoggedFailures.Runs runs = LoggedFailures.enter();
+            FailureLog.Runs runs = FailureLog.enter();
             counted = true;
             // Read once, so every rule's validity window is judged at the same time, however long the run takes.
             // A clock that returns null fails the run here, like one that throws, before any listener hears of it.
@@ -411,13 +411,13 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
                 try {
                     keepInterruptOfStop(tally);
                 } finally {
-                    Failures.rethrowUnchecked(
+                    FailurePolicy.rethrowUnchecked(
                             failedRunEnding(t, endRun(rules, copy, waitStopped != null, runFacts, teardown)));
                 }
                 throw t;
             }
             // Only a run that holds a copy gets here: one without fails in its scope.
-            Failures.rethrowUnchecked(endRun(rules, copy, false, runFacts, teardown));
+            FailurePolicy.rethrowUnchecked(endRun(rules, copy, false, runFacts, teardown));
             // A run that ran an action of a language has made that language's first calls, so later runs of it need
             // no more room than run() checks for.
             List<String> ranLanguages = tally.firedLanguages();
@@ -437,7 +437,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
             // keep the next from running.
             try {
                 if (counted) {
-                    LoggedFailures.leave();
+                    FailureLog.leave();
                 }
             } finally {
                 try {
@@ -478,8 +478,8 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      * as waiting for that init can when the stack or the heap runs out, nothing is handed over, so it's tried once
      * more, and only once: what that hands over is closed all the same, and what the first try threw is returned all
      * the same. Each step's failure is only stored where it's caught, which can't fail again, in a
-     * {@link Failures.Teardown} the run made before it held anything; they are combined last, so nothing is allocated
-     * here before that after a run that has run out of memory (#855).
+     * {@link FailurePolicy.Teardown} the run made before it held anything; they are combined last, so nothing is
+     * allocated here before that after a run that has run out of memory (#855).
      *
      * @param rules    The rule set the run borrowed its copy from, or waited on
      * @param copy     The run's copy, or {@code null} if its facts were rejected, or it stopped before it got one, and
@@ -489,14 +489,14 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      * @param teardown Where each step's failure is kept, made for the four steps and not yet added to
      * @return What the run throws, or {@code null} if nothing is to be thrown: the first fatal {@link Error} closing
      *         the values or the rules threw, or else the first other throwable that escaped them, as logging one can,
-     *         either carrying the rest as suppressed exceptions (see {@link Failures#fatalFirst}). Nothing else a
+     *         either carrying the rest as suppressed exceptions (see {@link FailurePolicy#fatalFirst}). Nothing else a
      *         {@code close()} throws is returned: it was logged. If combining them fails, as it can when it runs out
      *         of memory, the first fatal error met (see {@link Causes#isFatal}) is returned alone, or else what
      *         combining threw.
      */
     // Any Throwable: the copy must be given back however closing the values fails, as a finally would.
     private static Throwable endRun(CopyPool rules, CopyPool.Copy copy, boolean waited, RunFacts facts,
-                                    Failures.Teardown teardown) {
+                                    FailurePolicy.Teardown teardown) {
         // The four steps, each adding what it threw: ending the scope, taking its values, closing them and giving
         // back the copy, or leaving the rule set.
         Throwable endFailed = null;
@@ -511,7 +511,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
                 endFailed = t;
                 values = scope.end();
             }
-            Faults.at(Faults.Step.RUN_VALUES_CLOSING);
+            FaultInjection.at(FaultInjection.Step.RUN_VALUES_CLOSING);
         } catch (Throwable t) {
             // The values handed over are closed all the same.
             taking = t;
@@ -541,14 +541,14 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
 
     /**
      * Chooses what a run that failed throws once it has ended: what it failed with, or what ending it threw (see
-     * {@link #endRun}), as {@link Failures#insteadOf} decides. A fatal {@link Error} is never dropped for a failure
-     * that isn't fatal: a fatal error from ending the run replaces a failure that isn't fatal, and a fatal failure of
-     * the run comes before anything else ending it threw: the failure is thrown when the error is in its cause chain,
-     * and the error itself, the failure logged at WARN, when it's only suppressed on it. Of two that aren't fatal,
-     * what ending threw is thrown, as what giving back the copy threw was before the run's values were closed with
-     * it. What is thrown carries the other as a suppressed exception (see {@link Failures#keepAlso}), except that a
-     * fatal error only suppressed on the failure carries what ending threw, the failure itself being logged at WARN
-     * instead.
+     * {@link #endRun}), as {@link FailurePolicy#insteadOf} decides. A fatal {@link Error} is never dropped for a
+     * failure that isn't fatal: a fatal error from ending the run replaces a failure that isn't fatal, and a fatal
+     * failure of the run comes before anything else ending it threw: the failure is thrown when the error is in its
+     * cause chain, and the error itself, the failure logged at WARN, when it's only suppressed on it. Of two that
+     * aren't fatal, what ending threw is thrown, as what giving back the copy threw was before the run's values were
+     * closed with it. What is thrown carries the other as a suppressed exception (see {@link FailurePolicy#keepAlso}),
+     * except that a fatal error only suppressed on the failure carries what ending threw, the failure itself being
+     * logged at WARN instead.
      *
      * @param failure What the run failed with
      * @param ending  What {@link #endRun} returned, or {@code null}
@@ -556,7 +556,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      */
     private static Throwable failedRunEnding(Throwable failure, Throwable ending) {
         // endRun returns a fatal error itself, never one that carries it.
-        return Failures.insteadOf(failure, ending);
+        return FailurePolicy.insteadOf(failure, ending);
     }
 
     /**
@@ -569,7 +569,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      * @param tally The run's tally, which records whether an interrupt stopped the run
      */
     private static void keepInterruptOfStop(RunTally tally) {
-        Faults.at(Faults.Step.INTERRUPT_KEPT);
+        FaultInjection.at(FaultInjection.Step.INTERRUPT_KEPT);
         if (tally.wasInterrupted()) {
             Thread.currentThread().interrupt();
         }
@@ -630,13 +630,13 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
                 // here. One that does is handled the same way: it fails the run like an exception, closing every
                 // listener's run, and a fatal Error among its causes, or suppressed on them, is then rethrown
                 // unchanged.
-                Failures.keepInterruptStatus(t);
-                String msg = "The run failed with " + Failures.describeWithClass(t);
+                FailurePolicy.keepInterruptStatus(t);
+                String msg = "The run failed with " + FailurePolicy.describeWithClass(t);
                 log.error(msg);
-                RuleExecutionException failure = NestedFailures.report(msg, t);
-                Error fatal = Failures.fatalError(t);
+                RuleExecutionException failure = CauseChains.report(msg, t);
+                Error fatal = FailurePolicy.fatalError(t);
                 notifier.notifyRunError(facts.runs(), run, failure, fatal != null ? fatal : failure, facts.tally());
-                Failures.throwIfPresent(fatal);
+                FailurePolicy.throwIfPresent(fatal);
                 throw failure;
             }
             notifier.notifyRun(facts.runs(), "afterRun", listener -> listener.afterRun(run, result));
@@ -728,8 +728,8 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
      * @return The exception to throw, which belongs to no rule
      */
     static RuleExecutionException failedRun(String msg) {
-        Failures.logError(log, msg);
-        return NestedFailures.report(msg, null);
+        FailurePolicy.logError(log, msg);
+        return CauseChains.report(msg, null);
     }
 
     /**
@@ -744,7 +744,7 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
     public RuleSetInfo rules() {
         CopyPool rules = ruleSets.currentIfOpen();
         if (rules == null) {
-            return RuleSetInfo.of(List.of(), Checksums.ofRules(List.of()), null);
+            return RuleSetInfo.of(List.of(), RuleListChecksum.ofRules(List.of()), null);
         }
         LoadedRules loaded = rules.loaded();
         return RuleSetInfo.of(loaded.rules().stream().map(CompiledRule::rule).toList(), loaded.checksum(),
@@ -863,15 +863,15 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         if (cause instanceof InterruptedException) {
             facts.tally().markInterrupted();
         }
-        Failures.logWarn(log, msg);
-        return NestedFailures.stop(msg, cause, passed);
+        FailurePolicy.logWarn(log, msg);
+        return CauseChains.stop(msg, cause, passed);
     }
 
     /**
      * Calls {@link RuleListener#beforeRun} for a run, one that stopped before it got a copy too, which may be the JVM's
      * first failure. A class of its own rather than a lambda, so that run links no call site, and loaded when the JVM's
-     * first engine is built (see RunClasses), so it loads no class either, either of which could overflow deep in a
-     * stack (#1093).
+     * first engine is built (see FirstUseClasses), so it loads no class either, either of which could overflow deep in
+     * a stack (#1093).
      */
     static final class BeforeRun implements Consumer<RuleListener> {
         private final RunContext run;
@@ -1058,11 +1058,11 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         // Before the validation counts or compiles anything, as in run().
         StackHeadroom.check();
         // As in load(): a fatal Error a run a language starts here logged isn't logged again.
-        LoggedFailures.enterLoad();
+        FailureLog.enterLoad();
         try {
             return validateRules(ruleList);
         } finally {
-            LoggedFailures.leave();
+            FailureLog.leave();
         }
     }
 
@@ -1082,10 +1082,10 @@ final class CoreRulesEngine<O> implements RulesEngine<O> {
         try {
             compilation.compile(RuleListCompiler.withoutNulls(ruleList));
         } catch (Throwable t) {
-            Failures.throwIfPresent(Failures.closingInsteadOf(t, compilation.closeCompilers()));
+            FailurePolicy.throwIfPresent(FailurePolicy.closingInsteadOf(t, compilation.closeCompilers()));
             throw t;
         }
-        Failures.throwIfPresent(compilation.closeCompilers());
+        FailurePolicy.throwIfPresent(compilation.closeCompilers());
         problems.addAll(compilation.foundFailures());
         return Collections.unmodifiableList(problems);
     }

@@ -26,8 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * which takes more stack than the engine's checks make room for. The code that handles a failure runs only when
  * something fails, so the JVM's first failure deep in a stack paid for the link there, and could overflow:
  * {@code run()} then threw a {@link StackOverflowError} in place of the failure, and listeners missed {@code onError}
- * or {@code onRunError}. So {@link Failures}, which reads and describes what was thrown, {@link NestedFailures}, which
- * reads it for the engine's own failures and builds the one a run reports, {@link LoggedFailures}, which records what
+ * or {@code onRunError}. So {@link FailurePolicy}, which reads and describes what was thrown, {@link CauseChains},
+ * which reads it for the engine's own failures and builds the one a run reports, {@link FailureLog}, which records what
  * was logged, and {@link ListenerNotifier},
  * which tells listeners of it, use neither, nor does {@link Closing}, which closes what a failed borrow made. #1097:
  * nor {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class FailureCodeLambdaTest {
 
     @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {Failures.class, NestedFailures.class, LoggedFailures.class, ListenerNotifier.class,
+    @ValueSource(classes = {FailurePolicy.class, CauseChains.class, FailureLog.class, ListenerNotifier.class,
             Closing.class, CopyPermits.class, RuleCompilationException.class,
             Causes.class, Text.class, Lookups.class, ImportSize.class, FatalErrors.class, Throwables.class,
             ImportLimits.class, RetireQueue.class, Whitespace.class, CharacterTables.class})

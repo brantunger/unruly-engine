@@ -60,7 +60,7 @@ final class ImportResolver {
             // exists, and rules couldn't use it.
             throw new IllegalArgumentException("Can't import '" + Text.quote(name)
                     + "': the class exists but can't be loaded: "
-                    + Failures.describeWithClass(e), e);
+                    + FailurePolicy.describeWithClass(e), e);
         }
     }
 
