@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.core;
+package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
