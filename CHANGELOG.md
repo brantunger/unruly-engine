@@ -11,6 +11,13 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [2.35.4](https://github.com/brantunger/unruly-engine/compare/v2.35.3...v2.35.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* the contract kit accepts the engine's condition form of a nested run's failure, and custom.md recommends reading each property on demand ([#1383](https://github.com/brantunger/unruly-engine/issues/1383)) ([#1393](https://github.com/brantunger/unruly-engine/issues/1393)) ([7540fd0](https://github.com/brantunger/unruly-engine/commit/7540fd071fcab5513d2b8c7d9d3d27b0bd1247f1))
+
 ## [2.35.3](https://github.com/brantunger/unruly-engine/compare/v2.35.2...v2.35.3) (2026-11-03)
 
 
