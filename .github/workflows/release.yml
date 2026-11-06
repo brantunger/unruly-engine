@@ -1,8 +1,9 @@
 name: Release
 
-# Two jobs, one workflow, on purpose. release-please runs with a fine-grained PAT, RELEASE_PLEASE_TOKEN (see
-# docs/contributing/release-token.md), so the release PR it opens gets a normal CI run and the PR title check: a PR
-# opened with GITHUB_TOKEN gets a CI run that waits for an approval nobody gives, and no pull_request_target run.
+# One workflow, on purpose: release-please, then the gate on main's CI, then publish. release-please runs with a
+# fine-grained PAT, RELEASE_PLEASE_TOKEN (see docs/contributing/release-token.md), so the release PR it opens gets a
+# normal CI run and the PR title check: a PR opened with GITHUB_TOKEN gets a CI run that waits for an approval nobody
+# gives, and no pull_request_target run.
 # The PAT also means the tag and the Release it creates *do* trigger `on: push: tags` and `on: release` workflows,
 # which GitHub suppresses only for GITHUB_TOKEN. None exist today (ci.yml runs on pull requests and pushes to main
 # and develop, pr-title.yml on pull_request_target, pages.yml only when called or dispatched), so a workflow added
@@ -150,8 +151,75 @@ jobs:
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" \
             || echo "::warning::Couldn't add the migration guides to the ${TAG} release notes. See RELEASING.md."
 
-  publish:
+  # Lets publish run only for code main's full CI passed. The release PR's own run is one build leg (ci.yml's changes
+  # job gives it scope release), and the ruleset doesn't make the PR be up to date with main, so its checks say
+  # nothing about the other legs. The code released is the tag's parent, the main commit the release PR was squashed
+  # onto; the tag adds only the version and the changelog, and the release commit's push run of ci.yml starts with
+  # this run. The parent's push run is often still going when this job starts, because the release PR's one leg
+  # finishes first, so
+  # this waits for it, then requires its ci-result job, the check the ruleset requires, to have passed. That job, not
+  # the run's conclusion: the run also counts dependency-graph, which ci-result doesn't need, so a failed graph
+  # submission doesn't hold a release back. Its own job, so publish keeps its timeout and its environment, and a
+  # failure here skips publish before anything is built or uploaded: "Re-run failed jobs" asks again, and runs publish
+  # and pages after it. While it waits, the run holds the `release` concurrency group, which costs nothing (see
+  # above). RELEASING.md says what to do when it fails: a run cancelled by a newer push, a flake, or a real failure,
+  # which means the next version. The checkout is depth 1 in publish, so the parent comes from the API here, and the
+  # job checks nothing out. actions: read is for the runs and jobs lookups; contents: read for the commit.
+  ci-gate:
     needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    # The wait below is bounded at 30 minutes; the lookups around it take seconds.
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require main's CI to have passed on the released code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          : "${TAG:?release-please reported no tag}"
+          code=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${TAG}" --jq '.parents[0].sha')
+          : "${code:?no parent commit found for ${TAG}}"
+          runs="repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=${code}"
+          # 60 looks, 30 seconds apart: up to 30 minutes, inside the job's 35. main's full CI takes about 15. A lookup
+          # that fails counts as still waiting, so one GitHub API error costs a look, not the release. A sha with no
+          # run at all isn't waited for: the parent was pushed before the tag, so its run exists by now, and the
+          # check below fails with a message that names the sha.
+          looks=60
+          pause=30
+          for look in $(seq "$looks"); do
+            pending=$(gh api "$runs" --jq '[.workflow_runs[] | select(.status != "completed")] | length') || pending=""
+            [ "$pending" = 0 ] && break
+            if [ "$look" -eq "$looks" ]; then
+              echo "::error::main's CI on ${code} hadn't finished after $((looks * pause / 60)) minutes, so nothing was published. See RELEASING.md."
+              exit 1
+            fi
+            echo "Waiting for main's CI on ${code} (unfinished runs: '${pending}')."
+            sleep "$pause"
+          done
+          # The jobs endpoint returns the latest attempt's jobs, so a re-run of a cancelled or failed run that passes
+          # is what a re-run of this job sees. A lookup that fails here fails closed: the runs lookup gives no ids,
+          # so nothing passed, and a jobs lookup stops the step (bash -e).
+          mapfile -t ids < <(gh api "$runs" --jq '.workflow_runs[].id')
+          passed=0
+          for id in "${ids[@]}"; do
+            result=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+              --jq '.jobs[] | select(.name == "ci-result") | .conclusion')
+            echo "ci.yml run ${id} on ${code}: ci-result '${result}'"
+            [ "$result" = success ] && passed=1
+          done
+          if [ "$passed" -ne 1 ]; then
+            echo "::error::No push run of ci.yml on main passed ci-result for ${code}, the code ${TAG} releases (runs found: ${#ids[@]}), so nothing was published. See RELEASING.md."
+            exit 1
+          fi
+
+  publish:
+    needs: [ release-please, ci-gate ]
+    # The gate is in needs, so a failed or skipped gate skips this job too (an if: without a status function gets
+    # success() implied).
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     # Generous: the build and the synchronous Portal validation both run inside this job,
