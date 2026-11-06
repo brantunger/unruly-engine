@@ -337,7 +337,7 @@ no expression kind, a [language it doesn't have](README.md#-choosing-a-language-
 
 ## 📁 Reading facts
 
-Rules are written `applicant.creditScore` whether the fact is a record, a JavaBean or a `Map`, and the engine hands you
+Rules are written `applicant.creditScore` whether the fact is a record, a JavaBean or a `Map`; the engine hands you
 facts as they are, so all three are your job. Adapters most often get records wrong: a component is a method, so
 looking only for a getter or a field reads nothing, and the condition is silently `false`.
 `FactProperties.read(fact, "creditScore")` does it:
@@ -348,13 +348,12 @@ looking only for a getter or a field reads nothing, and the condition is silentl
 | A JavaBean, or any other class | The public no-argument `getCreditScore()`, or `isCreditScore()` when it returns a boolean. Public fields aren't read |
 | A `Map` | The value under the exact `String` key, which may be `null` |
 
-> [!IMPORTANT]
-> `read` throws `IllegalArgumentException` when the fact has no such property. Let it reach the engine: a missing
-> property is a mistake in the rule, and evaluating it to `false` or to undefined hides it.
+`read` throws `IllegalArgumentException` for a missing property. Let it reach the engine: it's a mistake in the rule,
+and evaluating it to `false` or undefined hides it.
 
-A property that exists but whose accessor throws, or can't be called, fails with `IllegalStateException` instead, so a
-getter that rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read
-through a public supertype that declares the accessor, or directly where its package is open to
+A property whose accessor throws, or can't be called, fails with `IllegalStateException` instead, so a getter that
+rejects its own state is never mistaken for a misspelled rule. A fact whose class isn't public is read through a
+public supertype that declares the accessor, or directly where its package is open to
 `io.github.brantunger.unruly.core`: always on the class path, and on the module path when the application `opens` it;
 see [Packaging a language](packaging.md).
 
@@ -362,24 +361,84 @@ see [Packaging a language](packaging.md).
 its getter throws; `propertyNames(fact)` lists the names `read` can reach. Neither calls a getter, though a map's
 `containsKey` or key iteration runs, so use them for `in`, `hasattr` or `Object.keys`.
 
-A language is expected to compare whole numbers of different types by value, so a condition written for `x` = 1
-matches a `Long` or a `BigDecimal` fact holding 1; a strongly typed language that doesn't can override
-`comparesWholeNumbersByValue()` in its [contract kit](contract-kit.md) test to return `false`.
+A language is expected to compare whole numbers by value, so a condition for `x` = 1 matches a `Long` or a
+`BigDecimal` 1; a strongly typed language that doesn't overrides `comparesWholeNumbersByValue()` in its
+[contract kit](contract-kit.md) test to return `false`.
 
-`FactProperties.toData(fact, depth)` converts a record, a bean or a map into a map of its properties, for a language
-that reads only maps. It throws `IllegalArgumentException` for a value it doesn't take apart, such as a number, a
-string or a collection, so convert the whole fact map, with one more level, not each fact.
+Read only the properties a rule names, as MVEL does: let your runtime's variable resolver return the fact and read
+members with `FactProperties.read`, or a view, if it reads only maps:
 
 ```java
+import io.github.brantunger.unruly.api.language.FactProperties;
+import java.util.*;
+
+// A map over one fact, for a runtime that reads only maps. get() calls only the getter the expression names; only
+// iterating the entries or values (equals, hashCode, toString and containsValue do) calls them all.
+final class FactView extends AbstractMap<String, Object> {
+    private final Object fact;
+
+    private FactView(Object fact) {
+        this.fact = fact;
+    }
+
+    // What your runtime's variable resolver returns for a fact, and get() for a property: a value it takes as is, or
+    // a view over it. List every type your runtime takes as is: a view makes a date or an Optional a map of its
+    // getters, and an array one with no properties. A collection's elements aren't viewed, so view them too if rules
+    // index into lists
+    static Object of(Object value) {
+        return value == null || value instanceof Number || value instanceof CharSequence || value instanceof Boolean
+                || value instanceof Enum<?> || value instanceof Collection ? value : new FactView(value);
+    }
+
+    @Override
+    public Object get(Object key) {   // a missing property throws, as read() does: let it reach the engine
+        return of(FactProperties.read(fact, String.valueOf(key)));
+    }
+
+    @Override
+    public boolean containsKey(Object key) {   // has(), keySet() and size() call no getter
+        return FactProperties.has(fact, String.valueOf(key));
+    }
+
+    @Override
+    public Set<String> keySet() {
+        return FactProperties.propertyNames(fact);
+    }
+
+    @Override
+    public int size() {
+        return keySet().size();
+    }
+
+    @Override
+    public Set<Entry<String, Object>> entrySet() {
+        Set<Entry<String, Object>> entries = new LinkedHashSet<>();
+        for (String name : keySet()) {
+            entries.add(new SimpleImmutableEntry<>(name, get(name)));
+        }
+        return entries;
+    }
+}
+```
+
+For a runtime that takes only copied values, convert the facts with `FactProperties.toData(fact, depth)`:
+
+```java
+// toData copies a record, a bean or a map into a map, and throws IllegalArgumentException for a number, a string or
+// a collection, so convert the whole fact map, with one more level
 Map<String, Object> data =
         evaluation.runScoped(this, () -> FactProperties.toData(evaluation.facts(), depth + 1));
 // {applicant={creditScore=750}, score=750}
 ```
 
-Since 2.13.0, `runScoped(key, init)` converts the facts once per run: the first expression to ask makes the map, and the
-others share it. Key it with the compiler (`this`), not each expression. Nested and later runs make their own. The map
-misses a fact that Java code changes after it's made, and the engine drops it, unclosed, when the run returns: keep a
-resource with `runScopedClosing`.
+> [!WARNING]
+> This calls every getter of every fact on every run, so a getter no rule reads, such as a detached lazy
+> association, fails every run, blamed on the first expression. Converting fact by fact still calls all of a fact's
+> getters once a rule reads one.
+
+Since 2.13.0, `runScoped(key, init)` makes the map once per run, shared by every expression; key it with the
+compiler (`this`), not each expression. Nested and later runs make their own. It misses a fact Java code changes
+later, and the engine drops it, unclosed, when the run returns: keep a resource with `runScopedClosing`.
 
 ```java
 // MyInterpreter stands for your runtime's AutoCloseable context; a nested run makes and closes its own
@@ -391,14 +450,13 @@ newest first. A `close()` that throws is logged at WARN; a fatal error is then t
 isn't fatal, but a fatal run failure wins. Using both methods on one key, or `runScopedClosing` once closing began,
 throws `IllegalStateException`.
 
-Either method may be called from another thread. Asking for a key whose init is running on the same thread, or with
-`runScoped` while it runs on another, throws `IllegalStateException`. Closing inits run one at a time: a
-`runScopedClosing` request from another thread waits, uninterruptibly and keeping the interrupt status, then gets the
-value made for its key or makes its own.
+Either method works from another thread. Asking for a key whose init is running on the same thread, or with
+`runScoped` while it runs on another, throws `IllegalStateException`. Closing inits run one at a time: another
+thread's `runScopedClosing` request waits, uninterruptibly and keeping the interrupt status, then gets the value made
+for its key or makes its own.
 
-The run's end waits for a closing init still running, with no limit, then closes the values. If the wait runs out of
-stack or memory, it waits once more, closes the values and throws what the first wait threw; failing twice leaves them
-open.
+The run's end waits, with no limit, for a closing init still running, then closes the values. If the wait runs out of
+stack or memory, it waits once more, closes them and throws the first wait's error; failing twice leaves them open.
 
 ## 📤 Actions and results
 

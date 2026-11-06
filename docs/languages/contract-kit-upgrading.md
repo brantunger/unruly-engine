@@ -36,11 +36,17 @@ be skipped. So a language that passed the 2.33 kit may now fail either. Each new
 
 | Check | Now fails a language that | The defect |
 | --- | --- | --- |
-| `nestedRunFailureRethrownAsIs` | Fails the action whose getter throws a nested run's failure with a message that doesn't start `Failed to execute action for rule 'outer': a nested run() failed: `, or without that failure in its cause chain | The language throws an exception of its own, with words of its own around the nested failure's message, as SpEL's `SpelEvaluationException` does, so the engine [logs the failure twice](../nested-runs.md#-what-is-logged) |
+| `nestedRunFailureRethrownAsIs` | Fails the outer rule, when a getter throws a nested run's failure on, with a message that starts with neither `Failed to execute action for rule 'outer': a nested run() failed: ` nor, for a language that reads every fact before its first expression, `Failed to evaluate condition for rule 'outer': a nested run() failed: `, or without that failure in its cause chain | The language throws an exception of its own, with words of its own around the nested failure's message, as SpEL's `SpelEvaluationException` does, so the engine [logs the failure twice](../nested-runs.md#-what-is-logged) |
 | `outputUnconvertibleValueFailsTheRule` | Sets a `String` property from the `Double` 1.5, or, with actions that change the output in place, returns `null` or a `String` from `convertOutput(1.5, String.class)` | `convertOutput` returns `null` for a conversion it doesn't have, which sets the property to `null` and fails nothing, or converts a number to a `String` |
 
 To pass `nestedRunFailureRethrownAsIs`, throw what the code your expression called threw, or a wrapper with exactly
 its message, as [Implementing the interfaces](custom.md#-implementing-the-interfaces) says.
+
+A language that reads every fact before its first expression, as one that converts the facts with
+`FactProperties.toData` does, reads `nest.value` in the outer rule's condition, so the engine reports the failure in
+its form for a condition, which the check accepts too. Kits 2.34.0 to 2.35.3 accepted only the action's form, so
+they failed such a language even when it added no words. [Reading facts](custom.md#-reading-facts) says why a
+language should read each property when an expression asks for it instead.
 
 The default `convertOutput`, which returns the value unchanged, passes `outputUnconvertibleValueFailsTheRule`; see
 [What to convert](output-conversion.md#-what-to-convert). The kit writes `ExpressionLanguageContractTest.Customer`, a
