@@ -69,8 +69,8 @@ by `build` without GraalVM, fails unless CI's [strict](../native-image.md#-stric
 | `AvoidUsingVolatile` | The engine's and a rule list's shared fields are written by `load()`, `close()` or the run that finds no language keeps state, and read by every run without a lock |
 | `AvoidSynchronizedStatement` | Every synchronized block is short and never parks, so no run waits long on a monitor or pins its virtual thread while parked |
 
-**PMD skips test sources, by decision.** On them the rule set found 2,885 violations (at `0367bb2`), most of them an
-assertion without a message, a test with several assertions, or an unclosed resource.
+**PMD skips test sources, by decision:** on them the rule set found 2,885 violations (at `0367bb2`), mostly
+assertions without a message, tests with several assertions, or unclosed resources.
 
 Each `test` task gives up after 10 minutes (`timeout` in `buildSrc/src/main/kotlin/unruly.java-conventions.gradle.kts`),
 so a test that never returns fails the build within its job's 20-minute cap. Gradle
@@ -90,8 +90,8 @@ own and aborts it at the deadline, instead of reporting the deadline once the te
 ran on.
 
 The `benchmarks` project's main sources are the exception to the javac gate: they compile JMH's generated code, so
-`compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle.kts`). Its test sources are hand-written, so
-`compileTestJava` keeps `-Xlint:all -Werror`.
+`compileJava` runs with `-Xlint:none` instead (`benchmarks/build.gradle.kts`); its hand-written test sources keep
+`-Xlint:all -Werror`.
 
 The design rules are ordinary JUnit tests, under `java/io/github/brantunger/unruly/` in the source set named:
 
@@ -151,13 +151,14 @@ so a second build reuses task outputs, including those of another branch, and th
 A docs-only pull request or push (only `docs/` and `.md` files, none under a `src/` directory) skips the build,
 `native-image` and `dependency-graph`; a push, only if the previous push's run passed. A release PR, a new `version=`
 in `gradle.properties` plus documentation or `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest`
-leg, coverage gate included, and skips `native-image`. `changes` decides; if it fails, everything runs.
+leg, coverage gate included, and skips `native-image`. `changes` decides; if it fails, everything runs. The release
+workflow's `ci-gate` job holds `publish` until `main`'s full run on the released code passed `ci-result`.
 
 A new push to a pull request cancels its earlier run. A push's run isn't cancelled once started, but GitHub keeps one
 waiting run per branch: a later push cancels a waiting one.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
-may have findings in lines you didn't touch. zizmor warns too, until #1328. Steps after a failed one still run.
+may have findings in lines you didn't touch. Steps after a failed one still run.
 `check_style.py` also enforces the 2,500-word cap, with the exceptions `docs/scripts/long-pages.txt` lists. Run the
 checks before you push, from the repository root, with Python 3, [actionlint](https://github.com/rhysd/actionlint)
 and [zizmor](https://docs.zizmor.sh):
@@ -172,8 +173,7 @@ zizmor --offline .github/workflows                # reads .github/zizmor.yml
 ```
 
 `check_fixtures.py` checks both docs scripts' output and exit codes on the cases in `config/docs-checks/`. When you
-fix a script, add its case there as `<name>.md.txt`, with its SVGs, and the expected output to `VERDICTS` in
-`check_fixtures.py`.
+fix a script, add its case there as `<name>.md.txt`, with its SVGs, and its expected output to `VERDICTS`.
 
 CI downloads pinned actionlint and zizmor releases, which Dependabot doesn't update: to bump one, change its
 `_VERSION` and `_SHA256` in `ci.yml`.
@@ -187,8 +187,9 @@ What the jobs leave behind:
 - **Artifacts:** each build leg's JUnit XML and test JVM crash logs, always, in `jacoco-report-jdk21-<os>`, with
   the JaCoCo report (`build/reports/jacoco/`), or `test-results-jdk<version>-ubuntu-latest`;
   `api-compatibility-report-jdk21-<os>` and `dependency-verification-report-*` only when a job fails.
-- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests and the release
-  workflow's `publish` job only read them. The configuration cache isn't saved: that needs an encryption key.
+- **Gradle caches:** runs on `main` save the dependency and build caches, one per OS; pull requests, `dependency-graph`
+  and the release workflow's `publish` job only read them. The configuration cache isn't saved: that needs an
+  encryption key.
 
 The `main-require-green-ci` ruleset, with no bypass, requires `ci-result` and `pr-title`; a PR needn't be up to date
 with `main`. CodeQL runs as GitHub's default-setup scan of the Java and Kotlin sources and the workflows. No ruleset
@@ -198,8 +199,7 @@ requires it, so it never gates CI or a release; its alerts are triaged under Sec
 
 `-PtestJdk=N` runs the test task, not compilation, on a JDK N launcher, so the JDK must be installed: Gradle doesn't
 download toolchains (`org.gradle.java.installations.auto-download=false`), and a missing one fails the build naming
-the version. The build passes `unruly.test.jdk` to the tests, and `TestJdkTest` fails if the JVM running them
-differs.
+the version. `TestJdkTest` fails if the JVM running the tests isn't the one `unruly.test.jdk` names.
 
 ```bash
 ./gradlew :core:test :mvel:test :test-kit:test -PtestJdk=26
