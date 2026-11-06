@@ -26,7 +26,7 @@ Every example below was checked against the engine. For the full language, see t
 
 | To | Write |
 | --- | --- |
-| Read a property (getter, record accessor, public field or `Map` key) | `applicant.creditScore` |
+| Read a property (getter, record accessor, public field or `Map` key) | `applicant.creditScore`; for a `Map` key, `order['size']` (see [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas)) |
 | Call a method | `applicant.name.length() > 2` |
 | Compare | `applicant.name == 'Ada'`, `applicant.creditScore >= 650` |
 | Combine | `applicant.creditScore > 700 && applicant.name != empty` |
@@ -53,9 +53,8 @@ Every example below was checked against the engine. For the full language, see t
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
 An action changes `output` in place, by calling a method, such as `output.setInterestRate(4.5)` or `output.put(...)`,
-or assigning a property. An assignment isn't always the same as calling the
-setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
-each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
+or assigning a property, which isn't always the same as calling the setter; see
+[Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
 The action's value is ignored: `output.approved = true; 42` is fine. Assigning to `output` itself,
 as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
@@ -169,7 +168,9 @@ Check with `isdef` for a fact that may be missing, and for `null` before reading
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
-A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelling.
+A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelling. A key named
+like a map method, such as `size`, calls it instead: write `order['size']`; see
+[Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 | Condition, for an `order` map with no `missing` key | Result |
 | --- | --- |
@@ -202,8 +203,8 @@ saying why:
 | No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
-Strong typing also changes arithmetic: MVEL computes in the declared types, not doubles; see the
-Division row of [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
+Strong typing also changes arithmetic; see the Division row of
+[Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
 doesn't catch a condition that isn't a boolean; the engine checks that for every language.

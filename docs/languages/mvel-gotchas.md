@@ -22,7 +22,7 @@ action that stores exactly the value you meant, and turn off what MVEL logs itse
 
 ## 🚧 Comparison gotchas
 
-MVEL compares and computes more loosely than Java, so a condition can match, or not, unexpectedly.
+MVEL compares and computes more loosely than Java.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
@@ -33,14 +33,14 @@ MVEL compares and computes more loosely than Java, so a condition can match, or 
 | 🕳️ **`empty`** | `s == empty` is `true` for `""`, and `n == empty` is `true` for `0` | Use `== ''` or `== 0` when you mean exactly that |
 | ❓ **Missing facts** | A fact that isn't in the store fails the run, so `x == null` can't test for it. See [Null and missing facts](mvel.md#null-and-missing-facts) | `isdef x && x > 1` |
 | 🔑 **A key missing from a `Map` fact** | `order.missing == null` fails the run with `could not access: missing`, not `true` | `order['missing'] == null`, or `order.containsKey('missing')` |
+| 🪤 **A `Map` key named like a method** | `order.size == 'XL'` calls `size()`, not the key: a public no-argument method named `size`, `getSize` or `isSize` (returning `boolean`) comes first. On a `HashMap` or `LinkedHashMap`, `empty`, `values`, `keySet`, `entrySet`, `hashCode`, `toString` and `class` call a method too, with no error; `order.clear` empties the caller's map; `order.wait`, `order.notify` and `order.notifyAll` fail the rule: `current thread is not owner` | `order['size'] == 'XL'` always reads the key: use it for keys from outside, such as decoded JSON |
 | 🌍 **`soundslike`** | `'lil' soundslike 'lull'` is `true` under `en`, `false` under `tr`: MVEL upper-cases both with the JVM's default locale | `a.toUpperCase(java.util.Locale.ROOT) soundslike b.toUpperCase(java.util.Locale.ROOT)` |
 
 ## 🚧 Assignment gotchas
 
-An assignment such as `output.rate = r` doesn't always do what `output.setRate(r)` does. MVEL first looks
-for a public field named `rate` that can take the value, and writes it. Only without one does it look for a setter,
-taking the first one-argument `setRate` that can take the value. A call chooses by the value's
-type instead: `output.setX(n)` with a `long` calls `setX(long)`.
+An assignment such as `output.rate = r` isn't always `output.setRate(r)`. MVEL first writes a public field named
+`rate` that can take the value; only without one does it call the first one-argument `setRate` that can. A call
+chooses by the value's type instead: `output.setX(n)` with a `long` calls `setX(long)`.
 
 | Gotcha | Example | Do this instead |
 | --- | --- | --- |
@@ -49,8 +49,8 @@ type instead: `output.setX(n)` with a `long` calls `setX(long)`.
 | 0️⃣ **`null` for a primitive** | With `n` null, even when declared `fact("n", int.class)`, `output.x = n` stores `0` through an `int` setter. Into a public `int` field it stores `0` on the first run; later runs fail the rule with `unable to access field` (root cause a `NullPointerException` from MVEL's conversion). `output.setX(n)` fails the rule: the cause is a `PropertyAccessException` (`unable to resolve method`) or, with strong typing, a `CompileException` whose root cause is a `NullPointerException`. The JUL `WARNING` is dropped; see [MVEL's own logging](#-mvels-own-logging) | Test it first: `if (n != null) { output.setX(n) }`, or give the field a setter |
 | 💥 **A public field of another type than the value** | With MVEL's JIT, a `long`, `float` or `double` field, even given its own box, or another field given another type, such as `int` given `Long` or `BigDecimal` given `Integer`: once the JIT compiles an assignment such as `output.big = n`, it can fail with a `VerifyError` (`Bad type on operand stack`, and MVEL prints `**** COMPILER BUG!` to standard output), an `IllegalArgumentException` or a `ClassCastException`, for one run or every later one, depending on the field's type and the values assigned. An `Object` field, or another field given its own type, is safe | A setter |
 
-MVEL's JIT, if made the default again, compiles an accessor after about 50 quick runs, and can again, such as in
-each compiled copy; see [MVEL's optimizer](mvel.md#mvels-optimizer).
+MVEL's JIT, if made the default again, compiles an accessor after about 50 quick runs, and can again in each
+compiled copy; see [MVEL's optimizer](mvel.md#mvels-optimizer).
 
 ## ☕ Calling Java code
 
@@ -64,14 +64,12 @@ MVEL reaches a fact's methods and getters through reflection, which can fail whe
 
 ## 🔥 A rule failing for ever after about 50 quick runs
 
-With MVEL's JIT, a rule works in tests and production's first minutes, then fails on every run, once the JIT takes
-over its accessors; see [MVEL's optimizer](mvel.md#mvels-optimizer). It has two shapes:
+With MVEL's JIT, a rule works in tests and production's first minutes, then fails on every run once the JIT takes
+over its accessors (see [MVEL's optimizer](mvel.md#mvels-optimizer)), in two shapes:
 
-- On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class: that class
-  isn't reachable from the `load()` thread's context class loader; see
+- On the class path, a `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class; see
   [Class loaders](../thread-safety.md#-class-loaders).
-- On the module path, an `IllegalAccessError` naming your package: it needs an export without a `to` clause; see
-  [Installation](../../README.md#-installation).
+- On the module path, an `IllegalAccessError` naming your package; see [Installation](../../README.md#-installation).
 
 ## 🐢 Compile time
 
@@ -87,8 +85,8 @@ A long expression on a small thread, such as 256 KB on macOS, can get it too.
 Who pays it:
 
 - `load()` and `validate()` compile each expression twice, once to check it and once to run it.
-- The first [compiled copy](../glossary.md#compiled-copy) to run an expression takes the form `load()` compiled. Each
-  later copy compiles it again; see [Compiled copies](mvel.md#-compiled-copies).
+- Each [compiled copy](../glossary.md#compiled-copy) but the first to run an expression compiles it again; see
+  [Compiled copies](mvel.md#-compiled-copies).
 - A nested `new` also costs about half its load time on a copy's first run of it; a nested `in` doesn't.
 
 Split a deep construction into local variables in an action, or a Java method the rule calls; a condition can't
@@ -138,26 +136,24 @@ arguments. Deeper nesting, such as calls three levels deep, can still fail its r
 overflow deep in a stack. The engine's tests record which classes
 the others initialize rather than cover them.
 
-**MVEL's JIT, if re-enabled, isn't prepared.** It compiles an accessor with ASM once more than 50 runs have used it
-within 100 ms, and its first compile initializes ASM's classes and some of the JDK's. MVEL marks the accessor compiled
-before it compiles it, so a compile that overflows deep in a stack fails that run and isn't tried again: the accessor
-stays on MVEL's reflective path, still correct.
+**MVEL's JIT, if re-enabled, isn't prepared.** It compiles an accessor with ASM after
+[about 50 quick runs](mvel.md#mvels-optimizer), and its first compile initializes ASM's classes and some of the JDK's.
+MVEL marks the accessor compiled before it compiles it, so a compile that overflows deep in a stack fails that run and
+isn't tried again: the accessor stays on MVEL's reflective path, still correct.
 
 An overflow in a class's static initializer, MVEL's, ASM's or
-[the JDK's](../deep-stacks.md#the-jdk-classes-a-rule-names-or-calls), leaves that class unusable for the JVM's life,
-in your code too: every later use fails, and after the JIT's, every other accessor's first compile fails one run the
-same way.
+[the JDK's](../deep-stacks.md#the-jdk-classes-a-rule-names-or-calls), leaves that class
+[unusable for the JVM's life](../deep-stacks.md#-build-the-first-engine-near-the-top); after the JIT's, every other
+accessor's first compile fails one run the same way.
 
 ## 🪵 MVEL's own logging
 
 MVEL logs through `java.util.logging` (JUL), not SLF4J, under loggers named `org.mvel2` and below. With
 the JDK's default JUL configuration, a record goes to standard error, whatever the application's SLF4J provider does.
-The engine's MVEL module logs through SLF4J.
 
-One of those loggers can carry a fact value. When a method call or an indexed read fails inside MVEL, most often
-as MVEL can't convert a fact to the parameter's type, its
-`org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` logger logs a `WARNING` with a stack trace. The
-exception's message often holds the fact value unescaped, so a line break in it can forge a log line. Examples:
+When a method call or an indexed read fails inside MVEL, most often as MVEL can't convert a fact to the parameter's
+type, its `org.mvel2.optimizers.impl.refl.ReflectiveAccessorOptimizer` logger logs a `WARNING` with a stack trace;
+its message often holds the fact value unescaped, so a line break in it can forge a log line. Examples:
 
 - `items.get(index)` or `s.substring(index)`, with `index` a `String` that `Integer.parseInt` rejects, such as `"x"`,
   `"1.0"` or `" 1"`.
@@ -167,8 +163,7 @@ exception's message often holds the fact value unescaped, so a line break in it 
 
 The engine's filter on that logger drops the record while one of its MVEL rules runs on the thread. Nothing is
 lost: MVEL still throws, and the engine reports the failure, escaped, as a `RuleExecutionException` with the original
-exception in its cause chain. If the run was also stopped, the stop's `RuleExecutionException` keeps MVEL's
-exception among its suppressed ones.
+exception in its cause chain; a stop's `RuleExecutionException` keeps MVEL's exception among its suppressed ones.
 
 A filter you set on that logger before the engine sets its own keeps deciding every other record. The engine sets it
 when building an engine that names MVEL, such as with `defaultLanguage("mvel")`, or else when it first loads or
