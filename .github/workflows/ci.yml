@@ -2,17 +2,17 @@ name: CI
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run it supersedes. A run on main is never cancelled once it has started:
-# the next push to main waits for it, so a run that starts gets to its cache save. It isn't a queue, though. GitHub
-# keeps only one waiting run per concurrency group, so a push to main that lands while an earlier one is still
-# waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
+# A new push to a pull request cancels the run it supersedes. A push's run is never cancelled once it has started:
+# the next push to the same branch waits for it, so a run on main that starts gets to its cache save. It isn't a
+# queue, though. GitHub keeps only one waiting run per concurrency group, so a push that lands while an earlier one to
+# the same branch is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -51,11 +51,11 @@ jobs:
       # or a mode change alone.
       # code: anything else, or an empty diff. So is a path release-please starts to change in future: the safe default.
       # So is a push whose before is all zeros (a new branch), isn't in the clone, or isn't an ancestor of sha (a force
-      # push), and so is a docs push unless a push run of ci.yml on main for before ended in success. A push that lands
-      # while another run waits replaces that run (see concurrency above), so the replaced commit is never built, and a
-      # docs push after it must build in full. A run in progress isn't cancelled: this run waited for it, so before's
-      # run has finished by now. A failed, cancelled or missing run, or a failed lookup, gives code. A docs run that
-      # passed counts too: it skipped the build only because its own before had passed.
+      # push), and so is a docs push unless a push run of ci.yml on the pushed branch for before ended in success. A
+      # push that lands while another run waits replaces that run (see concurrency above), so the replaced commit is
+      # never built, and a docs push after it must build in full. A run in progress isn't cancelled: this run waited
+      # for it, so before's run has finished by now. A failed, cancelled or missing run, or a failed lookup, gives
+      # code. A docs run that passed counts too: it skipped the build only because its own before had passed.
       # --no-renames lists a moved file's old path too, so moving a file into docs/ still counts as code.
       - name: Find what the pull request or push changes
         id: diff
@@ -63,6 +63,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -94,9 +95,9 @@ jobs:
           # Only a docs push asks, so a code push makes no API call. A lookup that fails doesn't stop the step: it gives
           # code, so a GitHub API error costs a full build, not a failed changes job.
           if [ "$scope" = docs ] && [ "$EVENT" != pull_request ]; then
-            passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$BEFORE" \
+            passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=push&branch=$BRANCH&head_sha=$BEFORE" \
               --jq '[.workflow_runs[] | select(.conclusion == "success")] | length') || passed=""
-            echo "Push runs of ci.yml on main for $BEFORE that ended in success: '$passed'"
+            echo "Push runs of ci.yml on $BRANCH for $BEFORE that ended in success: '$passed'"
             [[ "$passed" =~ ^[1-9][0-9]*$ ]] || scope=code
           fi
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
@@ -152,8 +153,9 @@ jobs:
           distribution: 'temurin'
 
       # Validates the Gradle wrapper, and caches Gradle's dependencies, wrapper and build cache between runs. Runs on
-      # main save the cache; pull requests only read it, and each OS has its own. The basic provider is open source;
-      # the default, enhanced one isn't. The configuration cache isn't saved, because that needs an encryption key.
+      # main save the cache; pull requests and pushes to develop only read it (setup-gradle writes only from the
+      # default branch), and each OS has its own. The basic provider is open source; the default, enhanced one isn't.
+      # The configuration cache isn't saved, because that needs an encryption key.
       #
       # On the ubuntu-latest JDK 21 leg it also injects the dependency-graph plugin into the build, as the
       # dependency-graph job below does on main, but only generates the graph: nothing is submitted or uploaded, so
@@ -603,10 +605,9 @@ jobs:
   # not just the coordinates declared in build.gradle.kts.
   dependency-graph:
     # Dependabot alerts use the default branch's graph, so only a push to `main` has anything to submit. The trigger
-    # above already limits pushes to `main`, so the ref test can't fail today; it's kept so that adding a branch
-    # there can't start overwriting the default branch's graph. (In release.yml the same test is live, because
-    # workflow_dispatch can be launched from any ref.) A docs push changes no dependency, so it skips; when the changes
-    # job fails, its scope is empty, so this runs.
+    # above runs pushes to develop too, so the ref test is what keeps a develop push from overwriting the default
+    # branch's graph. (In release.yml the same test guards workflow_dispatch, which can be launched from any ref.) A
+    # docs push changes no dependency, so it skips; when the changes job fails, its scope is empty, so this runs.
     needs: changes
     if: >-
       ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'

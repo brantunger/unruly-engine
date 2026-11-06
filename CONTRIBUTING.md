@@ -178,8 +178,8 @@ Three things to know about the gate:
 > A line over 120 columns in a main, test or test-fixtures source fails Checkstyle; only `package` and `import` lines
 > are exempt.
 
-On every pull request and push to `main`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on Linux, Windows
-and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check;
+On every pull request and push to `main` or `develop`, CI runs `./gradlew build jacocoTestReport` on **JDK 21** on
+Linux, Windows and macOS, the tests on **JDK 25 and 26** on Linux, and the native-image check;
 [docs-only and release pull requests](docs/contributing/build-and-gates.md#-ci) run less. It also checks PR titles,
 broken links, CRLF line endings and the workflows, and warns about the changed pages' style. A merge needs the
 `ci-result` and `pr-title` checks green: the `main-require-green-ci` ruleset requires them. The reports, caches and

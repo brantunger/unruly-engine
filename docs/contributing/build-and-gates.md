@@ -137,7 +137,7 @@ so a second build reuses task outputs, including those of another branch, and th
 
 ## 🤖 CI
 
-`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+`.github/workflows/ci.yml` runs on every pull request and push to `main` or `develop`:
 
 | Job | Runs | Why |
 | --- | --- | --- |
@@ -153,8 +153,8 @@ A docs-only pull request or push (only `docs/` and `.md` files, none under a `sr
 in `gradle.properties` plus documentation or `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest`
 leg, coverage gate included, and skips `native-image`. `changes` decides; if it fails, everything runs.
 
-A new push to a pull request cancels its earlier run. A run on `main` is never cancelled once started, but GitHub
-keeps one waiting run per branch: a later push cancels a waiting one.
+A new push to a pull request cancels its earlier run. A push's run isn't cancelled once started, but GitHub keeps one
+waiting run per branch: a later push cancels a waiting one.
 
 A failed `docs-and-hygiene` step fails the job and `ci-result`, except the style check, which only warns: older pages
 may have findings in lines you didn't touch. zizmor warns too, until #1328. Steps after a failed one still run.

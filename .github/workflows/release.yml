@@ -4,10 +4,10 @@ name: Release
 # docs/contributing/release-token.md), so the release PR it opens gets a normal CI run and the PR title check: a PR
 # opened with GITHUB_TOKEN gets a CI run that waits for an approval nobody gives, and no pull_request_target run.
 # The PAT also means the tag and the Release it creates *do* trigger `on: push: tags` and `on: release` workflows,
-# which GitHub suppresses only for GITHUB_TOKEN. None exist today (ci.yml runs on pull requests and pushes to main,
-# pr-title.yml on pull_request_target, pages.yml only when called or dispatched), so a workflow added with either
-# trigger must expect to fire on every release. The push of the release PR's branch starts nothing either: ci.yml's
-# push trigger is main only.
+# which GitHub suppresses only for GITHUB_TOKEN. None exist today (ci.yml runs on pull requests and pushes to main
+# and develop, pr-title.yml on pull_request_target, pages.yml only when called or dispatched), so a workflow added
+# with either trigger must expect to fire on every release. The push of the release PR's branch starts nothing either:
+# ci.yml's push trigger names only main and develop.
 # The publish is still chained to release-please via `needs` rather than triggered by the Release: it reads the
 # job's outputs directly, runs in the same `release` concurrency group, and keeps the run's identity, which the
 # provenance attestation records, on refs/heads/main (RELEASING.md explains why). The steps after release-please
