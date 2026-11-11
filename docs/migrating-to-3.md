@@ -125,7 +125,7 @@ Wherever a class name is printed, a moved type shows its new package:
   [internal subclass](error-handling.md#-what-happens-on-each-failure) in `core`, as they did on 2.x.
 - **`getMessage()`** is unchanged, except where it names a class, now under the new package: what an output
   supplier threw, a [root-cause note](exception-messages.md#-shortening-and-escaping), and a run-time throw
-  that has no message. A `load()` rejection still reads `was rejected by its expression language`.
+  that has no message. A `load()` rejection with no message still reads `was rejected by its expression language`.
 
 Update any log filter, alert or test that matches the old names. Catch the type rather than match its name where
 you can.
