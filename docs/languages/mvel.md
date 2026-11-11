@@ -93,7 +93,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
         .imports("java.time.LocalDate")              // a single class
         .imports("java.util.Map.Entry")              // a nested class, spelled as in a Java import
         .imports("java.math", "java.time")           // several at once
-        .build();                                    // imports are resolved here
+        .build();                                    // single-class imports: looked up here, with this thread's loader
 
 engine.load(rules);
 ```

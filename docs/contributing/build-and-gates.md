@@ -24,8 +24,9 @@ usual fix for each.
 
 ## ✅ What build runs
 
-`build` runs `check`, and `check` depends on every gate below. A Gradle deprecation fails every build
-(`org.gradle.warning.mode=fail` in `gradle.properties`). The build has six projects. Four are
+`build` runs `check`, which depends on every gate below. A Gradle deprecation
+[fails the build](#-the-build-cache-and-the-configuration-cache) (`org.gradle.warning.mode=fail`). Four of the six
+projects are
 published: `core` (`unruly-engine-core`, whose tests need no MVEL), `mvel` (`unruly-engine`, which holds the tests
 that need MVEL or the test kit, and those that check the whole build), `test-kit` (`unruly-engine-test`), and `bom`
 (`unruly-engine-bom`, a [BOM](../glossary.md#artifacts) pinning the other three; its `checkBomCoverage` fails unless
@@ -126,14 +127,15 @@ and branches.
 
 ## 💾 The build cache and the configuration cache
 
-Both are on by default (`org.gradle.caching=true` and `org.gradle.configuration-cache=true` in `gradle.properties`),
-so a second build reuses task outputs, including those of another branch, and the configured task graph.
+Both are on by default (`org.gradle.caching=true` and `org.gradle.configuration-cache=true` in `gradle.properties`):
+a second build reuses task outputs, even another branch's, and the task graph.
 
 - `./gradlew :mvel:test --rerun` runs a task again though its inputs haven't changed.
-- `--no-build-cache --no-configuration-cache` rebuilds everything from scratch, when a result looks stale.
-- The release workflow builds with `--no-build-cache`.
+- `--no-build-cache --no-configuration-cache` rebuilds from scratch, when a result looks stale or a build-script
+  deprecation failed a build, whose stored entry lets a rerun of the same tasks pass.
+- The release builds with `--no-build-cache`.
 - Locally, the API baseline lookup is cached 24 hours, for configuration cache reuse; `"-PapiCheck.refresh"`
-  skips that cache.
+  skips it.
 
 ## 🤖 CI
 
@@ -216,10 +218,9 @@ build or pull request runs it. `-Pmutation.targetClasses` narrows a run to a com
 ./gradlew :core:pitest -Pmutation --warning-mode=all '-Pmutation.targetClasses=io.github.brantunger.unruly.internal.*'
 ```
 
-The report is `<project>/build/reports/pitest/index.html`. The plugin is applied only with `-Pmutation`, because
-applying it calls the deprecated `Configuration.setVisible`, so `org.gradle.warning.mode=fail` would fail
-every build; `--warning-mode=all` lets the run through. `.github/workflows/mutation.yml` runs each project weekly, or by
-hand, and uploads its report.
+The report is `<project>/build/reports/pitest/index.html`. The plugin is applied only with `-Pmutation`, as it calls
+the deprecated `Configuration.setVisible`; `--warning-mode=all` overrides `org.gradle.warning.mode=fail` there.
+`.github/workflows/mutation.yml` runs each project weekly or by hand and uploads its report.
 
 Each project's `build.gradle.kts` excludes the tests PIT can't use:
 
