@@ -466,9 +466,8 @@ jobs:
       # GraalVM for JDK 23 and later name the option --exact-reachability-metadata.
       - name: Build the native image with strict metadata
         run: |
-          packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
-          packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
-          packages=$packages,io.github.brantunger.unruly.internal
+          packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.language
+          packages=$packages,io.github.brantunger.unruly.core
           packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
           native-image --no-fallback -H:+ReportExceptionStackTraces \
             -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \

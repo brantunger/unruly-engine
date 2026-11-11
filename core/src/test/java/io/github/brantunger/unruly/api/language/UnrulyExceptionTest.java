@@ -1,5 +1,7 @@
-package io.github.brantunger.unruly.api.exception;
+package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.api.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 

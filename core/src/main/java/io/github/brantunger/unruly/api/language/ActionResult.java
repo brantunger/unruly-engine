@@ -20,7 +20,7 @@ import java.util.Objects;
  * to convert it for each setter's type, with {@link ExpressionCompiler#convertOutput(Object, Class)}, so a language
  * whose numbers are doubles can set a setter taking an {@code int} with a whole {@link Double}. A property the writer
  * can't set fails the rule with a
- * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, which listeners receive in
+ * {@link io.github.brantunger.unruly.api.RuleExecutionException}, which listeners receive in
  * {@code onError}. In a run of an engine that fires every match, each firing rule's properties are set in turn, so a
  * later rule can overwrite an earlier one's.
  * </p>

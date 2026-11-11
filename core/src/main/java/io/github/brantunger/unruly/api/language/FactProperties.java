@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.core.Accessors;
-import io.github.brantunger.unruly.internal.Sorting;
+import io.github.brantunger.unruly.core.Sorting;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Array;

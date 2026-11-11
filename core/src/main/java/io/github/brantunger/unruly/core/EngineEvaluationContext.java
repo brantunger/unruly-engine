@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.CancelRegistration;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
-import io.github.brantunger.unruly.internal.Causes;
 
 import java.time.Duration;
 import java.time.Instant;

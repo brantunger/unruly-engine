@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,7 +15,7 @@ import java.util.Set;
  * last-resort code, which runs when handling a failure has itself failed, can ask them. {@code api.language.Throwables}
  * publishes them for expression languages and the test kit, which read what they catch the way the engine does rather
  * than keeping a copy that could drift. <b>Internal:</b> this class may change in any release, and isn't part of the
- * API: its package isn't exported, and the {@code api} and {@code core} packages share it.
+ * API. It's public only so that {@code api.language.Throwables}, in another package, can call it.
  */
 public final class Causes {
 
@@ -131,7 +131,7 @@ public final class Causes {
      * @param e The exception
      * @return Its cause, or {@code null} if it has none or {@code getCause()} throws
      */
-    public static Throwable causeOf(Throwable e) {
+    static Throwable causeOf(Throwable e) {
         try {
             return e.getCause();
         } catch (Throwable thrown) {
@@ -169,7 +169,7 @@ public final class Causes {
      * @param thrown What reading the text threw
      * @return {@code prefix} and the note
      */
-    public static String unavailable(String prefix, Throwable thrown) {
+    static String unavailable(String prefix, Throwable thrown) {
         return prefix + "(message unavailable: " + thrown.getClass().getName() + ")";
     }
 }

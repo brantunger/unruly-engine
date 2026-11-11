@@ -1,14 +1,10 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.ImportSize;
-import io.github.brantunger.unruly.internal.LanguageNames;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Widening;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -94,7 +90,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         // Loops rather than lambdas, here and for the declarations below: a language's tests make a context with no
         // engine built, maybe deep in a stack, and linking a lambda's call site initializes the JDK's method handle
         // classes, and java.lang.Long on JDK 21, whose first initialization there could overflow (#1260, #1271). This
-        // class links none, and internal.Widening, which a declared fact initializes, has no static initializer
+        // class links none, and core.Widening, which a declared fact initializes, has no static initializer
         // (#1322).
         for (Map.Entry<String, String> option : options.entrySet()) {
             Objects.requireNonNull(option.getKey(), "options must not contain null");

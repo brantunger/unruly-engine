@@ -41,7 +41,7 @@ import java.util.function.Supplier;
  * {@link ExceptionInInitializerError}, and {@link #ENGINE} and what an engine built, loaded and run after the call
  * returned. The test keeps the recursion that finds the end from being compiled, so its frames are the same size each
  * time. With the system property {@value #PRELINK} set to {@code true}, it first loads and links the engine's
- * {@code internal.Text} and {@code api.Names} without initializing them, as a class-data archive or the JDK's AOT
+ * {@code core.Text} and {@code api.Names} without initializing them, as a class-data archive or the JDK's AOT
  * cache leaves an application's classes (#1313): on a plain class path the deep call must load and verify them before
  * it can initialize them, which needs more room than their initialization, so a depth that gets through the load has
  * room to spare, and the pre-link takes that shield away.
@@ -73,7 +73,7 @@ final class DeepFirstToStringScenario {
     /** How many depths it calls at, at most. */
     private static final int MAX_CALLS = 100_000;
     /** The classes it pre-links, named by their names, as a class literal would load them. */
-    private static final List<String> PRELINKED = List.of("io.github.brantunger.unruly.internal.Text",
+    private static final List<String> PRELINKED = List.of("io.github.brantunger.unruly.core.Text",
             "io.github.brantunger.unruly.api.Names");
 
     // Made here, at the top of the stack, as the scenario's own lambdas are linked: a deep call that left a class of

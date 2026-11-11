@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.core.ImportSize;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;

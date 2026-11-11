@@ -1,19 +1,19 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunResult;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
-import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.core.EngineLogs.Outcome;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;

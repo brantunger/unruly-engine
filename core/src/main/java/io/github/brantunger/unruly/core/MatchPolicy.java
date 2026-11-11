@@ -39,7 +39,7 @@ final class MatchPolicy {
      * <p>
      * <b>Not atomic:</b> if an action throws, the actions that already ran keep their effects on the output object
      * and on any fact objects they changed, and {@link RulesEngine#run(FactStore)} throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} for the failing rule only.
+     * {@link io.github.brantunger.unruly.api.RuleExecutionException} for the failing rule only.
      * </p>
      */
     static final MatchPolicy ALL_MATCHES = new MatchPolicy("allMatches", false);

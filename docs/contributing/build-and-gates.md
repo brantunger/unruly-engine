@@ -215,7 +215,7 @@ build or pull request runs it. `-Pmutation.targetClasses` narrows a run to a com
 
 ```bash
 ./gradlew :core:pitest -Pmutation --warning-mode=all
-./gradlew :core:pitest -Pmutation --warning-mode=all '-Pmutation.targetClasses=io.github.brantunger.unruly.internal.*'
+./gradlew :core:pitest -Pmutation --warning-mode=all '-Pmutation.targetClasses=io.github.brantunger.unruly.api.language.*'
 ```
 
 The report is `<project>/build/reports/pitest/index.html`. The plugin is applied only with `-Pmutation`, as it calls

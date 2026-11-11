@@ -1,10 +1,10 @@
 package com.example.withtestkit;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.mvel.MvelExpressionLanguage;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.platform.engine.TestExecutionResult;

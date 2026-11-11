@@ -41,12 +41,14 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
    runs, `LanguageTestContexts`.
 7. [Packaging a language](languages/packaging.md): services, the module path and native images.
 
-## 🔼 Upgrading from 1.x
+## 🔼 Upgrading
 
-1. [Migrating to 2.0](migrating-to-2.md): every change that can affect code written for 1.x.
-2. [Migrating a language or an engine](migrating-to-2-implementers.md), if you wrote an expression language or a
+1. [Migrating to 3.0](migrating-to-3.md): every change that can affect code written for 2.x, starting with the
+   package moves.
+2. From 1.x, [Migrating to 2.0](migrating-to-2.md) first: every change that can affect code written for 1.x.
+3. [Migrating a language or an engine](migrating-to-2-implementers.md), if you wrote an expression language or a
    class that implements `RulesEngine`.
-3. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
+4. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
 
 ## 📋 All guides
 
@@ -83,6 +85,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🧵 [Thread safety](thread-safety.md) | Application developers | What's shared, the engine's lifecycle and closing, the class loader `load()` captures, and reloading rules under traffic |
 | 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, and what a run waits for |
 | 🧶 [Virtual threads](virtual-threads.md) | Application developers | The copy limit that applies only there, build slots and `unlimitedCopies()`, what each costs, and the JDK versions that deadlock or pin a carrier |
+| 🔼 [Migrating to 3.0](migrating-to-3.md) | Everyone | Every change from 2.x that can affect your code: the package moves, the test kit's version and serialized exceptions |
 | 🔼 [Migrating to 2.0](migrating-to-2.md) | Everyone | Every change from 1.x that can affect your code, who it affects, and what to change, including the move from GPL-3.0 to Apache-2.0 |
 | 🔼 [Migrating a language or an engine](migrating-to-2-implementers.md) | Language authors, `RulesEngine` implementers | What the 2.0 language SPI and `RulesEngine` interface need on top of the changes every caller sees |
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |

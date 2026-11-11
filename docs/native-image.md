@@ -164,9 +164,8 @@ instead, so a missing entry fails where it's used. GraalVM says this will become
 the option is experimental. These are CI's commands for its second image:
 
 ```bash
-packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
-packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
-packages=$packages,io.github.brantunger.unruly.internal
+packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.language
+packages=$packages,io.github.brantunger.unruly.core
 packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
 native-image --no-fallback -H:+ReportExceptionStackTraces \
     -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
@@ -183,7 +182,7 @@ native-smoke/build/native/native-smoke-strict
 How the list works on GraalVM for JDK 21, from GraalVM's source:
 
 - Each entry is a package or a class, matched exactly, not as a prefix. `io.github.brantunger` covers none of the
-  library's classes, so CI lists each of its seven packages. The build's `checkStrictImagePackages` task, which
+  library's classes, so CI lists each of its five packages. The build's `checkStrictImagePackages` task, which
   `./gradlew build` runs, fails when that list misses a package of the `core` or `mvel` jars, or names another.
 - The list picks whose `Class.forName` and other reflection calls throw. A lookup through a class loader's
   `loadClass` throws for any name the image has no metadata for, whatever the list.
@@ -238,7 +237,7 @@ image.
 ## 🧪 What was tested
 
 CI's `native-image` job builds the native-smoke application with GraalVM Community Edition for JDK 21 (21.0.2) on
-Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's seven
+Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's five
 packages. The application checks its own results and exits with 1 if one is wrong. It covers:
 
 - a first-match engine with a class and a package import, a record fact read by property and a bean output an

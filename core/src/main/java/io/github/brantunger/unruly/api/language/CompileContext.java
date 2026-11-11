@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -99,7 +97,7 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * creates a language's compiler when a rule list given to {@code load()} or {@code validate()} has a rule in that
      * language, and creates the default language's compiler for a list with no rules too. A throw from
      * {@code newCompiler} then fails that rule list: {@code load()} throws, and {@code validate()} returns, a
-     * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with the throw as its cause. A
+     * {@link io.github.brantunger.unruly.api.RuleCompilationException} with the throw as its cause. A
      * language no such rule list uses never has its imports checked.
      *
      * <p>

@@ -1,10 +1,10 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue.Severity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;

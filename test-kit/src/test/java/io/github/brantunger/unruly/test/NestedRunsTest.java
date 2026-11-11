@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.test;
 
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngine;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest.Nesting;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

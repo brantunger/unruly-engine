@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import org.jspecify.annotations.Nullable;
 
@@ -12,9 +12,10 @@ import java.time.Instant;
  * starts, with no engine built; the {@code toString()} of a run's result or a rule set, the engine's or one the
  * application made with {@code RunResult.of} or {@code RuleSetInfo.of}, with or without an engine; and a run
  * context's (#1302). The first build formats one instant, so after it the application's own
- * {@code Instant.toString()} is safe too (see core.FirstUseClasses). <b>Internal:</b> this class may change in any
- * release, and isn't part of the API: its package isn't exported, and the {@code api} and {@code core} packages share
- * it. It has no static initializer of its own, so its own first use deep in a stack can't break it.
+ * {@code Instant.toString()} is safe too (see {@link FirstUseClasses}). <b>Internal:</b> this class may change in any
+ * release, and isn't part of the API. It's public only so that {@code api.Rule}, {@code api.RuleSetInfo} and
+ * {@code api.RunResult}, in another package, can call it. It has no static initializer of its own, so its own first
+ * use deep in a stack can't break it.
  *
  * <p>
  * The text is the same: the date and the time to the second, always; a fraction of a second in groups of three

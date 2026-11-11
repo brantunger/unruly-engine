@@ -1,8 +1,8 @@
 package io.github.brantunger.unruly.api.language;
 
+import io.github.brantunger.unruly.core.Causes;
 import io.github.brantunger.unruly.core.FatalErrors;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Lookups;
+import io.github.brantunger.unruly.core.Lookups;
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;

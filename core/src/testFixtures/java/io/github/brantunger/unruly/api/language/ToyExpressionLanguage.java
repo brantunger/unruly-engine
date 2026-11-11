@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;

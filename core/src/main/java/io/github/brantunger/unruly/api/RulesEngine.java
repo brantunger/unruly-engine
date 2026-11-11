@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
@@ -47,14 +46,13 @@ public interface RulesEngine<O> extends AutoCloseable {
      * </p>
      *
      * @param ruleList The list of {@link Rule} objects
-     * @throws io.github.brantunger.unruly.api.exception.RuleCompilationException if the list contains a {@code null}
-     *         rule; two rules share a name; a condition or action is blank; a rule is written in a language the engine
-     *         doesn't have; a condition or action has a syntax error its language detects, or is one its language
-     *         rejects, such as a condition with an assignment; a language throws while creating its compiler, or
-     *         returns {@code null} instead of a compiler or a compiled expression; a {@link LinkageError} such as a
-     *         {@link NoClassDefFoundError} is thrown for a class a rule uses, which means the rule is misconfigured
-     *         rather than the JVM failing; a compiler throws while telling which facts its rules read, or tells it
-     *         with a set holding {@code null} (see
+     * @throws RuleCompilationException if the list contains a {@code null} rule; two rules share a name; a condition or
+     *         action is blank; a rule is written in a language the engine doesn't have; a condition or action has a
+     *         syntax error its language detects, or is one its language rejects, such as a condition with an
+     *         assignment; a language throws while creating its compiler, or returns {@code null} instead of a compiler
+     *         or a compiled expression; a {@link LinkageError} such as a {@link NoClassDefFoundError} is thrown for a
+     *         class a rule uses, which means the rule is misconfigured rather than the JVM failing; a compiler throws
+     *         while telling which facts its rules read, or tells it with a set holding {@code null} (see
      *         {@link io.github.brantunger.unruly.api.language.ExpressionCompiler#factNamesRead()}); or a
      *         {@link RulesEngineBuilder#fact(String, Class) declared fact} has a name a language the rules use can't
      *         refer to, though a language whose compiler says which facts its rules read
@@ -67,9 +65,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      *         rule, a language that can't create its compiler (once, in place of the first rule that needed it; the
      *         rules written in it aren't compiled and get no failure of their own), and each declared fact name the
      *         compilers that were created reject, or their languages reserve so. Once the rules compile, an engine
-     *         built with
-     *         {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} makes its copies of them, and a language
-     *         that throws while creating or warming up a session for one, or returns {@code null} instead of a
+     *         built with {@link RulesEngineBuilder#copiesAtLoad(int) copiesAtLoad(n)} makes its copies of them, and a
+     *         language that throws while creating or warming up a session for one, or returns {@code null} instead of a
      *         session, fails the load with this exception, naming the language, on its own.
      * @throws IllegalStateException if the engine is closed; this is checked before anything in the list, so a closed
      *         engine throws it even for a list that would fail to load
@@ -164,20 +161,19 @@ public interface RulesEngine<O> extends AutoCloseable {
      *              {@code FactMap<Applicant>}. The engine reads them through {@link FactStore#asMap()}.
      * @return The output of the actions of the matching {@link Rule} objects, or {@code null} if the rule list is
      *         empty or no rule matched
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException if a condition or action throws; a
-     *         condition evaluates to {@code null} or a non-boolean; an action returns {@code null} instead of an
-     *         {@link io.github.brantunger.unruly.api.language.ActionResult}, or a property it returned can't be set
-     *         on the output; the output supplier throws or returns {@code null}; a language throws or returns
-     *         {@code null} when it creates a session for the run; or more than one rule matches on a
-     *         {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match} engine, which names
-     *         them all and belongs to no rule. Also if the run must stop, which is checked while it waits for a
-     *         compiled copy of the rules, while it reads the engine's rules again after a reload or {@link #close()}
-     *         closed the list it had read, between rules and when each condition or action returns, because its
-     *         thread was interrupted, which keeps the interrupt status
-     *         set and makes the cause an {@link InterruptedException}, or because it passed the deadline a
-     *         {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which makes the cause a
-     *         {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so {@code getRuleName()} is
-     *         {@code null}.
+     * @throws RuleExecutionException if a condition or action throws; a condition evaluates to {@code null} or a
+     *         non-boolean; an action returns {@code null} instead of an
+     *         {@link io.github.brantunger.unruly.api.language.ActionResult}, or a property it returned can't be set on
+     *         the output; the output supplier throws or returns {@code null}; a language throws or returns {@code null}
+     *         when it creates a session for the run; or more than one rule matches on a
+     *         {@link RulesEngineBuilder#uniqueMatch(java.util.function.Supplier) unique-match} engine, which names them
+     *         all and belongs to no rule. Also if the run must stop, which is checked while it waits for a compiled
+     *         copy of the rules, while it reads the engine's rules again after a reload or {@link #close()} closed the
+     *         list it had read, between rules and when each condition or action returns, because its thread was
+     *         interrupted, which keeps the interrupt status set and makes the cause an {@link InterruptedException}, or
+     *         because it passed the deadline a {@link RulesEngineBuilder#runTimeout(Duration) timeout} gave it, which
+     *         makes the cause a {@link java.util.concurrent.TimeoutException}. Either belongs to no rule, so
+     *         {@code getRuleName()} is {@code null}.
      * @throws IllegalArgumentException if a fact's name is {@code null}, blank, or one of the engine's languages
      *         reserves (see {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservedFactNames()},
      *         {@code output} by default; a language that reserves its names only for the rule lists that use it, as
@@ -250,7 +246,7 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @return What the run did, never {@code null}. Its {@link RunResult#output() output} is {@code null} exactly when
      *         no rule fired, because the rule list is empty or no condition matched, and its
      *         {@link RunResult#evaluations() evaluations} have one entry per loaded rule.
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it
+     * @throws RuleExecutionException as {@link #run(FactStore)} throws it
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
      *         run, while borrowing a copy of the rules, found the same rule list closed each time it read the
@@ -278,8 +274,8 @@ public interface RulesEngine<O> extends AutoCloseable {
      * @param facts   The facts to run the rules against, as {@link #run(FactStore)} takes them
      * @param options The settings for this run; {@link RunOptions#defaults()} changes nothing
      * @return What the run did, as {@link #runWithResult(FactStore)} reports it
-     * @throws io.github.brantunger.unruly.api.exception.RuleExecutionException as {@link #run(FactStore)} throws it,
-     *         and with a {@link java.util.concurrent.TimeoutException} cause if the run passes its deadline, or an
+     * @throws RuleExecutionException as {@link #run(FactStore)} throws it, and with a
+     *         {@link java.util.concurrent.TimeoutException} cause if the run passes its deadline, or an
      *         {@link InterruptedException} cause if its thread is interrupted, which keeps the interrupt status set
      * @throws IllegalArgumentException as {@link #run(FactStore)} throws it
      * @throws IllegalStateException if {@link #load(List)} has not been called, or the engine is closed; or if the
@@ -309,20 +305,18 @@ public interface RulesEngine<O> extends AutoCloseable {
      * unless another run is still waiting for a copy of the same rules and takes them, and their compilers once the
      * last run has left and this method has closed the idle sessions. Afterwards, {@link #run(FactStore)},
      * {@link #runWithResult(FactStore)}, {@link #load(List)}, {@link #validate(List)} and {@link #rules()} throw
-     * {@link IllegalStateException} — as does a run that had read the rules but had not yet
-     * begun to borrow a copy when this method closed the engine, unless another run is still using the rules when it
-     * borrows: then it uses them, as a run that read rules a reload replaced does, and its rules may run after this
-     * method has returned. Otherwise it reads the rules again and finds a closed engine. A run whose thread is
-     * interrupted, or whose deadline has passed, stops before reading them again, with a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException RuleExecutionException}, as one stopped
-     * while waiting for a copy does. A {@code load()} that found the engine open before this method closed it isn't
-     * stopped. If it fails, it throws what it would on an open engine, such as {@link RuleCompilationException}. If it
-     * succeeds, either it swapped its rules
-     * in first, and this method closes them like any others, or it finds the engine closed, closes its rules rather
-     * than swapping them in, and throws {@link IllegalStateException}. A failure that stops this method closing rules
-     * part way, as running out of stack in the engine's own steps can, is thrown, fatal or not, and the engine is
-     * closed all the same. Closing an engine that is already closed does nothing, unless an earlier call, or a
-     * {@code load()}, stopped part way that way: then it goes on closing those rules.
+     * {@link IllegalStateException} — as does a run that had read the rules but had not yet begun to borrow a copy when
+     * this method closed the engine, unless another run is still using the rules when it borrows: then it uses them, as
+     * a run that read rules a reload replaced does, and its rules may run after this method has returned. Otherwise it
+     * reads the rules again and finds a closed engine. A run whose thread is interrupted, or whose deadline has passed,
+     * stops before reading them again, with a {@link RuleExecutionException}, as one stopped while waiting for a copy
+     * does. A {@code load()} that found the engine open before this method closed it isn't stopped. If it fails, it
+     * throws what it would on an open engine, such as {@link RuleCompilationException}. If it succeeds, either it
+     * swapped its rules in first, and this method closes them like any others, or it finds the engine closed, closes
+     * its rules rather than swapping them in, and throws {@link IllegalStateException}. A failure that stops this
+     * method closing rules part way, as running out of stack in the engine's own steps can, is thrown, fatal or not,
+     * and the engine is closed all the same. Closing an engine that is already closed does nothing, unless an earlier
+     * call, or a {@code load()}, stopped part way that way: then it goes on closing those rules.
      *
      * <p>
      * A failure to close a session or a compiler is logged at WARN and not thrown, except a fatal {@link Error}, which

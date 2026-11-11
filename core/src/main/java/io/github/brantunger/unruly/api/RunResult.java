@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.internal.IsoInstant;
+import io.github.brantunger.unruly.core.IsoInstant;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;

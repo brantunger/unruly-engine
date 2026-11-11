@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.internal.IsoInstant;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.TimeoutException;

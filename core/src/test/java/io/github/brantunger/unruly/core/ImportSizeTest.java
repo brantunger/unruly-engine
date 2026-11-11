@@ -2,7 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.MessageText;
-import io.github.brantunger.unruly.internal.ImportSize;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

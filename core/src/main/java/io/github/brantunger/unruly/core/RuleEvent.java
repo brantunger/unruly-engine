@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Enabled;

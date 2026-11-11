@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -18,8 +18,9 @@ import java.util.Set;
  * {@code LinkedHashMap} filled in that order, whose classes, and those of their iterators, views and unmodifiable
  * wrappers, have no static initializer, measured on JDK 21, 25 and 26; {@code HashSet} and {@code Collections}, which
  * have one, are initialized by the JVM at startup. <b>Internal:</b> this class may change in any release, and isn't
- * part of the API: its package isn't exported, and is the one the {@code api} and {@code core} packages share. It has
- * no static initializer of its own, so its own first use deep in a stack can't break it.
+ * part of the API. It's public only so that {@code api.Rule}, {@code api.RunOptions} and
+ * {@code api.language.FactProperties}, in other packages, can call it. It has no static initializer of its own, so
+ * its own first use deep in a stack can't break it.
  */
 public final class Sorting {
 

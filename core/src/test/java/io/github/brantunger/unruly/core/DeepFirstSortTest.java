@@ -52,7 +52,7 @@ class DeepFirstSortTest {
             "java/util/ComparableTimSort", "java/util/Arrays$LegacyMergeSort");
     // The engine's own sort, which only the deep call reaches, named by its name, as it isn't on a release before the
     // fix.
-    private static final String SORTING = "io/github/brantunger/unruly/internal/Sorting";
+    private static final String SORTING = "io/github/brantunger/unruly/core/Sorting";
 
     @Test
     @DisplayName("deep, with no engine built, a rule's first build with tags sorts them, initializing no class with "

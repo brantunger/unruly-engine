@@ -7,7 +7,7 @@ package io.github.brantunger.unruly.core;
  * in a stack leaves that table unusable for the life of the JVM, the application's own code included. The JVM's first
  * engine build reads every one of them after checking the room for that ({@link FirstUseClasses}), with
  * {@link #warm()}; {@link EngineCompileContext}, which a language's tests make with no engine built, checks the room
- * with {@link #checkRoom(String)} before {@code internal.ImportSize} reads a package import's name above U+00FF
+ * with {@link #checkRoom(String)} before {@code core.ImportSize} reads a package import's name above U+00FF
  * (#1366).
  */
 final class CharacterTables {

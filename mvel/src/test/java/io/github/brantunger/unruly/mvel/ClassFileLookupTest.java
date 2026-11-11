@@ -1,6 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.mvel.ExactNameClassLoader.ClassLookup;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mvel2.ParserConfiguration;
