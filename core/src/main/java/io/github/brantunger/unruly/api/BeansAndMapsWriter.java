@@ -1,8 +1,8 @@
 package io.github.brantunger.unruly.api;
 
 import io.github.brantunger.unruly.core.Accessors;
-import io.github.brantunger.unruly.internal.Lookups;
-import io.github.brantunger.unruly.internal.Widening;
+import io.github.brantunger.unruly.core.Lookups;
+import io.github.brantunger.unruly.core.Widening;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.GenericArrayType;

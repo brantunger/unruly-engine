@@ -13,17 +13,15 @@ import java.util.Set;
 import java.util.function.Function;
 
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 
 /**
  * Compiles an engine's rule lists for {@code load()} and {@code validate()}: checks the list itself, compiles each rule

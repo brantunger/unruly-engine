@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.api.exception;
+package io.github.brantunger.unruly.api.language;
 
 import org.jspecify.annotations.Nullable;
 

@@ -46,38 +46,42 @@ class PackageDependencyTest {
             Pattern.compile("^io\\.github\\.brantunger\\.unruly\\.([a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)*)\\.[A-Z]");
 
     /**
-     * The library packages each package's code may use. {@code api.exception} stands alone, and {@code internal}, the
-     * unexported package of what {@code api} and {@code core} share (text, the readers of what was thrown, the lookup
-     * errors and the import limits), uses nothing of the library's. {@code api.language} uses {@code api.exception}
-     * for the kinds and issues of expressions, {@code internal} for what it publishes of it, and {@code core} only to
-     * seal its contexts to the engine's records, to share how accessors are reached and to publish the engine's search
-     * for a fatal error, so the SPI ships with the engine in unruly-engine-core. {@code mvel} uses only the SPI
-     * packages, and {@code core} finds languages with ServiceLoader rather than using {@code mvel}, so the MVEL
-     * language is its own artifact. {@code mvel.warmup}, the value {@code mvel} evaluates MVEL on as it prepares, which
-     * the module exports only to MVEL, stands alone. {@code test}, the test kit, uses the API and creates the engine's
-     * context records.
+     * The library packages each package's code may use. {@code api.language} never uses {@code api}, so {@code api}
+     * may use it, for the kinds and issues of expressions and the base exception. {@code api.language} uses
+     * {@code core} only to seal its contexts to the engine's records, to share how accessors are reached, to publish
+     * the engine's search for a fatal error and to publish what {@code api} and {@code core} share of text, the
+     * import limits and how a value widens, so the SPI ships with the engine in unruly-engine-core; {@code api} uses
+     * {@code core} only to create the engine, to reach its accessors and for what the three packages share.
+     * {@code mvel} uses only the SPI package, and {@code core} finds languages with ServiceLoader rather than using
+     * {@code mvel}, so the MVEL language is its own artifact. {@code mvel.warmup}, the value {@code mvel} evaluates
+     * MVEL on as it prepares, which the module exports only to MVEL, stands alone. {@code test}, the test kit, uses
+     * the API and creates the engine's context records.
      */
     private static final Map<String, Set<String>> ALLOWED = Map.of(
-            "api", Set.of("api.exception", "api.language", "core", "internal"),
-            "api.exception", Set.of(),
-            "api.language", Set.of("api.exception", "core", "internal"),
-            "core", Set.of("api", "api.exception", "api.language", "internal"),
-            "internal", Set.of(),
-            "mvel", Set.of("api.exception", "api.language", "mvel.warmup"),
+            "api", Set.of("api.language", "core"),
+            "api.language", Set.of("core"),
+            "core", Set.of("api", "api.language"),
+            "mvel", Set.of("api.language", "mvel.warmup"),
             "mvel.warmup", Set.of(),
-            "test", Set.of("api", "api.exception", "api.language", "core"));
+            "test", Set.of("api", "api.language", "core"));
 
-    /** Dependencies that only the listed files may have. */
+    /** Dependencies that only the listed files may have, in the order of the files' paths. */
     private static final Map<Dependency, List<String>> ONLY_FILES = Map.of(
-            // The builder creates the engines, RunContext permits the engine's record, and the default writer reaches
-            // setters the way FactProperties reaches getters.
-            new Dependency("api", "core"), List.of("api/BeansAndMapsWriter.java", "api/RulesEngineBuilder.java",
-                    "api/RunContext.java"),
-            // Each context interface permits the engine's record, FactProperties shares how accessors are reached, and
-            // Throwables publishes the engine's search for a fatal error, which reads the engine's own failures.
+            // The builder creates the engines and checks a language's name, RunContext permits the engine's record,
+            // the default writer reaches setters the way FactProperties reaches getters and widens the values it sets,
+            // and the rest shorten and escape text for a message or a log line, write an instant, decide whether a
+            // name is blank or sort a handful of strings.
+            new Dependency("api", "core"), List.of("api/BeansAndMapsWriter.java", "api/LoggingRuleListener.java",
+                    "api/Names.java", "api/Rule.java", "api/RuleSetInfo.java", "api/RulesEngineBuilder.java",
+                    "api/RunContext.java", "api/RunOptions.java", "api/RunResult.java"),
+            // Each context interface permits the engine's record, FactProperties shares how accessors are reached,
+            // ImportLimits and MessageText publish the engine's import limits and its shortening and escaping of
+            // text, and Throwables publishes the engine's search for a fatal error, which reads the engine's own
+            // failures.
             new Dependency("api.language", "core"), List.of("api/language/ActionContext.java",
                     "api/language/CompileContext.java", "api/language/EvaluationContext.java",
-                    "api/language/FactProperties.java", "api/language/Throwables.java"),
+                    "api/language/FactProperties.java", "api/language/ImportLimits.java",
+                    "api/language/MessageText.java", "api/language/Throwables.java"),
             // The test kit creates the engine's context records for a language's unit tests.
             new Dependency("test", "core"), List.of("test/LanguageTestContexts.java"));
 
@@ -178,6 +182,8 @@ class PackageDependencyTest {
                     .filter(file -> file.packageName().equals(dependency.from()))
                     .filter(file -> file.uses().contains(dependency.to()))
                     .map(SourceFile::path)
+                    // By the path's text: a Path sorts case-insensitively on Windows, and byte by byte elsewhere.
+                    .sorted()
                     .toList();
 
             assertEquals(expected, users, dependency.from() + " -> " + dependency.to());

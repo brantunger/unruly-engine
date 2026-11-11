@@ -4,14 +4,12 @@ import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RuleEvaluation;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -19,10 +17,12 @@ import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.Throwables;
+import io.github.brantunger.unruly.api.language.UnrulyException;
 import io.github.brantunger.unruly.test.KitResources.ClosedQuietly;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -575,7 +575,7 @@ public abstract class ExpressionLanguageContractTest {
      *     <li>A declaration of the name {@link #unusableFactName()} returns: {@code load()} checks every declared
      *     name with the language, or, for a compiler whose {@code factNamesRead()} returns a set, every declared name
      *     in it, and the language rejects that one. Most checks then fail to load their rules, with a
-     *     {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and the checks that expect a
+     *     {@link io.github.brantunger.unruly.api.RuleCompilationException}, and the checks that expect a
      *     load to fail then pass or fail for reasons unrelated to the language.</li>
      *     <li>{@code runTimeout(...)}: a run that outlasts it fails, and its check with it.</li>
      *     <li>{@code maxCopies(...)} below 2: two checks make two copies of the rules when they load, which

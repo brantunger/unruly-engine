@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import org.jspecify.annotations.Nullable;
 
@@ -8,9 +8,9 @@ import java.util.Collection;
  * How the engine shortens and escapes text for a message: a fact, rule or language name, a message a language or an
  * application's class wrote, and a list of names. The limits and the escapes are what {@code api.language.MessageText}
  * publishes, and {@code api.Names} and {@code api.LoggingRuleListener} show names with, rather than keeping a copy that
- * could drift. <b>Internal:</b> this class may change in any release, and isn't part of the API: its package isn't
- * exported, and the {@code api} and {@code core} packages share it. It has no static initializer of its own, so its own
- * first use deep in a stack can't break it.
+ * could drift. <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so
+ * that those classes, in other packages, can call it. It has no static initializer of its own, so its own first use
+ * deep in a stack can't break it.
  */
 public final class Text {
 
@@ -54,7 +54,7 @@ public final class Text {
      * @param text The text
      * @return The text, shortened if it was longer, then escaped
      */
-    public static String clip(String text) {
+    static String clip(String text) {
         return escape(shortenBeforeEscape(text));
     }
 
@@ -71,7 +71,7 @@ public final class Text {
      * @param text The text, escaped or not
      * @return The text, shortened if it was longer, not escaped
      */
-    public static String shortenBeforeEscape(String text) {
+    static String shortenBeforeEscape(String text) {
         if (text.length() <= MAX_DESCRIPTION_LENGTH) {
             return text;
         }
@@ -90,7 +90,7 @@ public final class Text {
      * @param limit The most characters to keep, at least 1
      * @return How many of its first characters to keep
      */
-    public static int keptBeforeEscape(String text, int limit) {
+    static int keptBeforeEscape(String text, int limit) {
         int kept = keptOutsidePair(text, limit);
         int backslash = text.lastIndexOf('\\', kept - 1);
         return backslash >= 0 && backslash + escapeLength(text, backslash) > kept ? backslash : kept;
@@ -150,7 +150,7 @@ public final class Text {
      * @param limit How many characters to keep
      * @return The text, shortened if it was longer
      */
-    public static String shorten(String text, int limit) {
+    static String shorten(String text, int limit) {
         if (text.length() <= limit) {
             return text;
         }
@@ -266,7 +266,7 @@ public final class Text {
      * @param name The name
      * @return The name, shortened if it was longer
      */
-    public static String shorten(String name) {
+    static String shorten(String name) {
         if (name.length() <= MAX_NAME_LENGTH) {
             return name;
         }
@@ -303,7 +303,7 @@ public final class Text {
      * @return The list, its names shortened to {@value #MAX_NAME_LENGTH} characters and it to
      *         {@value #MAX_DESCRIPTION_LENGTH}, then escaped
      */
-    public static String quoteJoined(Collection<String> names) {
+    static String quoteJoined(Collection<String> names) {
         StringBuilder list = new StringBuilder();
         String separator = "";
         for (String name : names) {
@@ -449,7 +449,7 @@ public final class Text {
      * @param escaped What to append to
      * @param unit    The unit
      */
-    public static void appendEscape(StringBuilder escaped, char unit) {
+    static void appendEscape(StringBuilder escaped, char unit) {
         escaped.append("\\u");
         for (int shift = 12; shift >= 0; shift -= 4) {
             escaped.append(Character.forDigit((unit >> shift) & 0xF, 16));

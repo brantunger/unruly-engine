@@ -5,7 +5,7 @@ import io.github.brantunger.unruly.core.CopyLimit;
 import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
-import io.github.brantunger.unruly.internal.LanguageNames;
+import io.github.brantunger.unruly.core.LanguageNames;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Clock;
@@ -176,10 +176,9 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * No match returns {@code null}, like the other engines. More than one match fires nothing, doesn't call the output
-     * supplier, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
-     * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule the
-     * run doesn't skip, then {@code onRunError}. It depends on nothing language-specific: it counts the conditions
-     * that were true.
+     * supplier, and throws a {@link RuleExecutionException} that names each matched rule in priority order and belongs
+     * to no rule: listeners get {@code afterEvaluate} for every rule the run doesn't skip, then {@code onRunError}. It
+     * depends on nothing language-specific: it counts the conditions that were true.
      * </p>
      *
      * @param outputFactory Creates the output object. It is called once per run that matches exactly one rule and
@@ -307,9 +306,9 @@ public final class RulesEngineBuilder<O> {
      * language's compiler when a rule list given to {@link RulesEngine#load(List)} or
      * {@link RulesEngine#validate(List)} has a rule in that language, and creates the default language's compiler for a
      * list with no rules too. A throw from {@code newCompiler} then fails that rule list: {@code load()} throws, and
-     * {@code validate()} returns, a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with the
-     * throw as its cause. A language no such rule list uses never has its imports checked.
-     * Adding imports for the same language again adds them after the others.
+     * {@code validate()} returns, a {@link RuleCompilationException} with the throw as its cause. A language no such
+     * rule list uses never has its imports checked. Adding imports for the same language again adds them after the
+     * others.
      *
      * <p>
      * An import may have at most 1,000 characters, which {@link #build()} checks. {@link #build()} also fails if
@@ -556,10 +555,9 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * A run that starts while all of them are in use waits until one is free, so at most {@code maxCopies} runs make
      * progress at once. A run started from inside another run on the same thread, and a run that has waited five
-     * seconds without one single copy being given back, don't wait: each gets an extra copy that isn't kept. A run
-     * that is interrupted while it waits, or that passes its deadline there, throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}; an interrupted thread keeps its
-     * interrupt status set. A rule list whose languages all return
+     * seconds without one single copy being given back, don't wait: each gets an extra copy that isn't kept. A run that
+     * is interrupted while it waits, or that passes its deadline there, throws a {@link RuleExecutionException}; an
+     * interrupted thread keeps its interrupt status set. A rule list whose languages all return
      * {@link io.github.brantunger.unruly.api.language.Session#none()} needs no copies, and no limit applies to it.
      * </p>
      *
@@ -608,9 +606,8 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * A run with a deadline waits for a slot for at most half the time it has left, and a run that sees no slot given
      * back for five seconds stops waiting; either then makes its copy without a slot, so no run fails for want of a
-     * copy. A run interrupted while it waits throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, and its thread keeps its interrupt
-     * status set. Runs on platform threads never wait.
+     * copy. A run interrupted while it waits throws a {@link RuleExecutionException}, and its thread keeps its
+     * interrupt status set. Runs on platform threads never wait.
      * </p>
      *
      * @return This builder
@@ -668,15 +665,14 @@ public final class RulesEngineBuilder<O> {
      * Stops a run that is still going after {@code timeout}. Without this, a run has no deadline.
      *
      * <p>
-     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy
-     * of the rules counts towards it. The engine checks it before each condition and each action, again when each
-     * one returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
-     * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an
-     * expression that is already running, nor interrupt the thread; only a language that checks
+     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy of
+     * the rules counts towards it. The engine checks it before each condition and each action, again when each one
+     * returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
+     * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an expression
+     * that is already running, nor interrupt the thread; only a language that checks
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}, or registers an action with
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)} that stops its runtime at
-     * the deadline, can stop inside one. A run past its deadline throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by a
+     * the deadline, can stop inside one. A run past its deadline throws a {@link RuleExecutionException} caused by a
      * {@link java.util.concurrent.TimeoutException}.
      * </p>
      *

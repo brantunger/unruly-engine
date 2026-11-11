@@ -40,10 +40,9 @@ public interface ExpressionCompiler extends AutoCloseable {
      * @param source The condition: the name of its rule, {@code CONDITION}, and its text, which isn't blank
      * @return The compiled condition, which every run of the rule list shares. Keep what changes while it runs in a
      *         {@link Session}.
-     * @throws io.github.brantunger.unruly.api.exception.InvalidExpressionException if the condition breaks a rule the
-     *         engine enforces, such as assigning to a fact, or has an error the language can point to, such as a
-     *         syntax error; its issues say where. Anything else is reported as the cause of a
-     *         {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} too.
+     * @throws InvalidExpressionException if the condition breaks a rule the engine enforces, such as assigning to a
+     *         fact, or has an error the language can point to, such as a syntax error; its issues say where. Anything
+     *         else is reported as the cause of a {@link io.github.brantunger.unruly.api.RuleCompilationException} too.
      */
     CompiledCondition compileCondition(Expression source);
 
@@ -56,10 +55,9 @@ public interface ExpressionCompiler extends AutoCloseable {
      * @param source The action: the name of its rule, {@code ACTION}, and its text, which isn't blank
      * @return The compiled action, which every run of the rule list shares. Keep what changes while it runs in a
      *         {@link Session}.
-     * @throws io.github.brantunger.unruly.api.exception.InvalidExpressionException if the action breaks a rule the
-     *         engine enforces, or has an error the language can point to, such as a syntax error; its issues say
-     *         where. Anything else is reported as the cause of a
-     *         {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} too.
+     * @throws InvalidExpressionException if the action breaks a rule the engine enforces, or has an error the language
+     *         can point to, such as a syntax error; its issues say where. Anything else is reported as the cause of a
+     *         {@link io.github.brantunger.unruly.api.RuleCompilationException} too.
      */
     CompiledAction compileAction(Expression source);
 
@@ -69,7 +67,7 @@ public interface ExpressionCompiler extends AutoCloseable {
      *
      * @return A new session, or {@link Session#none()} if the compiled expressions keep no state between runs and are
      *         safe to run on several threads at once. Throwing or returning {@code null} fails the run that needed the
-     *         session with a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}.
+     *         session with a {@link io.github.brantunger.unruly.api.RuleExecutionException}.
      */
     Session newSession();
 
@@ -88,7 +86,7 @@ public interface ExpressionCompiler extends AutoCloseable {
      *
      * @param session A session this compiler's {@link #newSession()} returned, which no run has used
      * @throws Exception if the session can't be prepared. It fails {@code load()} with a
-     *                   {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} naming the
+     *                   {@link io.github.brantunger.unruly.api.RuleCompilationException} naming the
      *                   language, and the rules loaded before stay loaded, except a fatal {@link Error}, which is
      *                   rethrown unchanged.
      */
@@ -141,7 +139,7 @@ public interface ExpressionCompiler extends AutoCloseable {
      *
      * @return The names, holding no {@code null}, or {@code null} if this compiler can't tell which facts its rules
      *         read. Throwing, or returning a set that holds {@code null}, fails {@code load()} with a
-     *         {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} naming the language, except
+     *         {@link io.github.brantunger.unruly.api.RuleCompilationException} naming the language, except
      *         a fatal {@link Error}, which is rethrown unchanged.
      */
     // null says the compiler can't tell, which an empty set, a compiler whose rules read no fact, can't say.

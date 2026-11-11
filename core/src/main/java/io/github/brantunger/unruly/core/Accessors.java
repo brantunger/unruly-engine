@@ -1,7 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Lookups;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Method;

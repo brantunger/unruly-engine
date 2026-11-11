@@ -3,7 +3,7 @@ package io.github.brantunger.unruly.api.language;
 import org.jspecify.annotations.Nullable;
 
 import java.util.LinkedHashMap;
-import io.github.brantunger.unruly.internal.Widening;
+import io.github.brantunger.unruly.core.Widening;
 import java.util.Map;
 
 /**

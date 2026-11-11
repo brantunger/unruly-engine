@@ -2,8 +2,6 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;

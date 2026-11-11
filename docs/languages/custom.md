@@ -100,12 +100,12 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
-The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext` your language gets;
+The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext`;
 tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
-Methods added to interfaces you implement are `default`, so an earlier 2.x language keeps working.
+Within a major, methods added to interfaces you implement are `default`; a 2.x language
+[needs rebuilding for 3.0](../migrating-to-3.md#-the-apiexception-package-is-gone).
 
 ```java
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.*;
 
 // MyParser and MyExpression stand for your language's own parser and compiled form.

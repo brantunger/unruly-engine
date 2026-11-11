@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;

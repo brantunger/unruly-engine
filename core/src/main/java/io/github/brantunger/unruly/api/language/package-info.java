@@ -16,7 +16,7 @@
  *   <li>In the compiler, compile each {@link io.github.brantunger.unruly.api.language.Expression} into a
  *   {@link io.github.brantunger.unruly.api.language.CompiledCondition} or a
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction}, and throw
- *   {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException} for one you reject, such as a
+ *   {@link io.github.brantunger.unruly.api.language.InvalidExpressionException} for one you reject, such as a
  *   condition that assigns to a fact. {@link io.github.brantunger.unruly.api.language.MessageText} shortens and
  *   escapes text you didn't write for a message, as the engine does;
  *   {@link io.github.brantunger.unruly.api.language.Throwables} reads what you catch as the engine does, a stack
@@ -56,6 +56,13 @@
  *   {@link io.github.brantunger.unruly.api.language.EvaluationContext} (the facts, and whether the run must stop) and
  *   {@link io.github.brantunger.unruly.api.language.ActionContext} (the same, plus the output object). They're sealed
  *   to the engine's own implementations, so a language can't implement them, and they can gain any method.</li>
+ *   <li>The engine and the languages share the vocabulary of failure:
+ *   {@link io.github.brantunger.unruly.api.language.ExpressionKind}, which says which expression of a rule, its
+ *   condition or its action, an {@link io.github.brantunger.unruly.api.language.Expression} or a failure concerns;
+ *   {@link io.github.brantunger.unruly.api.language.InvalidExpressionException}, which a compiler throws to reject an
+ *   expression; and {@link io.github.brantunger.unruly.api.language.UnrulyException}, the base of every exception the
+ *   engine throws, which {@code RuleCompilationException} and {@code RuleExecutionException} in {@code api}
+ *   extend.</li>
  * </ul>
  *
  * <p>
@@ -68,8 +75,8 @@
  * {@link io.github.brantunger.unruly.api.language.ExpressionLanguage#reservesForEveryRuleList()}); the facts a
  * condition or action sees are read-only; a run is stopped between expressions when its thread is interrupted or its
  * deadline passes; a failure while rules compile is reported as a
- * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and a failure while they run as a
- * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, which the run's listeners see once the
+ * {@link io.github.brantunger.unruly.api.RuleCompilationException}, and a failure while they run as a
+ * {@link io.github.brantunger.unruly.api.RuleExecutionException}, which the run's listeners see once the
  * run has started; and a fact name a language rejects fails the run with an
  * {@link java.lang.IllegalArgumentException}, or the load, for a declared fact, unless the language's compiler says
  * none of its rules reads the fact (see

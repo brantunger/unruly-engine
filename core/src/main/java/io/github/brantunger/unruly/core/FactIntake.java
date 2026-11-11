@@ -10,8 +10,6 @@ import java.util.Set;
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Widening;
 
 /**
  * Takes in a run's facts for an engine: collects their values, widening a boxed primitive to the primitive type its

@@ -1,8 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.ImportSize;
-import io.github.brantunger.unruly.internal.Text;
 
 import java.time.Clock;
 import java.util.ArrayList;

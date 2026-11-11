@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 
 /**
  * Holds an engine's rule set from one {@code load()} to the next: swaps in each rule list {@code load()} is given, once

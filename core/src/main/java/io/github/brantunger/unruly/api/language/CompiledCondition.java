@@ -60,7 +60,7 @@ public interface CompiledCondition {
      * @return The result, never {@code null}. A value that isn't a {@link Boolean}, including {@code null}, fails the
      *         rule, as does a {@code null} result.
      * @throws Exception if the condition fails. It fails the rule with a
-     *                   {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, except a fatal
+     *                   {@link io.github.brantunger.unruly.api.RuleExecutionException}, except a fatal
      *                   {@link Error}, which {@code run()} rethrows unchanged.
      */
     default ConditionResult evaluateWithDetail(EvaluationContext context, Session session) throws Exception {

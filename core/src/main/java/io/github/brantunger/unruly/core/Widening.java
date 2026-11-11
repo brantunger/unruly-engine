@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import java.util.Objects;
 
@@ -171,7 +171,7 @@ public final class Widening {
      *         {@code value}
      * @throws NullPointerException if {@code value} is {@code null} and {@code primitive} is primitive
      */
-    public static Object widen(Object value, Class<?> primitive) {
+    static Object widen(Object value, Class<?> primitive) {
         if (!widens(value, primitive)) {
             return value;
         }

@@ -1,9 +1,8 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.Session;
-import io.github.brantunger.unruly.internal.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

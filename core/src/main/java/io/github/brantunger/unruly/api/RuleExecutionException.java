@@ -1,6 +1,9 @@
-package io.github.brantunger.unruly.api.exception;
+package io.github.brantunger.unruly.api;
 
 import org.jspecify.annotations.Nullable;
+
+import io.github.brantunger.unruly.api.language.ExpressionKind;
+import io.github.brantunger.unruly.api.language.UnrulyException;
 
 /**
  * Thrown by {@code run()} when a run fails: because a rule's condition or action failed, or because something outside
@@ -31,7 +34,7 @@ import org.jspecify.annotations.Nullable;
  *   <li>a fatal {@link Error} left the run from the output supplier, from a language's check of a fact name, or
  *   from a listener's {@code beforeRun}, {@code afterEvaluate} or {@code afterExecute} callback: then {@code run()}
  *   rethrows the error itself, and this exception, which carries it, goes to
- *   {@link io.github.brantunger.unruly.api.RuleListener#onRunError}. One from {@code afterRun} is rethrown with no
+ *   {@link RuleListener#onRunError}. One from {@code afterRun} is rethrown with no
  *   exception and no callback.</li>
  * </ul>
  */
@@ -94,7 +97,7 @@ public class RuleExecutionException extends UnrulyException {
     }
 
     /**
-     * Returns the name of the rule that failed, as {@link io.github.brantunger.unruly.api.Rule#getRuleName()} returns
+     * Returns the name of the rule that failed, as {@link Rule#getRuleName()} returns
      * it. Unlike the message, it isn't escaped or shortened, so it can be used to look the rule up.
      *
      * @return The rule's name, or {@code null} if the failure isn't about one rule (for example the output supplier

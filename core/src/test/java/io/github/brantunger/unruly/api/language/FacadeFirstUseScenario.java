@@ -25,7 +25,7 @@ import java.util.function.Supplier;
  * run options with such names (#1292), makes a compile context as a language's tests make one, with a package import
  * and with one that isn't a valid package name, which it rejects (#1271), makes three with a declared fact, an
  * {@code int}, a {@code long} and a {@code String}, as a declared fact initializes the engine's own
- * {@code internal.Widening} (#1322), and prints {@link #AFTER}. Between the two
+ * {@code core.Widening} (#1322), and prints {@link #AFTER}. Between the two
  * it concatenates no string and links no lambda, as the test's own code does both through a call site the JVM links
  * on its first use, and it keeps the answers in an array. Then it prints each answer after {@link #ANSWER}, builds an
  * engine and runs it, and prints {@link #ENGINE} and what the run returned. Its text has characters above U+00FF, of
@@ -130,7 +130,7 @@ final class FacadeFirstUseScenario {
         // The package imports a compile context is given, one of them not a valid package name (#1271).
         Set<String> packages = Set.of("java.util");
         Set<String> malformed = Set.of("zq..b");
-        // The options and the declarations of the contexts with a declared fact, which initialize internal.Widening
+        // The options and the declarations of the contexts with a declared fact, which initialize core.Widening
         // (#1322): two of a primitive type, kept as its wrapper, and one of a class. One is a long, which Widening
         // must tell without long.class, as that literal reads Long.TYPE, which initializes java.lang.Long on JDK 21; so
         // it's made here as the component type of a long[], which initializes nothing.

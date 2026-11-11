@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import org.jspecify.annotations.Nullable;
 
@@ -10,7 +10,8 @@ import java.lang.reflect.Method;
  * reachability metadata throws for a lookup it has no metadata for, where any other build, and the JVM, would report
  * "not found". {@code api.language.Throwables} publishes both checks for expression languages, which look names up as
  * the engine does rather than keeping a copy that could drift. <b>Internal:</b> this class may change in any release,
- * and isn't part of the API: its package isn't exported, and the {@code api} and {@code core} packages share it.
+ * and isn't part of the API. It's public only so that {@code api.language.Throwables} and the default output writer,
+ * in other packages, can call it.
  */
 public final class Lookups {
 

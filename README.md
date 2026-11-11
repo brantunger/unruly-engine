@@ -38,7 +38,7 @@ like.
 
 ## 📦 Installation
 
-Requires **Java 21** or later. Moving from 1.x? See the [migration guide](docs/migrating-to-2.md).
+Requires **Java 21** or later. Upgrading? See [Migrating to 3.0](docs/migrating-to-3.md).
 
 <details open>
 <summary><b>Gradle (Groovy)</b></summary>
@@ -375,8 +375,8 @@ The full comparison, including what happens when an action changes a fact, is in
   [Virtual threads](docs/virtual-threads.md).
 - **Use or write another expression language:** [Expression languages](docs/languages/README.md), then
   [Writing a language](docs/languages/custom.md).
-- **Upgrade from 1.x:** [Migrating to 2.0](docs/migrating-to-2.md), then
-  [Migrating a language or an engine](docs/migrating-to-2-implementers.md) if you implement the engine's interfaces.
+- **Upgrade:** [Migrating to 3.0](docs/migrating-to-3.md); from 1.x, [Migrating to 2.0](docs/migrating-to-2.md),
+  then [Migrating a language or an engine](docs/migrating-to-2-implementers.md) if you implement its interfaces.
 - **Something's wrong?** [Troubleshooting](docs/troubleshooting.md).
 
 Every guide is listed in the [documentation index](docs/README.md), and the API in the

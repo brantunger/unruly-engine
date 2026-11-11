@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

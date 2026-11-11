@@ -106,9 +106,9 @@ tasks.named<Javadoc>("javadoc") {
 // PackageDependencyTest, ClassFileVersionTest, TestJdkTest) are here because they check the whole build. A test here
 // that needs only the public API, core's test fixtures and the test kit is in the mvel package, whatever it tests.
 // The ones under core/ and api/ need a package-private class of that package (CoreRulesEngine, TestEngines,
-// FaultInjection, ...) or a class of core that isn't public API: one its module exports to the test kit alone, or one
-// of its internal package. Every source set runs on the class path, so a test in a package can use its
-// package-private classes, wherever the project holding them is.
+// FaultInjection, ...) or a public class of core, which isn't public API: its module exports it to the test kit alone.
+// Every source set runs on the class path, so a test in a package can use its package-private classes, wherever the
+// project holding them is.
 tasks.named<Test>("test") {
     // Read by ModulePathTest. The jars are an input, so a changed jar reruns the tests, and their absolute paths
     // aren't, so the tests can still come from the build cache.

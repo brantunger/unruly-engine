@@ -3,9 +3,9 @@ package io.github.brantunger.unruly.core;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -385,7 +385,7 @@ class AbstractRulesEngineTest {
             CoreRulesEngine<Map<String, Object>> engine = TestEngines.allMatches(HashMap::new);
             Rule blank = Rule.builder().ruleName("blank").condition(" ").action("output.put('k', 1)").build();
 
-            assertThrows(io.github.brantunger.unruly.api.exception.UnrulyException.class,
+            assertThrows(io.github.brantunger.unruly.api.language.UnrulyException.class,
                     () -> engine.load(List.of(blank)));
         }
     }

@@ -96,7 +96,7 @@ three, and the benchmarks' workload test.
 
 | Project | Publishes | Contains |
 | --- | --- | --- |
-| `core` | `unruly-engine-core` | The API (`api`, `api.exception`, `api.language`) and the engine (`core`), without an expression language, and the tests that need neither MVEL nor the test kit |
+| `core` | `unruly-engine-core` | The API (`api`, `api.language`) and the engine (`core`), without an expression language, and the tests that need neither MVEL nor the test kit |
 | `mvel` | `unruly-engine` | The MVEL language, the tests that need MVEL, and the tests that check the whole build |
 | `test-kit` | `unruly-engine-test` | Tools for testing an expression language: the contract test and `LanguageTestContexts`, and the tests that use them without MVEL |
 | `bom` | `unruly-engine-bom` | Pins the three artifacts above to one version; no jar |
@@ -105,7 +105,7 @@ three, and the benchmarks' workload test.
 
 Shared settings are in `buildSrc`'s convention plugins (`src/main/kotlin`) and classes (`src/main/java`). The
 `core` package is internal: its module exports it only to the test kit's module, and a class in it is public only
-where the builder or the test kit needs it. Because an older kit may run on a newer `core`, the build checks the
+where the API packages or the test kit need it. Because an older kit may run on a newer `core`, the build checks the
 constructors the kit calls against the latest release; see
 [The test kit's links into core](docs/contributing/api-compatibility.md#-the-test-kits-links-into-core).
 
@@ -119,10 +119,10 @@ expression language`. The paths below are relative to `java/io/github/brantunger
 
 | You changed | Put the test in | Why |
 | --- | --- | --- |
-| A public type in `api`, `api.exception` or `api.language`, without running a rule | `core/src/test`, the same package, under `api/` | The tests of a package sit next to it, whichever project holds it |
+| A public type in `api` or `api.language`, without running a rule | `core/src/test`, the same package, under `api/` | The tests of a package sit next to it, whichever project holds it |
 | An internal class in `core`, without running a rule | `core/src/test`, the same package, under `core/` | Every source set runs on the class path, so a test in the package sees its package-private classes |
 | What the engine does with a rule, whatever language it is written in | `core/src/test`, the same package | `RulesEngineBuilder.language()` gives the engine the toy or stub language, so `core` can load and run rules |
-| Anything only MVEL does: its expression syntax, its compile errors, its fact-name rules, or its being the default | `mvel/src/test`, under `mvel/` if the public API, `core`'s test fixtures and the test kit are all it needs; otherwise the same package as the package-private class it needs, or `core/` for a `core` class that isn't public API (one exported to the test kit alone, or one of the `internal` package) | The toy and stub languages can't reproduce it, so moving the test would delete the coverage |
+| Anything only MVEL does: its expression syntax, its compile errors, its fact-name rules, or its being the default | `mvel/src/test`, under `mvel/` if the public API, `core`'s test fixtures and the test kit are all it needs; otherwise the same package as the package-private class it needs, or `core/` for a `core` class that isn't public API (exported to the test kit alone) | The toy and stub languages can't reproduce it, so moving the test would delete the coverage |
 | The MVEL language | `mvel/src/test`, under `mvel/` | Everything that is only true of MVEL stays in the `mvel` package |
 | The test kit | `test-kit/src/test`: `test/` for `LanguageTestContexts`, `api/language/ContractKitChecksTest` for the contract test's checks | These tests use `core`'s toy and stub languages, never MVEL, and a case that needs MVEL stays in `mvel/src/test`, as `mvel/LanguageTestContextsMvelTest` does. They can't go in `core`, because `test-kit` depends on `core` |
 | What the engine promises for a rule in any language | `ExpressionLanguageContractTest` in `test-kit/src/main/java` | It runs for MVEL through `mvel/MvelExpressionLanguageContractTest` in `mvel/src/test`, and for a toy language through `api/language/ToyExpressionLanguageContractTest` in `test-kit/src/test` |
@@ -215,8 +215,7 @@ broken links, CRLF line endings and the workflows, and warns about the changed p
 
 > [!IMPORTANT]
 > A breaking change needs a `!` in the PR title, a line in `config/japicmp/accepted-breaks.txt` and a section in
-> [Migrating to 2.0](docs/migrating-to-2.md), or, if it breaks the language SPI or `RulesEngine`, in
-> [Migrating a language or an engine](docs/migrating-to-2-implementers.md), so every user can find what to change.
+> [Migrating to 3.0](docs/migrating-to-3.md), so every user can find what to change.
 
 - **Any language, not just MVEL.** Code, Javadoc and messages in `unruly-engine-core` must not assume MVEL. What is
   only true of MVEL goes in the `mvel` package and [docs/languages/mvel.md](docs/languages/mvel.md).

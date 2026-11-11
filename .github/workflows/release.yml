@@ -96,7 +96,8 @@ jobs:
       # It runs before the Latest step so that anything `gh release edit` might do to the Latest mark — today it
       # sends only `body` — is repaired by that step in `publish`. Note the watch email and the Atom entry go out
       # when release-please publishes the Release, before this step, and editing the body doesn't re-send them.
-      # The heading and both links suit any 2.x release; revisit them at 3.0.
+      # The heading and the three links suit any 3.x release; revisit them at the next major. The 3.0 guide is in the
+      # list from 3.0.0 on only: a tag without it would link no guide at all, because it is every guide or none.
       - name: Link the migration guides from the release notes
         if: steps.release.outputs.release_created == 'true'
         env:
@@ -133,10 +134,12 @@ jobs:
               echo "::warning::Couldn't confirm ${path} is in ${TAG}, so the release notes don't link it: ${reason//$'\n'/ }. See RELEASING.md."
             fi
           done <<'EOF'
+          docs/migrating-to-3.md Migrating to 3.0
           docs/migrating-to-2.md Migrating to 2.0
           docs/migrating-to-2-implementers.md Migrating a language or an engine
           EOF
-          # Every guide or none: a marker written beside one link would lock the other out for ever.
+          # Every guide or none: a marker written beside some links would lock the others out for ever. So a guide
+          # added to the list above must be in the tag of the first release that runs this step with it.
           if [ "$absent" -gt 0 ]; then
             echo "::warning::Couldn't confirm ${absent} of ${wanted} migration guides in ${TAG} (${missing}), so the release notes link none of them. See RELEASING.md."
             exit 0
@@ -145,7 +148,7 @@ jobs:
           {
             printf '%s\n\n' "$body"
             printf '%s\n\n' "$marker"
-            printf '### 🔼 Upgrading from 1.x\n\n'
+            printf '### 🔼 Upgrading\n\n'
             printf '%s' "$links"
           } > "$notes"
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" \

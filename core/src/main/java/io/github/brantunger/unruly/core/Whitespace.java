@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 /**
  * Whether a name is blank, as {@link String#isBlank()} says, decided without the JDK's tables of the characters above
@@ -9,9 +9,9 @@ package io.github.brantunger.unruly.internal;
  * leave the table unusable for the life of the JVM, the application's own code included (#1292). The checks of a rule's
  * name and tags, a run's tags, a language's name and a fact's name run with no engine built, so before the engine's
  * first build has made room on the stack and initialized every such table; they ask here instead. <b>Internal:</b>
- * this class may change in any release, and isn't part of the API: its package isn't exported, and the {@code api} and
- * {@code core} packages share it. It has no static initializer of its own, so its own first use deep in a stack can't
- * break it.
+ * this class may change in any release, and isn't part of the API. It's public only so that {@code api.Rule} and
+ * {@code api.RunOptions}, in another package, can call it. It has no static initializer of its own, so its own first
+ * use deep in a stack can't break it.
  */
 public final class Whitespace {
 

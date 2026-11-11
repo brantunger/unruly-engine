@@ -1,11 +1,9 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.api.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 
 import java.util.Arrays;
-
 
 /**
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.

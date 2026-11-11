@@ -5,11 +5,10 @@ import org.slf4j.Logger;
 import java.util.List;
 import java.util.function.Consumer;
 
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RunContext;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 
 /**
  * Tells an engine's listeners what its runs do: calls each run and rule callback on every listener, logging what a

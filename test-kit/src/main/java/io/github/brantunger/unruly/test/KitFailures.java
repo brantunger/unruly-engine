@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.test;
 
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.Throwables;
 import org.jspecify.annotations.Nullable;
 import org.opentest4j.AssertionFailedError;
