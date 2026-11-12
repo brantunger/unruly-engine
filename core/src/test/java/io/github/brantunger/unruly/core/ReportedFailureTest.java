@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Field;
@@ -77,6 +79,32 @@ class ReportedFailureTest {
         assertEquals("bottom", CauseChains.innermostReported(copy).getMessage());
         assertEquals("bottom error", CauseChains.errorInChain(copy).getMessage());
         assertEquals("a nested run() failed: bottom", CauseChains.describe(new IllegalStateException(copy)));
+    }
+
+    @Test
+    @DisplayName("a failure keeps its rule's name and the kind of expression through serialization")
+    void ruleNameAndKindSurviveSerialization() throws Exception {
+        ReportedFailure copy = roundTrip(failure("top", new IllegalStateException("why")));
+
+        assertEquals("top", copy.getMessage());
+        assertEquals("why", copy.getCause().getMessage());
+        assertEquals("r", copy.getRuleName());
+        assertEquals(ExpressionKind.ACTION, copy.getExpressionKind());
+    }
+
+    // The stream is what run() threw on unruly-engine 2.35.4, where this class had the same name and a superclass in
+    // api.exception: see src/test/resources/serialized-2.35.4/generator. Read as the same class, it would have its
+    // message and cause, and no rule name or kind.
+    @Test
+    @DisplayName("a run() failure serialized by 2.x is refused, not read without its rule's name (#1404)")
+    void formFrom2xIsRefused() throws Exception {
+        try (InputStream stored = ReportedFailureTest.class.getResourceAsStream("/serialized-2.35.4/run-failure.ser");
+             ObjectInputStream in = new ObjectInputStream(stored)) {
+            InvalidClassException refused = assertThrows(InvalidClassException.class, in::readObject);
+
+            assertEquals(ReportedFailure.class.getName(), refused.classname);
+            assertTrue(refused.getMessage().contains("local class incompatible"), refused.getMessage());
+        }
     }
 
     @Test
