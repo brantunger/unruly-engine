@@ -185,6 +185,8 @@ class FactMapTest {
             factMap.put(fact);
 
             assertTrue(factMap.containsValue(fact));
+            assertFalse(factMap.isEmpty(), "a map with a fact isn't empty");
+            assertFalse(factMap.containsValue(new Fact<>("key", "another")), "a fact the map doesn't hold");
         }
 
         @Test

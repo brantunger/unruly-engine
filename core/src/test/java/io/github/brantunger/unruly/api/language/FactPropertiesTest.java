@@ -756,6 +756,7 @@ class FactPropertiesTest {
         // Two levels reach the list but not the records in it, because the list is a level of its own.
         Map<String, Object> shallow = FactProperties.toData(nested, 2);
         assertEquals(List.of(new Address("Leeds")), shallow.get("addresses"));
+        assertEquals(List.of(new Address("York")), shallow.get("more"), "an array is a level of its own too");
     }
 
     @Test
