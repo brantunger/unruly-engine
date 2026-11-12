@@ -24,7 +24,7 @@ access token (PAT), stored as the repository secret `RELEASE_PLEASE_TOKEN`. Ther
 a release PR opened with it gets a CI run that waits for an approval and no title check at all.
 
 The PAT acts as its owner, so the release PR is authored by the maintainer, and it gets a CI run and the title
-check as any other PR does, though CI runs only [one build leg](build-and-gates.md#-ci) on it. The ruleset on
+check as any other PR does, though CI runs [fewer build legs](build-and-gates.md#-ci) on it. The ruleset on
 `main` requires no approving review, so the maintainer can still merge it.
 
 > [!IMPORTANT]

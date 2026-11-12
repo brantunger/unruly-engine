@@ -154,12 +154,12 @@ jobs:
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$notes" \
             || echo "::warning::Couldn't add the migration guides to the ${TAG} release notes. See RELEASING.md."
 
-  # Lets publish run only for code main's full CI passed. The release PR's own run is one build leg (ci.yml's changes
-  # job gives it scope release), and the ruleset doesn't make the PR be up to date with main, so its checks say
-  # nothing about the other legs. The code released is the tag's parent, the main commit the release PR was squashed
-  # onto; the tag adds only the version and the changelog, and the release commit's push run of ci.yml starts with
-  # this run. The parent's push run is often still going when this job starts, because the release PR's one leg
-  # finishes first, so
+  # Lets publish run only for code main's full CI passed. The release PR's own run is one leg of the build's matrix,
+  # build-windows and native-image (ci.yml's changes job gives it scope release), and the ruleset doesn't make the PR
+  # be up to date with main, so its checks say nothing about the other legs. The code released is the tag's parent,
+  # the main commit the release PR was squashed onto; the tag adds only the version and the changelog, and the release
+  # commit's push run of ci.yml starts with this run. The parent's push run may still be going when this job starts,
+  # because the ruleset doesn't make the release PR's merge wait for it, so
   # this waits for it, then requires its ci-result job, the check the ruleset requires, to have passed. That job, not
   # the run's conclusion: the run also counts dependency-graph, which ci-result doesn't need, so a failed graph
   # submission doesn't hold a release back. Its own job, so publish keeps its timeout and its environment, and a
