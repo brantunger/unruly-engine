@@ -34,11 +34,11 @@ import java.util.Objects;
  *
  * <p>
  * The escapes, the note {@code ... (N more characters)} and the limits, {@link #MAX_NAME_LENGTH} (200 characters,
- * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 2.x. javac inlines the
+ * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 3.x. javac inlines the
  * two constants into the classes that read them. Which characters above U+00FF are escaped follows Unicode 15.0 to
  * 17.0, as JDK 21 to 26 have it, from a table of the engine's own, whatever the running JDK's Unicode version, so a
- * later JDK escapes the same characters until a later 2.x release updates the table; below U+0100 the running JDK
- * decides, the same way on JDK 21 to 26. A later 2.x release may also escape more kinds of character.
+ * later JDK escapes the same characters until a later 3.x release updates the table; below U+0100 the running JDK
+ * decides, the same way on JDK 21 to 26. A later 3.x release may also escape more kinds of character.
  * </p>
  *
  * <p>
@@ -51,14 +51,14 @@ import java.util.Objects;
 public final class MessageText {
 
     /**
-     * The most characters (UTF-16 units) of a name {@link #quote} shows: 200, fixed for 2.x. javac inlines it into the
+     * The most characters (UTF-16 units) of a name {@link #quote} shows: 200, fixed for 3.x. javac inlines it into the
      * classes that read it.
      */
     public static final int MAX_NAME_LENGTH = Text.MAX_NAME_LENGTH;
 
     /**
      * The most characters (UTF-16 units) of other text {@link #truncate} keeps, and the length above which the engine
-     * shortens the messages the class description lists: 1,000, fixed for 2.x. javac inlines it into the classes that
+     * shortens the messages the class description lists: 1,000, fixed for 3.x. javac inlines it into the classes that
      * read it.
      */
     public static final int MAX_TEXT_LENGTH = Text.MAX_DESCRIPTION_LENGTH;

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #1241: the readers an expression language and the test kit read what they catch with, as the engine does. What each
- * answers is a contract for 2.x, so every case here is written out rather than read from the engine: the cases the
+ * answers is a contract for 3.x, so every case here is written out rather than read from the engine: the cases the
  * copies in mvel and the kit were checked against, with the OpenJ9 message order and a message that can't be read for
  * {@link Throwables#isWrongName}, the 100-link limit and the LinkageError-before-overflow rule for
  * {@link Throwables#isOverflow}, and what each answers for {@code null}. A suppressed exception the engine itself

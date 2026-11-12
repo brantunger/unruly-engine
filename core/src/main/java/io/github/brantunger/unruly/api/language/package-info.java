@@ -48,8 +48,10 @@
  *   {@link io.github.brantunger.unruly.api.language.ExpressionCompiler},
  *   {@link io.github.brantunger.unruly.api.language.CompiledCondition},
  *   {@link io.github.brantunger.unruly.api.language.CompiledAction} and
- *   {@link io.github.brantunger.unruly.api.language.Session}. A method added to one of these is a {@code default}
- *   method, so a language written against an earlier 2.x release keeps compiling and working.</li>
+ *   {@link io.github.brantunger.unruly.api.language.Session}. Within a major, a method added to one of these is a
+ *   {@code default} method, so a language written against an earlier release of that major keeps compiling and
+ *   working. A language written for 2.x needs rebuilding for 3.0: see
+ *   <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/migrating-to-3.md">Migrating to 3.0</a>.</li>
  *   <li>The engine implements {@link io.github.brantunger.unruly.api.language.CompileContext} (the imports, the class
  *   loader, the output type, the declared facts, this language's options and its own imports, and a way to report
  *   warnings),

@@ -20,7 +20,7 @@ import java.util.Set;
  * </p>
  *
  * <p>
- * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
+ * It's a final class rather than a record, so a later 3.x release can add accessors without breaking code compiled
  * against this one. {@code equals} compares every field except {@link #startedAt()}; a field added in a later release
  * takes part too. Leaving out the start lets results compare equal whatever the engine's clock, such as a test
  * double's result and a real engine's from a run without tags, when their other fields are equal too. The output is

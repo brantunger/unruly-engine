@@ -11,7 +11,7 @@ import java.util.Objects;
  * answer "why didn't rule X apply?" without a {@link RuleListener}.
  *
  * <p>
- * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
+ * It's a final class rather than a record, so a later 3.x release can add accessors without breaking code compiled
  * against this one. Two evaluations are equal when their rules and outcomes are, whatever their
  * {@linkplain #detail() details}: a detail is the language's own object, with whatever {@code equals} it has, so it
  * is left out of {@code equals} and {@code hashCode}.

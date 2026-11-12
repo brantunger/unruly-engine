@@ -21,7 +21,7 @@ import java.util.Objects;
  * Every method here takes what it reads and returns a plain answer, with nothing retained: the class is
  * stateless, and its methods are safe to call from any thread at once. {@link #isOverflow} and {@link #isFatal}
  * allocate nothing and link no call site, so they can be called where handling a failure has itself failed, deep in
- * a stack or with no memory left. Each is fixed for 2.x: what it reads, in what order, how far, and what it answers
+ * a stack or with no memory left. Each is fixed for 3.x: what it reads, in what order, how far, and what it answers
  * for {@code null}.
  * </p>
  */

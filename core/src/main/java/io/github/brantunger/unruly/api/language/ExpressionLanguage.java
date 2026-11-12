@@ -20,8 +20,9 @@ import java.util.Set;
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a later 2.x release is a
- * {@code default} method, so an existing language keeps compiling and working.
+ * <b>Implemented by</b> expression languages. Within a major, a method added to this interface is a {@code default}
+ * method, so an existing language keeps compiling and working. A language written for 2.x needs rebuilding for 3.0:
+ * see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/migrating-to-3.md">Migrating to 3.0</a>.
  * </p>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md">Writing an expression
