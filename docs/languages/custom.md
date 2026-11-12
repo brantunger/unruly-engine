@@ -7,8 +7,9 @@ when, and on which thread.
 **You'll be able to:** implement the four interfaces, report compile errors as the engine expects, read facts of
 any shape, keep state in sessions or for one run, and [package](packaging.md) the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
-[Compiled copies](../compiled-copies.md). Moving a language from 1.x?
-[Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
+[Compiled copies](../compiled-copies.md). Moving a language? From
+[2.x](../migrating-to-3.md#-language-implementers) or [1.x](../migrating-to-2-implementers.md), these list what
+changed.
 
 [← Documentation index](../README.md)
 
@@ -103,7 +104,7 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext`;
 tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
 Within a major, methods added to interfaces you implement are `default`; a 2.x language
-[needs rebuilding for 3.0](../migrating-to-3.md#-the-apiexception-package-is-gone).
+[needs rebuilding for 3.0](../migrating-to-3.md#-language-implementers).
 
 ```java
 import io.github.brantunger.unruly.api.language.*;
