@@ -11,6 +11,27 @@ Only `feat:` and `fix:` changes are listed. Since [#95](https://github.com/brant
 dependency updates and other maintenance ship with the next release without their own entries, so some
 earlier releases still show a Dependencies section.
 
+## [3.0.0](https://github.com/brantunger/unruly-engine/compare/v2.35.4...v3.0.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* the five types of `io.github.brantunger.unruly.api.exception` moved to `api` and `api.language`, with no deprecated copies left behind. Change the imports and rebuild every jar against 3.0, third-party listeners and languages included: a 2.x-built listener's `onError` override is no longer called, and other 2.x-built code fails with `NoClassDefFoundError` or `NoSuchMethodError`. Upgrade `unruly-engine-core`, `unruly-engine` and `unruly-engine-test` together, or import `unruly-engine-bom`. Exceptions serialized by 2.x fail to deserialize on 3.0. See docs/migrating-to-3.md.
+* `CompileContext.declaredFacts()` returns `Map<String, java.lang.reflect.Type>` instead of `Map<String, Class<?>>`, and the test kit's `LanguageTestContexts.compile` overloads take `Map<String, ? extends Type>`. A language reads each value through `CompileContext.rawClass(Type)`, or handles a `ParameterizedType` itself, and is rebuilt against 3.0: a language built against 2.x links, but throws `ClassCastException` where it reads the type of a fact declared with type arguments.
+
+### Features
+
+* a declared fact's type is a java.lang.reflect.Type, so a typed language can be told a List&lt;String&gt; fact's element type, and the contract kit checks a Long narrowed for an int setter ([#1403](https://github.com/brantunger/unruly-engine/issues/1403)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+* the api.exception package is gone, its exceptions move to api and api.language, and the internal package's classes move into core ([#1401](https://github.com/brantunger/unruly-engine/issues/1401)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+
+
+### Bug Fixes
+
+* a 2.x serialized exception fails loudly on 3.0 instead of reading with its rule name, kind and issues lost, and a run failure serialized by 3.0 fails loudly on 2.x ([#1414](https://github.com/brantunger/unruly-engine/issues/1414)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+* a Map key named like a method, such as size or clear, calls the method in an MVEL dotted read, so the docs say to read Map keys as order['size'] ([#1396](https://github.com/brantunger/unruly-engine/issues/1396)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+* the contract kit fails a language that narrows a Long into an int setter whether or not it converts Doubles, and one that casts a declared fact's type to Class ([#1416](https://github.com/brantunger/unruly-engine/issues/1416)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+* with requireDeclaredFacts(), a failed run and MVEL's strong-typing refusal name the first declared fact, and an unknown-option message the first option set, not one that changes from one JVM start to the next ([#1418](https://github.com/brantunger/unruly-engine/issues/1418)) ([c64218d](https://github.com/brantunger/unruly-engine/commit/c64218d187ce89c7e60335f2a94da0d197144d8c))
+
 ## [2.35.4](https://github.com/brantunger/unruly-engine/compare/v2.35.3...v2.35.4) (2026-11-06)
 
 
