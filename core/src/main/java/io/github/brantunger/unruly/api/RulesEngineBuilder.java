@@ -8,6 +8,7 @@ import io.github.brantunger.unruly.core.Engines;
 import io.github.brantunger.unruly.core.LanguageNames;
 import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Type;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -119,7 +120,7 @@ public final class RulesEngineBuilder<O> {
     // null until the engine is built for the system clock, and the output writer below for beansAndMaps(): reading
     // either initializes classes, which build() leaves until the engine has made room for that (see Engines).
     private @Nullable Clock runClock;
-    private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
+    private final Map<String, Type> factTypes = new LinkedHashMap<>();
     private boolean allFactsDeclared;
     private Class<? super O> outputClass = Object.class;
     private @Nullable OutputWriter<? super O> writer;
@@ -502,29 +503,63 @@ public final class RulesEngineBuilder<O> {
      *                                  {@code load()} of such a rule list, which {@code validate()} reports too
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
-        EngineCompileContext.checkDeclaration(name, type);
-        factTypes.put(name, type);
+        return fact(name, (Type) type);
+    }
+
+    /**
+     * Declares a fact the rules use, as {@link #fact(String, Class)} does, with a type that can carry type arguments,
+     * such as {@code List<String>}, so a language that checks its rules when they load can check what they do with
+     * the fact's elements:
+     *
+     * <pre>{@code
+     * builder.fact("tags", new FactType<List<String>>() { })
+     * }</pre>
+     *
+     * <p>
+     * The type is a {@link Class}, a {@link java.lang.reflect.ParameterizedType} whose raw type is a class, as another
+     * library's type token gives one, or a {@link FactType}, which is kept as the type it stands for. Only the type
+     * itself is checked: its type arguments reach the languages as written, wildcards and type variables included. A
+     * run's value is checked against the type's class alone, {@link java.util.List} for {@code List<String>}, as
+     * {@link io.github.brantunger.unruly.api.language.CompileContext#rawClass(Type) CompileContext.rawClass(type)}
+     * gives it: a value's type arguments are erased, so the engine can't check that a list's elements are strings,
+     * and a language that relied on the declaration finds out when a rule reads one.
+     * </p>
+     *
+     * @param name The fact's name, as rules refer to it
+     * @param type The type a run's value must be an instance of, by its class, or, for a primitive class, be widened
+     *             to
+     * @return This builder
+     * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is blank, or reserved, as for {@link #fact(String, Class)}; or
+     *                                  if {@code type} is a {@link java.lang.reflect.TypeVariable}, a
+     *                                  {@link java.lang.reflect.WildcardType}, a
+     *                                  {@link java.lang.reflect.GenericArrayType}, such as {@code List<String>[]}, a
+     *                                  {@code ParameterizedType} whose raw type isn't a class or an interface, or
+     *                                  any other implementation of {@code Type}: none has a class of its own to
+     *                                  check a run's value against. The message names the type
+     */
+    public RulesEngineBuilder<O> fact(String name, Type type) {
+        factTypes.put(name, EngineCompileContext.checkDeclaration(name, type));
         return this;
     }
 
     /**
-     * Declares several facts at once, as {@link #fact(String, Class)} does one.
+     * Declares several facts at once, as {@link #fact(String, Type)} does one.
      *
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
      * @throws NullPointerException     if {@code types}, a name or a type is {@code null}; nothing is declared
-     * @throws IllegalArgumentException if a name is blank; nothing is declared. A name one of the engine's languages
-     *                                  reserves is rejected by {@link #build()}, or by {@code load()}, as for
-     *                                  {@link #fact(String, Class)}
+     * @throws IllegalArgumentException if a name is blank, or a type is one no fact can be declared with; nothing is
+     *                                  declared. A name one of the engine's languages reserves is rejected by
+     *                                  {@link #build()}, or by {@code load()}, as for {@link #fact(String, Class)}
      */
-    public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
+    public RulesEngineBuilder<O> facts(Map<String, ? extends Type> types) {
         Objects.requireNonNull(types, "types must not be null");
         // Each of the map's own entries is checked, before a copy could merge two equal names, and before any is
         // declared, so a rejected map leaves the builder as it was.
-        Map<String, Class<?>> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, ? extends Class<?>> entry : types.entrySet()) {
-            EngineCompileContext.checkDeclaration(entry.getKey(), entry.getValue());
-            copy.put(entry.getKey(), entry.getValue());
+        Map<String, Type> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, ? extends Type> entry : types.entrySet()) {
+            copy.put(entry.getKey(), EngineCompileContext.checkDeclaration(entry.getKey(), entry.getValue()));
         }
         factTypes.putAll(copy);
         return this;

@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RulesEngine;
@@ -34,6 +35,10 @@ class MvelStrongTypingTest {
 
     /** An applicant as a record, whose components MVEL reads as properties. */
     public record Applicant(int creditScore, String name) {
+    }
+
+    /** A generic bean, declared with its type argument, whose own members MVEL can check. */
+    public record Holder<T>(T value, int count) {
     }
 
     /** An output object with a real property, so an action can be type-checked. */
@@ -298,6 +303,34 @@ class MvelStrongTypingTest {
     void aListFactFailsLoading() {
         assertCantApply(strongTyping(builder -> builder.fact("items", List.class)), "output.score = 1",
                 "fact 'items' is declared as java.util.List");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as a List<String> fails load() as a List does: MVEL reads the"
+            + " type's class alone (#1390)")
+    void aListOfStringsFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("items", new FactType<List<String>>() {
+                })), "output.score = 1",
+                "fact 'items' is declared as java.util.List, whose members MVEL can't check");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as a bean with a type argument is checked by its class (#1390)")
+    void aParameterizedBeanFactIsChecked() {
+        RulesEngineBuilder<Decision> builder = strongTyping(builder1 -> builder1.fact("holder",
+                new FactType<Holder<String>>() {
+                }));
+        FactStore<Object> facts = applicant();
+        facts.setValue("holder", new Holder<>("a", 2));
+
+        try (RulesEngine<Decision> engine = builder.build()) {
+            engine.load(List.of(rule("holder.count > 1", "output.score = 1")));
+            assertEquals(1, engine.run(facts).getScore());
+
+            RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                    () -> engine.load(List.of(rule("holder.coun > 1", "output.score = 1"))));
+            assertTrue(thrown.getMessage().contains("coun"), thrown.getMessage());
+        }
     }
 
     @Test

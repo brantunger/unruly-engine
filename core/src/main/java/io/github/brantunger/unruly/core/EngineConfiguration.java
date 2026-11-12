@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.lang.reflect.Type;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Collections;
@@ -28,9 +29,10 @@ import java.util.Objects;
  * @param clock           The clock a run reads when it starts, to decide which rules are within their validity window
  * @param outputType      The output type languages are told about
  * @param outputWriter    Sets the properties actions return on the output object
- * @param declaredFacts   The declared type of each fact, by name, empty if none were declared. A primitive type is
- *                        kept as it was declared, not as its wrapper, so a run widens a boxed primitive to it. The
- *                        engine rejects a blank name, and, once it has found its languages, a name one of them reserves
+ * @param declaredFacts   The declared type of each fact, by name, empty if none were declared: a class, or a
+ *                        parameterized type whose raw type is one. A primitive type is kept as it was declared, not
+ *                        as its wrapper, so a run widens a boxed primitive to it. The engine rejects a blank name, a
+ *                        type of any other kind, and, once it has found its languages, a name one of them reserves
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param options         Each language's options, by language name
  * @param languageImports Each language's own imports, by language name, as written and in order, not resolved
@@ -41,7 +43,7 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
                                      int copiesAtLoad, Duration runTimeout, Clock clock,
                                      Class<? super O> outputType, OutputWriter<? super O> outputWriter,
                                      Map<String, Map<String, String>> options,
-                                     Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                                     Map<String, Type> declaredFacts, boolean allFactsDeclared,
                                      Map<String, List<String>> languageImports) {
 
     /**

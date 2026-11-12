@@ -10,6 +10,25 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading to 3.0
+
+In 3.0.0 `outputNumbersConverted` got stricter, and no check or hook was added. A language that passed the 2.35 kit
+may now fail it, and the new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `outputNumbersConverted` | Returns `true` from `convertsOutputNumbers()`, and sets `setCreditScore(int)`, or fails nothing, from the `Long` 3000000000 or -3000000000 | `convertOutput` narrows a `Long` with `intValue()`, which keeps the low 32 bits: an action that returns 5000000000 sets 705032704 and fails nothing |
+
+A language that returns a `Long` unchanged for an `int` target still passes: the writer doesn't narrow it, so the
+write fails the rule. 3.0 also changes the engine's API, so move the kit and the engine together, as
+[Migrating from 2.x to 3.0](../migrating-to-3.md#-upgrade-the-test-kit-with-the-engine) says.
+
+One requirement is now written down, with no check changed: the condition `bothConditions(condition, other)` returns
+must fail when `condition` fails, whatever `other` is, as MVEL's `&&` does. A language whose `&&` absorbs an error on
+one side when the other side is `false`, as CEL's does, fails `nestedRunFailsInsideACondition` with
+`the run started inside the condition didn't fail`, though its nested runs are right. Return
+`condition + " ? " + other + " : false"` from the hook.
+
 ## 🔼 Upgrading from 2.34
 
 In 2.35.0 `outputNumbersConvertedConcurrently` was added, and `evaluateAgreesWithDetail` and

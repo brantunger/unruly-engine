@@ -7,6 +7,7 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Type;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,7 +31,7 @@ class EngineConfigurationTest {
                                                              Clock clock, Class<Object> outputType,
                                                              OutputWriter<Object> outputWriter,
                                                              Map<String, Map<String, String>> options,
-                                                             Map<String, Class<?>> declaredFacts) {
+                                                             Map<String, Type> declaredFacts) {
         return new EngineConfiguration<>(languages, null, imports, listeners, copyLimit, 0, null, clock, outputType,
                 outputWriter, options, declaredFacts, false, Map.of());
     }
@@ -47,8 +48,8 @@ class EngineConfigurationTest {
         return values;
     }
 
-    private static Map<String, Class<?>> declared(String name, Class<?> type) {
-        Map<String, Class<?>> facts = new HashMap<>();
+    private static Map<String, Type> declared(String name, Type type) {
+        Map<String, Type> facts = new HashMap<>();
         facts.put(name, type);
         return facts;
     }
@@ -85,7 +86,7 @@ class EngineConfigurationTest {
         List<RuleListener> listeners = new ArrayList<>(List.of(listener));
         Map<String, String> values = option("strict", "true");
         Map<String, Map<String, String>> options = options("toy", values);
-        Map<String, Class<?>> declaredFacts = declared("name", String.class);
+        Map<String, Type> declaredFacts = declared("name", String.class);
 
         EngineConfiguration<Object> configuration = configuration(languages, imports, listeners, LIMIT, CLOCK,
                 Object.class, WRITER, options, declaredFacts);

@@ -352,7 +352,10 @@ public abstract class ExpressionLanguageContractTest {
      * that casts a whole double it has bounded above only sets {@code Integer.MIN_VALUE} for the last. Then the
      * {@link BigDecimal}s 1.5 and 3E9, which must each fail the rule and leave the score as well: a language whose
      * decimals are {@code BigDecimal}s, as Groovy's are, and narrows one with {@code intValue()} sets 1 and the low
-     * 32 bits. Then {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes a {@code long}:
+     * 32 bits. Then the {@link Long}s 3000000000 and -3000000000, which must each fail the rule and leave the score:
+     * a language whose whole numbers are {@code Long}s, as CEL's are, and narrows one with {@code intValue()} sets
+     * the low 32 bits (#1384). Then {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes
+     * a {@code long}:
      * 3.0E9 must set the balance to 3000000000, and {@code Infinity}, 2<sup>53</sup>&nbsp;+&nbsp;2, the first whole
      * double past where a double counts by ones, 1.5, {@code NaN}, {@code -Infinity} and
      * -(2<sup>53</sup>&nbsp;+&nbsp;2) must each fail the rule and leave it: a language that rounds with
@@ -487,6 +490,14 @@ public abstract class ExpressionLanguageContractTest {
      * is the one that finds any state the nested run left on the thread. A language that evaluates the right side
      * first isn't checked by them: the first passes it, and the second is skipped when the nested run, stopping at
      * the right side, never reads the getter that makes it fail. By default, {@code null}.
+     *
+     * <p>
+     * The condition must also fail when {@code condition} fails, whatever {@code other} is, as MVEL's {@code &&}
+     * does: {@code nestedRunFailsInsideACondition} needs the getter's throw to fail the nested run's condition, whose
+     * {@code other} is false there. A language whose {@code &&} absorbs an error on one side when the other side is
+     * false, as CEL's does, returns <code>{inner=2}</code> from that run instead, and the check reports a nested run
+     * that didn't fail; such a language returns {@code condition ? other : false} (#1384).
+     * </p>
      *
      * @param condition The condition evaluated first
      * @param other     The condition evaluated second
@@ -1219,8 +1230,8 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("a whole Double an action returns reaches a setter taking an int or a long, and a fraction, an"
-            + " infinity, NaN or a whole number the setter's type doesn't hold exactly, as a Double or a BigDecimal,"
-            + " fails the rule")
+            + " infinity, NaN or a whole number the setter's type doesn't hold exactly, as a Double, a BigDecimal or a"
+            + " Long, fails the rule")
     void outputNumbersConverted() throws Exception {
         assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
         // The writer is set after configure(), so configure() can't replace it: the applicant, not the map, is written.
@@ -1254,6 +1265,13 @@ public abstract class ExpressionLanguageContractTest {
             for (String x : new String[] {"1.5", "3E9"}) {
                 assertRefused(engine, new BigDecimal(x), "the BigDecimal " + x, "setCreditScore(int)",
                         applicant::getCreditScore, 1);
+            }
+            // A language whose whole numbers are Longs, as CEL's are, and narrows one with intValue() sets the low 32
+            // bits of 3000000000, 705032704 for 5000000000, and fails nothing; one that bounds it above only does so
+            // for -3000000000 (#1384). Refusals only, as for the BigDecimals: a language that returns a Long
+            // unchanged for an int setter, as one whose numbers are doubles may, also fails the rule.
+            for (long x : new long[] {3_000_000_000L, -3_000_000_000L}) {
+                assertRefused(engine, x, "the Long " + x, "setCreditScore(int)", applicant::getCreditScore, 1);
             }
         });
 
@@ -1292,9 +1310,9 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Runs rule {@code r} of {@code engine}, whose action puts the fact {@code x} on the property {@code setter} sets,
-     * with {@code x} the {@link Double} or {@link BigDecimal} {@code value}, which {@code setter}'s type doesn't hold
-     * exactly, and requires the run to fail in {@code r} and the property, read by {@code read}, to still be
-     * {@code before}: a language that narrows the number, as {@code Number.intValue()} or {@code longValue()} does,
+     * with {@code x} the {@link Double}, {@link BigDecimal} or {@link Long} {@code value}, which {@code setter}'s type
+     * doesn't hold exactly, and requires the run to fail in {@code r} and the property, read by {@code read}, to still
+     * be {@code before}: a language that narrows the number, as {@code Number.intValue()} or {@code longValue()} does,
      * sets the type's extreme, a rounded number or the low bits instead.
      *
      * @param engine The engine, with rule {@code r} loaded

@@ -1,7 +1,13 @@
 package io.github.brantunger.unruly.api.language;
 
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
+import java.lang.reflect.WildcardType;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -52,21 +58,76 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
 
     /**
      * Returns the facts the engine was declared with, through
-     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)}, by fact name. A language may
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Type)}, by fact name. A language may
      * check its expressions against them, for example to reject a misspelled property when the rules load, or ignore
      * them; the engine checks a run's values against them whatever the language does. A fact declared with a primitive
      * type, such as {@code int}, is given as its wrapper, {@link Integer}.
      *
      * <p>
-     * A declared type is what the value a language is given is an instance of; for a fact declared with a primitive
-     * type, the engine first widens a narrower boxed primitive the run supplied, as
-     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)} describes. It isn't a promise that
-     * the fact is present, unless {@link #allFactsDeclared()} is {@code true}.
+     * Each type is one of two kinds: a {@link Class}, or a {@link java.lang.reflect.ParameterizedType} whose raw type
+     * is a {@code Class}, such as {@code java.util.List<java.lang.String>}, for a fact declared with its type
+     * arguments. A fact declared with a {@link io.github.brantunger.unruly.api.FactType} is given as the type the
+     * token stands for, never as the token. A parameterized type's own type arguments are as the application wrote
+     * them, and can be any {@link Type}, a wildcard or a type variable included. A language with no use for type
+     * arguments reads each type's class with {@link #rawClass(Type)}; one that casts a value to {@code Class} fails
+     * with a {@link ClassCastException} for a fact declared with type arguments.
+     * </p>
+     *
+     * <p>
+     * A declared type's class is what the value a language is given is an instance of; for a fact declared with a
+     * primitive type, the engine first widens a narrower boxed primitive the run supplied, as
+     * {@link io.github.brantunger.unruly.api.RulesEngineBuilder#fact(String, Class)} describes. The engine checks no
+     * more than the class: a value's type arguments are erased, so a fact declared as a {@code List<String>} can hold
+     * a list of anything. It isn't a promise that the fact is present, unless {@link #allFactsDeclared()} is
+     * {@code true}.
      * </p>
      *
      * @return The declared type of each fact, by name, empty if the engine was told none; unmodifiable
      */
-    Map<String, Class<?>> declaredFacts();
+    Map<String, Type> declaredFacts();
+
+    /**
+     * Returns the class of a declared fact's type, as {@link #declaredFacts()} gives one: the class itself, or a
+     * parameterized type's raw class, such as {@link java.util.List} for {@code List<String>}. It's the class the
+     * engine checks a run's value against, and all that a language with no use for type arguments reads of a
+     * declaration. It allocates nothing for a type the engine accepted.
+     *
+     * @param type A type, such as a value of {@code declaredFacts()}
+     * @return The type's class, which is primitive only if {@code type} is that primitive class
+     * @throws NullPointerException     if {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code type} is neither, so no fact can be declared with it: a
+     *                                  {@link TypeVariable}, a {@link WildcardType}, a {@link GenericArrayType}, a
+     *                                  {@link ParameterizedType} whose raw type isn't a {@code Class}, or is a
+     *                                  primitive one, such as {@code int.class}, or another implementation of
+     *                                  {@code Type}. That includes an
+     *                                  {@link io.github.brantunger.unruly.api.FactType} passed as it is, which
+     *                                  {@code declaredFacts()} never holds: pass the type it stands for, its
+     *                                  {@code type()}. The message names the type
+     */
+    static Class<?> rawClass(Type type) {
+        Objects.requireNonNull(type, "type must not be null");
+        if (type instanceof Class<?> declared) {
+            return declared;
+        }
+        if (type instanceof ParameterizedType parameterized && parameterized.getRawType() instanceof Class<?> raw
+                && !raw.isPrimitive()) {
+            return raw;
+        }
+        String kind;
+        if (type instanceof TypeVariable<?>) {
+            kind = "the type variable ";
+        } else if (type instanceof WildcardType) {
+            kind = "the wildcard ";
+        } else if (type instanceof GenericArrayType) {
+            kind = "the generic array type ";
+        } else if (type instanceof ParameterizedType) {
+            kind = "a parameterized type whose raw type isn't a class or an interface, ";
+        } else {
+            kind = "a " + type.getClass().getName() + ", ";
+        }
+        throw new IllegalArgumentException("A fact's type must be a class or a parameterized type, such as"
+                + " List<String>, not " + kind + type.getTypeName());
+    }
 
     /**
      * Returns whether a run may supply only the facts in {@link #declaredFacts()}, which the engine was told with

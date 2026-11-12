@@ -10,6 +10,7 @@ import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineEvaluationContext;
 import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -114,10 +115,12 @@ public final class LanguageTestContexts {
      * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
      *                         when it wasn't
      * @param options          The language's options, as the engine's builder was given them; copied
-     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told: a class,
+     *                         a parameterized type or a {@code FactType}; copied
      * @param allFactsDeclared Whether a run may supply only the declared facts, as
      *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
-     * @return The context. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     * @return The context. A fact declared with a primitive type is given as its wrapper, and one declared with a
+     *         {@code FactType} as the type it stands for, as an engine gives them.
      * @throws NullPointerException     if an argument, or an element of a set, of the options or of the declarations,
      *                                  is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
@@ -133,7 +136,7 @@ public final class LanguageTestContexts {
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
-                                         Map<String, Class<?>> declaredFacts, boolean allFactsDeclared) {
+                                         Map<String, ? extends Type> declaredFacts, boolean allFactsDeclared) {
         return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
                 allFactsDeclared);
     }
@@ -148,12 +151,14 @@ public final class LanguageTestContexts {
      * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
      *                         when it wasn't
      * @param options          The language's options, as the engine's builder was given them; copied
-     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told: a class,
+     *                         a parameterized type or a {@code FactType}; copied
      * @param allFactsDeclared Whether a run may supply only the declared facts, as
      *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
      * @param languageImports  The language's own imports, such as {@code lodash/fp}, as written and in order; copied
      * @return The context. Its {@link CompileContext#languageImports()} are {@code languageImports}, duplicates
-     *         included. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     *         included. A fact declared with a primitive type is given as its wrapper, and one declared with a
+     *         {@code FactType} as the type it stands for, as an engine gives them.
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if an imported package has more than 1,000 characters or more than 64
@@ -169,7 +174,7 @@ public final class LanguageTestContexts {
      */
     public static CompileContext compile(Set<String> packageImports, Set<Class<?>> classImports,
                                          ClassLoader classLoader, Class<?> outputType, Map<String, String> options,
-                                         Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
+                                         Map<String, ? extends Type> declaredFacts, boolean allFactsDeclared,
                                          List<String> languageImports) {
         return new EngineCompileContext(packageImports, classImports, classLoader, outputType, options, declaredFacts,
                 allFactsDeclared, true, languageImports);
@@ -188,12 +193,14 @@ public final class LanguageTestContexts {
      * @param outputType       The type of the output object, as the engine's builder was told; {@code Object.class}
      *                         when it wasn't
      * @param options          The language's options, as the engine's builder was given them; copied
-     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told; copied
+     * @param declaredFacts    The declared type of each fact, by name, as the engine's builder was told: a class,
+     *                         a parameterized type or a {@code FactType}; copied
      * @param allFactsDeclared Whether a run may supply only the declared facts, as
      *                         {@code RulesEngineBuilder.requireDeclaredFacts()} says
      * @param languageImports  The language's own imports, such as {@code lodash/fp}, as written and in order; copied
      * @return The context. Its {@link CompileContext#languageImports()} are {@code languageImports}, duplicates
-     *         included. A fact declared with a primitive type is given as its wrapper, as an engine gives it.
+     *         included. A fact declared with a primitive type is given as its wrapper, and one declared with a
+     *         {@code FactType} as the type it stands for, as an engine gives them.
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if the language's name is {@code null} or blank; if an imported package has
@@ -211,7 +218,7 @@ public final class LanguageTestContexts {
      */
     public static CompileContext compile(ExpressionLanguage language, Set<String> packageImports,
                                          Set<Class<?>> classImports, ClassLoader classLoader, Class<?> outputType,
-                                         Map<String, String> options, Map<String, Class<?>> declaredFacts,
+                                         Map<String, String> options, Map<String, ? extends Type> declaredFacts,
                                          boolean allFactsDeclared, List<String> languageImports) {
         return EngineCompileContext.forLanguage(language, packageImports, classImports, classLoader, outputType,
                 options, declaredFacts, allFactsDeclared, languageImports);

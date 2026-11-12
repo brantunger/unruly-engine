@@ -1,5 +1,6 @@
 package io.github.brantunger.unruly.core;
 
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.Expression;
@@ -8,6 +9,7 @@ import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +25,8 @@ import java.util.Set;
  * @param classLoader    The class loader that finds the classes in {@code packageImports}
  * @param outputType       The type of the output object, or {@link Object} if the engine wasn't told one
  * @param options          This language's options, by name
- * @param declaredFacts    The declared type of each fact, by name
+ * @param declaredFacts    The declared type of each fact, by name: a {@link Class}, or a
+ *                         {@link java.lang.reflect.ParameterizedType} whose raw type is one
  * @param allFactsDeclared Whether a run may supply only the declared facts
  * @param warningsLogged   Whether {@link #warn(Expression, InvalidExpressionException.Issue)} logs: it does when the
  *                         rules are loaded, and not when they are only validated
@@ -42,26 +45,28 @@ import java.util.Set;
  */
 public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
                                    Class<?> outputType, Map<String, String> options,
-                                   Map<String, Class<?>> declaredFacts,
+                                   Map<String, Type> declaredFacts,
                                    boolean allFactsDeclared, boolean warningsLogged,
                                    List<String> languageImportNames, Set<String> reservedFactNames)
         implements CompileContext {
 
     /**
      * Keeps unmodifiable copies of the imports, options, declarations and reserved names, so the context can't change
-     * after it's created. A declared primitive type is kept as its wrapper, as {@link #declaredType(String, Class)}
-     * says, so a language sees the same declarations from the test kit as from an engine. Package imports are checked
-     * for size and for a package name's shape, and language imports for size, as the engine's {@code build()} checks
-     * them, so a language's tests can't be handed one no engine would accept. What a package import resolves to isn't
-     * checked, as no class loader is asked: {@code build()} imports {@code java.util.Map.Entry} as a class, and a
-     * context keeps it as a package.
+     * after it's created. A declared primitive type is kept as its wrapper, and a {@link FactType} as the type it
+     * stands for, as {@link #declaredType(String, Type)} says, so a language sees the same declarations from the test
+     * kit as from an engine. An engine's own declarations, which it checked when it was built, are kept as they are.
+     * Package imports are checked for size and for a package name's shape, and language imports for size, as the
+     * engine's {@code build()} checks them, so a language's tests can't be handed one no engine would accept. What a
+     * package import resolves to isn't checked, as no class loader is asked: {@code build()} imports
+     * {@code java.util.Map.Entry} as a class, and a context keeps it as a package.
      *
      * @throws NullPointerException     if an argument, or an element of a set, of the language imports, of the options
      *                                  or of the declarations, is {@code null}
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name, with the message
      *                                  {@code build()} gives; if a language import has more than 1,000 characters; or
-     *                                  if a fact is declared with a blank name
+     *                                  if a fact is declared with a blank name, or with a type that is neither a
+     *                                  class nor a parameterized type
      * @throws StackOverflowError       if a package import has a code point above U+00FF, the JDK's tables of such
      *                                  characters aren't known to be built yet, as no engine has been built and no
      *                                  such import checked yet, and the stack has too little room left to
@@ -107,12 +112,16 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         classImports = Set.copyOf(classImports);
         options = Map.copyOf(options);
         reservedFactNames = Set.copyOf(reservedFactNames);
-        // declaredType names a null fact name or type itself.
-        Map<String, Class<?>> declared = new LinkedHashMap<>();
-        for (Map.Entry<String, Class<?>> fact : declaredFacts.entrySet()) {
-            declared.put(fact.getKey(), declaredType(fact.getKey(), fact.getValue()));
+        // An engine's declarations were checked when it was built, and are kept as they are: checking one again asks
+        // a parameterized type an application wrote for its raw type, which could answer otherwise by now, or throw.
+        if (!(declaredFacts instanceof DeclaredFacts)) {
+            // declaredType names a null fact name or type itself.
+            Map<String, Type> declared = new LinkedHashMap<>();
+            for (Map.Entry<String, Type> fact : declaredFacts.entrySet()) {
+                declared.put(fact.getKey(), declaredType(fact.getKey(), fact.getValue()));
+            }
+            declaredFacts = Map.copyOf(declared);
         }
-        declaredFacts = Map.copyOf(declared);
         languageImportNames = List.copyOf(languageImportNames);
     }
 
@@ -130,18 +139,32 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     }
 
     /**
-     * Checks a fact's declaration before the engine's languages are known. The builder and the engine then keep the
-     * type as it was declared, a primitive type included, so a run can widen a boxed primitive to it. A name one of
-     * the engine's languages reserves, such as {@value ActionContext#OUTPUT_NAME}, is rejected by {@code build()},
-     * once the languages are known, or by {@code load()} of a rule list that uses a language that reserves it only for
-     * such rule lists.
+     * Checks a fact's declaration before the engine's languages are known, and returns the type to keep for it. The
+     * builder and the engine keep a class as it was declared, a primitive type included, so a run can widen a boxed
+     * primitive to it, a parameterized type as it was given, and the type a {@link FactType} stands for rather than
+     * the token. A name one of the engine's languages reserves, such as {@value ActionContext#OUTPUT_NAME}, is
+     * rejected by {@code build()}, once the languages are known, or by {@code load()} of a rule list that uses a
+     * language that reserves it only for such rule lists.
      *
      * @param name The fact's name
      * @param type The type it was declared with
+     * @return The type the fact is declared with: a {@link Class}, or a {@link java.lang.reflect.ParameterizedType}
+     *         whose raw type is one
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is blank
+     * @throws IllegalArgumentException if {@code name} is blank; or, checked after the name, if {@code type} is
+     *                                  neither a class, a parameterized type whose raw type is a class nor a
+     *                                  {@code FactType}, with the message
+     *                                  {@link CompileContext#rawClass(Type)} gives
      */
-    public static void checkDeclaration(String name, Class<?> type) {
+    public static Type checkDeclaration(String name, Type type) {
+        Type declared = named(name, type);
+        // Rejects a type that has no class of its own, naming it.
+        CompileContext.rawClass(declared);
+        return declared;
+    }
+
+    // Checks a declaration's name, and returns its type, a FactType as the type it stands for, not yet checked.
+    private static Type named(String name, Type type) {
         Objects.requireNonNull(name, "name must not be null");
         Objects.requireNonNull(type, "type must not be null");
         // The name isn't null, as checked above, and no name is reserved here, so the only problem it can have is
@@ -149,21 +172,56 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         if (FactNames.check(name, Set.of()) != null) {
             throw new IllegalArgumentException(FactNames.BLANK_MESSAGE);
         }
+        return type instanceof FactType<?> token ? token.type() : type;
     }
 
     /**
-     * Returns the type a language is told a fact is declared with: {@code type}, or its wrapper if it's primitive,
-     * which a run's value is an instance of once the engine has widened it.
+     * Checks an engine's declarations when it's built, as {@link #checkDeclaration(String, Type)} checks each, and
+     * works out, once, what they mean from then on: the class a run's value is checked against, and the type
+     * languages are told. A parameterized type is asked for its raw type once here and never again, so one an
+     * application wrote can't answer differently for the engine's check and for a language, nor fail a
+     * {@code load()}.
+     *
+     * @param declarations The type each fact was declared with, by name
+     * @param classes      Receives the class of each fact's type, a primitive class as it was declared
+     * @return The type to tell languages of each fact, by name, as a {@link DeclaredFacts}, which a context keeps
+     *         as it is
+     * @throws NullPointerException     if a name or a type is {@code null}
+     * @throws IllegalArgumentException if a name is blank, or a type is one no fact can be declared with
+     */
+    static Map<String, Type> resolve(Map<String, Type> declarations, Map<String, Class<?>> classes) {
+        Map<String, Type> told = new LinkedHashMap<>();
+        for (Map.Entry<String, Type> fact : declarations.entrySet()) {
+            Type declared = named(fact.getKey(), fact.getValue());
+            // The engine's one read of a parameterized type's raw type, which rejects a type that has no class.
+            Class<?> type = CompileContext.rawClass(declared);
+            classes.put(fact.getKey(), type);
+            told.put(fact.getKey(), declared instanceof Class<?> ? Widening.wrap(type) : declared);
+        }
+        return new DeclaredFacts(told);
+    }
+
+    /**
+     * Returns the type a language is told a fact is declared with: the type {@link #checkDeclaration(String, Type)}
+     * keeps, or its wrapper if it's a primitive class, which a run's value is an instance of once the engine has
+     * widened it.
      *
      * @param name The fact's name
      * @param type The type it was declared with
      * @return The type to tell languages
      * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
-     * @throws IllegalArgumentException if {@code name} is blank
+     * @throws IllegalArgumentException if {@code name} is blank, or {@code type} is one no fact can be declared with
      */
-    public static Class<?> declaredType(String name, Class<?> type) {
-        checkDeclaration(name, type);
-        return Widening.wrap(type);
+    public static Type declaredType(String name, Type type) {
+        Type declared = checkDeclaration(name, type);
+        return declared instanceof Class<?> declaredClass ? Widening.wrap(declaredClass) : declared;
+    }
+
+    // A map of declarations as one of the types they all are, to read only: the canonical constructor copies it, and
+    // reports a null map itself, after the arguments before it.
+    @SuppressWarnings("unchecked")
+    private static Map<String, Type> readOnly(Map<String, ? extends Type> declaredFacts) {
+        return (Map<String, Type>) declaredFacts;
     }
 
     /**
@@ -197,12 +255,12 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name, or a fact is declared with
      *                                  a blank name or the name {@value ActionContext#OUTPUT_NAME}, which the default
-     *                                  reserves
+     *                                  reserves, or with a type that is neither a class nor a parameterized type
      * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
-                                Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
-                                boolean allFactsDeclared) {
+                                Class<?> outputType, Map<String, String> options,
+                                Map<String, ? extends Type> declaredFacts, boolean allFactsDeclared) {
         this(packageImports, classImports, classLoader, outputType, options, declaredFacts, allFactsDeclared, true,
                 List.of());
     }
@@ -226,14 +284,16 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws IllegalArgumentException if a package import has more than 1,000 characters or more than 64
      *                                  dot-separated parts, or isn't a valid package name, a language import has more
      *                                  than 1,000 characters, or a fact is declared with a blank name or the name
-     *                                  {@value ActionContext#OUTPUT_NAME}
+     *                                  {@value ActionContext#OUTPUT_NAME}, or with a type that is neither a class nor
+     *                                  a parameterized type
      * @throws StackOverflowError       as the canonical constructor says, for a package import above U+00FF (#1366)
      */
     public EngineCompileContext(Set<String> packageImports, Set<Class<?>> classImports, ClassLoader classLoader,
-                                Class<?> outputType, Map<String, String> options, Map<String, Class<?>> declaredFacts,
-                                boolean allFactsDeclared, boolean warningsLogged, List<String> languageImportNames) {
-        this(packageImports, classImports, classLoader, outputType, options, declaredFacts, allFactsDeclared,
-                warningsLogged, languageImportNames, Set.of(ActionContext.OUTPUT_NAME));
+                                Class<?> outputType, Map<String, String> options,
+                                Map<String, ? extends Type> declaredFacts, boolean allFactsDeclared,
+                                boolean warningsLogged, List<String> languageImportNames) {
+        this(packageImports, classImports, classLoader, outputType, options, readOnly(declaredFacts),
+                allFactsDeclared, warningsLogged, languageImportNames, Set.of(ActionContext.OUTPUT_NAME));
         // After the canonical constructor's checks, so a null argument or an import too long is reported first, as
         // it was while every context rejected the name. An engine checked its own declarations when it was built.
         if (this.declaredFacts.containsKey(ActionContext.OUTPUT_NAME)) {
@@ -261,7 +321,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
      * @throws IllegalArgumentException if the language's name is {@code null} or blank; if a package import has more
      *                                  than 1,000 characters or more than 64 dot-separated parts, or isn't a valid
      *                                  package name, a language import has more than 1,000 characters, or a fact is
-     *                                  declared with a blank name; or if a fact is declared with a name the language
+     *                                  declared with a blank name, or with a type that is neither a class nor a
+     *                                  parameterized type; or if a fact is declared with a name the language
      *                                  reserves, checked last
      * @throws IllegalStateException    if the language's
      *                                  {@link ExpressionLanguage#reservedFactNames()} returns {@code null} or a set
@@ -271,8 +332,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
     public static EngineCompileContext forLanguage(ExpressionLanguage language, Set<String> packageImports,
                                                    Set<Class<?>> classImports, ClassLoader classLoader,
                                                    Class<?> outputType, Map<String, String> options,
-                                                   Map<String, Class<?>> declaredFacts, boolean allFactsDeclared,
-                                                   List<String> languageImportNames) {
+                                                   Map<String, ? extends Type> declaredFacts,
+                                                   boolean allFactsDeclared, List<String> languageImportNames) {
         Objects.requireNonNull(language, "language must not be null");
         String name = language.name();
         if (LanguageNames.check(name, Map.of()) != null) {
@@ -281,7 +342,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         }
         Map<String, String> reserved = FactNames.reserved(Map.of(name, language));
         EngineCompileContext context = new EngineCompileContext(packageImports, classImports, classLoader,
-                outputType, options, declaredFacts, allFactsDeclared, true, languageImportNames, reserved.keySet());
+                outputType, options, readOnly(declaredFacts), allFactsDeclared, true, languageImportNames,
+                reserved.keySet());
         // Last, as build() checks them once the builder has checked each name for null and blank.
         for (String fact : context.declaredFacts().keySet()) {
             String reservedBy = reserved.get(fact);
@@ -309,7 +371,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
 
     /**
      * The logger warnings go to, in a class of its own so that this one has no static initializer: the builder checks
-     * each declared fact with {@link #checkDeclaration(String, Class)}, maybe deep in a stack, before the engine has
+     * each declared fact with {@link #checkDeclaration(String, Type)}, maybe deep in a stack, before the engine has
      * made room for initializing classes, and creating the logger may start SLF4J. The engine initializes it when it's
      * built (see FirstUseClasses).
      */
