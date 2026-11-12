@@ -140,9 +140,9 @@ steps #1137 found were 15% and 18%: on the MVEL rows at 100 rules and up (`Load`
 | Confirmed, and intended | The new cost of the release | Record it in the release's changelog entry, as below, and re-record the baseline |
 
 The changelog entry is built from PR titles, so an intended increase is recorded by the `feat:` or `fix:` title of
-the PR that made it. For one found only at release time, release-please's README offers a `BEGIN_COMMIT_OVERRIDE`
-block in the merged PR's body, read on its next run (`gh workflow run release.yml --ref main`); it is not yet used in
-this repo, so check that the release PR shows the new text.
+the PR that made it. For one found only at release time, add an
+[override block](../docs/contributing/release-notes-override.md) to the merged PR's body. release-please reads it on
+its next run (`gh workflow run release.yml --ref main`). Then check that the release PR shows the new text.
 
 To re-record the baseline after an intended increase, run the same two commands, merge the two result files into
 `baselines/load-jdk21.json`, and rewrite `baselines/load-jdk21.txt` with the new date, machine, `java -version`,

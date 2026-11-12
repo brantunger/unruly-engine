@@ -226,8 +226,9 @@ broken links, CRLF line endings and the workflows, and warns about the changed p
 
 ## 📝 Commit and PR titles
 
-PRs are squash-merged with **the PR title as the commit message**, the only input to the release automation. Titles
-follow [Conventional Commits](https://www.conventionalcommits.org/):
+PRs are squash-merged with **the PR title as the commit message**, the release automation's input unless the body
+holds an [override block](docs/contributing/release-notes-override.md). Titles follow
+[Conventional Commits](https://www.conventionalcommits.org/):
 
 ```text
 <type>: <lowercase description with no trailing period>
@@ -244,9 +245,9 @@ The type decides the next version:
 | `docs: clarify first-match semantics` | No release, and not listed in the changelog |
 
 The other accepted types, `perf`, `refactor`, `test`, `build`, `ci`, `chore` and `revert`, cut no release and don't
-appear in the changelog either; their changes ship with the next `feat:` or `fix:` release. Only `feat` and `fix`
+appear in the changelog; their changes ship with the next `feat:` or `fix:` release. Only `feat` and `fix`
 may carry the breaking-change `!`: release-please would read `deps!:` as a major release too, so the title check
-rejects it. A malformed title fails the check too, so it's caught before it can silently skip a release.
+rejects it. A malformed title fails the check too, before it can silently skip a release.
 
 ## 📚 Documentation
 
