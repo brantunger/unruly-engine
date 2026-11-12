@@ -96,5 +96,6 @@ For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [API compatibility](c
 [Build and gates](contributing/build-and-gates.md) ·
 [Dependency verification](contributing/dependency-verification.md) · [Docs style guide](contributing/style.md) ·
 [RELEASING.md](../RELEASING.md) · [The release-please token](contributing/release-token.md) ·
+[The release-notes override block](contributing/release-notes-override.md) ·
 [Windows CI hangs](contributing/windows-ci-hangs.md) · [SECURITY.md](../SECURITY.md) ·
 [Code of Conduct](../CODE_OF_CONDUCT.md)

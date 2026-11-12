@@ -100,8 +100,8 @@ rather than each shipping a version. To release them sooner, merge the release P
 needed.
 
 > [!WARNING]
-> `Release-As:` footers do **not** work here. The repository squash-merges with the PR title only, so commit bodies
-> never reach `main`.
+> A `Release-As:` footer works only in a PR body's [override block](docs/contributing/release-notes-override.md),
+> which a PR that holds several releasable changes needs.
 
 ## 🔑 Required secrets
 
