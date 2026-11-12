@@ -62,7 +62,7 @@ flowchart LR
    the two versions. The changelog entry records an intended increase, and a PR merged before the release PR
    re-records the baseline.
 4. Wait for `main`'s CI run on its head commit, the code the release holds, to pass
-   (`gh run list --workflow ci.yml --branch main --limit 1`): the release PR's own CI is one build leg.
+   (`gh run list --workflow ci.yml --branch main --limit 1`): the release PR's own CI runs fewer legs.
 5. Review the version and changelog, then **squash-merge the release PR** once CI and the title check pass; the
    [release-please token](docs/contributing/release-token.md) gives it both. Merge it weekly, or at once for a security
    fix or one whose issue's **Severity:** is medium or worse.

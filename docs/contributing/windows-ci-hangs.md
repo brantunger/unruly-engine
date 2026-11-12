@@ -187,12 +187,12 @@ the heartbeat shows memory pressure.
 
 ### Does the watchdog run on pull requests, or only on `main`?
 
-On both: it's in every `build-windows` job's Build & Test step. Docs-only and release pull requests skip
+On both: it's in every `build-windows` job's Build & Test step. Docs-only pull requests and pushes skip
 `build-windows`, so neither runs it.
 
 ### There's no Windows heartbeat on the commit. Did it break?
 
-Not when the run had no `build-windows` job, as on a docs-only or release pull request. On a fork's pull request
+Not when the run had no `build-windows` job, as on a docs-only pull request or push. On a fork's pull request
 GitHub refuses its one `POST check-runs`, so it creates no check run and only writes its lines to `heartbeat.log`,
 which the step prints. One that couldn't start leaves `The heartbeat didn't start` in the step's log. It never fails
 the step.

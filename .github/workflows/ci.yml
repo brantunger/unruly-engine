@@ -20,10 +20,10 @@ concurrency:
 jobs:
   # Sorts a pull request or a push into a scope: docs (documentation only), release (only what a release-please pull
   # request changes) or code. The build, build-windows, native-image and dependency-graph jobs skip docs; a release
-  # pull request runs one build leg, ubuntu-latest on JDK 21 with the coverage gate, and skips build-windows and
-  # native-image; docs-and-hygiene checks every run. A push is only ever docs or code, so a release's merge runs every
-  # leg, and it's docs only when the previous push's run passed. A docs push loses nothing by skipping: a cache key
-  # hashes the Gradle files, so it saves no cache, and it can't change coverage.
+  # pull request runs build-windows, native-image and one leg of the build's matrix, ubuntu-latest on JDK 21 with the
+  # coverage gate; docs-and-hygiene checks every run. A push is only ever docs or code, so a release's merge runs
+  # every leg, and it's docs only when the previous push's run passed. A docs push loses nothing by skipping: a cache
+  # key hashes the Gradle files, so it saves no cache, and it can't change coverage.
   changes:
     runs-on: ubuntu-latest
     # actions: read lets the step below look up the previous push's run.
@@ -119,11 +119,11 @@ jobs:
       # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25 and 26, on Linux only. The
       # windows-latest leg is its own job, build-windows below, because only it may write checks.
       #
-      # A release pull request runs only the ubuntu-latest JDK 21 leg: it changes a version and the changelog, and the
-      # merge's push, whose scope is never release, runs every leg. A job-level if: can't read matrix, so the matrix
-      # itself is picked here, from two literals, before any leg exists. Any scope but release, an empty one included
-      # (a changes job that failed or was cancelled), gets the full matrix. The lines below share one indent, so YAML
-      # folds them into one line, and the expression and its JSON hold no line break.
+      # Of this matrix, a release pull request runs only the ubuntu-latest JDK 21 leg: it changes a version and the
+      # changelog, and the merge's push, whose scope is never release, runs every leg. A job-level if: can't read
+      # matrix, so the matrix itself is picked here, from two literals, before any leg exists. Any scope but release,
+      # an empty one included (a changes job that failed or was cancelled), gets the full matrix. The lines below
+      # share one indent, so YAML folds them into one line, and the expression and its JSON hold no line break.
       matrix: >-
         ${{ fromJSON(needs.changes.outputs.scope == 'release'
         && '{"os": ["ubuntu-latest"], "java-version": ["21"]}'
@@ -255,10 +255,10 @@ jobs:
             **/replay_pid*.log
 
   # The windows-latest JDK 21 leg of the build, as its own job only so that it alone may write checks, for the Windows
-  # heartbeat (see its Build & Test step). It runs when the build's windows-latest leg did: not on a docs pull request
-  # or push, whose build is skipped, nor on a release pull request, whose build runs only ubuntu-latest. Its name is
-  # the one that leg's check had. Its steps are the build job's for windows-latest and JDK 21, written out: a job can't
-  # take another's steps.
+  # heartbeat (see its Build & Test step). It is skipped only on a docs pull request or push, as the build is. A
+  # release pull request runs it, though the build's matrix is then one ubuntu-latest leg, and so does an empty scope
+  # (a failed changes job). Its name is the one the build's windows-latest leg's check had. Its steps are the build
+  # job's for windows-latest and JDK 21, written out: a job can't take another's steps.
   #
   # checks: write lets any code that runs in this job, Gradle's plugins, the dependencies and the tests among them,
   # create or change a check run on any commit of the repository, a required one's name included: it comes from the
@@ -266,7 +266,7 @@ jobs:
   build-windows:
     name: build (windows-latest, 21)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'release' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' }}
     runs-on: windows-latest
     timeout-minutes: 20
     permissions:
@@ -407,10 +407,11 @@ jobs:
   # native-image's default. The engine makes MVEL's reflective optimizer the default, so MVEL generates no classes at
   # run time, which a native image can't do.
   # Then builds and runs it again with strict reachability metadata, which GraalVM says will become the default.
-  # Skipped on a docs pull request or push, or a release pull request; an empty scope (a failed changes job) runs it.
+  # Skipped only on a docs pull request or push: a release pull request runs it, and so does an empty scope (a failed
+  # changes job).
   native-image:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'release' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -559,9 +560,9 @@ jobs:
   # One result for the jobs above, for branch protection to require: a docs run or a release pull request skips build
   # legs, and a leg that doesn't run reports no per-OS check. The build passes when it succeeded (on a release pull
   # request, its one leg), or was skipped on docs; build-windows and native-image when they succeeded, or were skipped
-  # on docs or a release pull request; docs-and-hygiene only when it succeeded. Any other result fails, such as that
-  # of a job cancelled before a runner took it. The changes job isn't judged: when it fails, its scope is empty, so
-  # the build and native-image run in full, and they decide.
+  # on docs, so a release pull request that skips either fails; docs-and-hygiene only when it succeeded. Any other
+  # result fails, such as that of a job cancelled before a runner took it. The changes job isn't judged: when it
+  # fails, its scope is empty, so the build, build-windows and native-image run in full, and they decide.
   ci-result:
     if: ${{ !cancelled() }}
     needs: [ changes, build, build-windows, native-image, docs-and-hygiene ]
@@ -590,13 +591,12 @@ jobs:
           }
           failed=""
           passed "$BUILD" docs || failed="$failed build"
-          passed "$BUILD_WINDOWS" docs release || failed="$failed build-windows"
-          passed "$NATIVE_IMAGE" docs release || failed="$failed native-image"
+          passed "$BUILD_WINDOWS" docs || failed="$failed build-windows"
+          passed "$NATIVE_IMAGE" docs || failed="$failed native-image"
           [ "$DOCS_AND_HYGIENE" = success ] || failed="$failed docs-and-hygiene"
           if [ -n "$failed" ]; then
-            echo "::error::Didn't pass:$failed. The build passes when it succeeded, or was skipped on docs;" \
-              "build-windows and native-image when they succeeded, or were skipped on docs or a release pull" \
-              "request; docs-and-hygiene only when it succeeded."
+            echo "::error::Didn't pass:$failed. The build, build-windows and native-image pass when they succeeded," \
+              "or were skipped on docs; docs-and-hygiene only when it succeeded."
             exit 1
           fi
 

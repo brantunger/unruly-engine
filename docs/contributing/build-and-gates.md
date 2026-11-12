@@ -152,8 +152,8 @@ a second build reuses task outputs, even another branch's, and the task graph.
 
 A docs-only pull request or push (only `docs/` and `.md` files, none under a `src/` directory) skips the build,
 `native-image` and `dependency-graph`; a push, only if the previous push's run passed. A release PR, a new `version=`
-in `gradle.properties` plus documentation or `.release-please-manifest.json`, runs only the JDK 21 `ubuntu-latest`
-leg, coverage gate included, and skips `native-image`. `changes` decides; if it fails, everything runs. The release
+in `gradle.properties` plus documentation or `.release-please-manifest.json`, skips only the `macos-latest` leg and
+the JDK 25 and 26 tests. `changes` decides; if it fails, everything runs. The release
 workflow's `ci-gate` job holds `publish` until `main`'s full run on the released code passed `ci-result`.
 
 A new push to a pull request cancels its earlier run. A push's run isn't cancelled once started, but GitHub keeps one
