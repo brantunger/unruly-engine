@@ -15,6 +15,7 @@ every 2.0 change, and still requires Java 21.
 [← Documentation index](README.md)
 
 - [Which sections apply to you?](#-which-sections-apply-to-you)
+- [Upgrade every artifact together](#-upgrade-every-artifact-together)
 - [The api.exception package is gone](#-the-apiexception-package-is-gone)
 - [Upgrade the test kit with the engine](#-upgrade-the-test-kit-with-the-engine)
 - [Language implementers](#-language-implementers)
@@ -27,9 +28,11 @@ every 2.0 change, and still requires Java 21.
 
 | You... | Read |
 | --- | --- |
+| Set the versions of `unruly-engine`, `unruly-engine-core` or `unruly-engine-test` separately, or have a dependency that brings one in | [Upgrade every artifact together](#-upgrade-every-artifact-together) |
 | Catch `RuleCompilationException` or `RuleExecutionException`, write a `RuleListener`, or import anything else from `api.exception` | [The api.exception package is gone](#-the-apiexception-package-is-gone) |
-| Run a jar compiled against 2.x that you don't rebuild, such as a third-party listener or language | [Jars compiled against 2.x](#jars-compiled-against-2x) |
+| Run a jar compiled against 2.x that you don't rebuild, such as a third-party listener or language | [Jars compiled against 2.x](#jars-compiled-against-2x), then [Running 2.x jars on 3.0](migrating-to-3-unrebuilt-jars.md) |
 | Store or send the engine's exceptions with Java serialization | [Serialized exceptions](#serialized-exceptions) |
+| Match the engine's exception class names in log filters, alerts or tests | [Log output and messages](#log-output-and-messages) |
 | Build a GraalVM native image with strict metadata | [Native images](#native-images) |
 | Test a language with `unruly-engine-test` | [Upgrade the test kit with the engine](#-upgrade-the-test-kit-with-the-engine) |
 | Write an expression language | [The imports](#-the-apiexception-package-is-gone), then [Language implementers](#-language-implementers) |
@@ -37,9 +40,36 @@ every 2.0 change, and still requires Java 21.
 | Implement `RulesEngine` | [The imports](#-the-apiexception-package-is-gone), then [If you implement RulesEngine](#-if-you-implement-rulesengine) |
 
 Nothing in your rule text changes. In code you rebuild, the compiler catches every change on this page. It can't
-catch two: a [jar compiled against 2.x](#jars-compiled-against-2x) that you run without rebuilding it, which
-includes a [language that reads a declared fact's type as a `Class`](#a-language-compiled-against-2x), and reading
-an exception a 2.x program [serialized](#serialized-exceptions).
+catch these:
+
+- a [jar compiled against 2.x](#jars-compiled-against-2x) that you run without rebuilding it, which includes a
+  [language that reads a declared fact's type as a `Class`](#a-language-compiled-against-2x);
+- the artifacts' [versions set separately](#-upgrade-every-artifact-together);
+- a [log filter, alert or test](#log-output-and-messages) that matches an exception's class name as text;
+- a [native-image metadata list](#native-images);
+- a language that compiles and still fails the [stricter test kit](#-upgrade-the-test-kit-with-the-engine);
+- a [serialized exception](#serialized-exceptions) read across 2.x and 3.0.
+
+## 📦 Upgrade every artifact together
+
+**What changed:** the MVEL module, `unruly-engine`, and the test kit, `unruly-engine-test`, name the
+[moved types](#-the-apiexception-package-is-gone). So each links only against an `unruly-engine-core` of its own
+major.
+
+**Who is affected:** any build that sets the version of `unruly-engine-core` separately from `unruly-engine` or
+`unruly-engine-test`, or where another dependency raises or lowers one of them, a third-party language for example.
+
+**What to change:** move all three to 3.0.0, or import `unruly-engine-bom`, which pins the three to one version, as
+[Testing with the contract kit](languages/contract-kit.md#-testing-with-the-contract-kit) shows.
+
+With the two at different versions, an application builds its engine, and then every `load()` throws, and
+`validate()` returns, a `RuleCompilationException`. The first message is 2.x's `unruly-engine` on 3.0's core, the
+second 3.0's `unruly-engine` on 2.x's core:
+
+```text
+The 'mvel' expression language failed to prepare: io/github/brantunger/unruly/api/exception/InvalidExpressionException
+The 'mvel' expression language failed to prepare: io/github/brantunger/unruly/api/language/InvalidExpressionException
+```
 
 ## 🚨 The api.exception package is gone
 
@@ -72,8 +102,12 @@ find src \( -name '*.java' -o -name '*.kt' \) -exec sed -i \
     -e 's/unruly\.api\.exception\./unruly.api.language./g' {} +
 ```
 
-Or delete each old import and let your IDE add the new one. A wildcard import, `api.exception.*`, becomes
-`api.language.*`, plus `api.*` where the file names an engine exception. A Javadoc link follows the table:
+Or delete each old import and let your IDE add the new one. Replace a wildcard import, `api.exception.*`, with
+imports of the moved types by name. The recipe turns it into `api.language.*` only, so check such a file by hand.
+`api.language.*` and `api.*` bring in 38 types, `Session`, `Fact` and `Rule` among them. A file that also imports a
+class of its own by one of those names with a wildcard then fails with `reference to Session is ambiguous`.
+
+A Javadoc link follows the table:
 `.../io/github/brantunger/unruly/api/exception/RuleExecutionException.html` becomes
 `.../io/github/brantunger/unruly/api/RuleExecutionException.html`.
 
@@ -90,23 +124,15 @@ that names a moved type has to be rebuilt, as the next section says.
 ### Jars compiled against 2.x
 
 A jar compiled against 2.x isn't binary compatible with 3.0 wherever it names a moved type. Rebuild every such jar
-against 3.0: your own modules, and third-party listeners and expression languages. Don't wait for an error to tell
-you which ones, because one case gives none. What an old class does on 3.0 depends on how it uses the type:
+against 3.0: your own modules, and third-party listeners and expression languages. Most fail with
+`NoClassDefFoundError` or `NoSuchMethodError`, often wrapped in one of the engine's exceptions.
 
-| Code compiled against 2.x that... | On 3.0 |
-| --- | --- |
-| Catches or throws a moved exception | `NoClassDefFoundError` as soon as the class loads, even if nothing is thrown |
-| Reads a moved type, such as `ExpressionKind.CONDITION` or an element of `validate`'s list | `NoClassDefFoundError` when that code runs |
-| Calls a method or constructor whose signature names a moved type, such as `listener.onError(rule, error)` or `new Expression(text, kind, ruleName)` | `NoSuchMethodError` at the call |
-| Overrides `onError` in a `RuleListener`, or in a subclass of `LoggingRuleListener` | **Can load with no error, and then its `onError` is never called** |
+Don't wait for an error to tell you which ones, because three cases give your application none: a listener's
+`onError` override is never called, and a read of a moved type inside a listener callback, or inside a language's
+`close()`, is only logged at WARN. [Running 2.x jars on 3.0](migrating-to-3-unrebuilt-jars.md) lists what each case
+does, by what you see.
 
-> [!WARNING]
-> A listener compiled against 2.x that overrides `onError` can load and run on 3.0 with no error, and never be told
-> that a rule failed. `onError` is a default method whose parameter type moved, so the old override no longer
-> overrides it, and the engine calls the empty default, or `LoggingRuleListener`'s own, instead. The listener's
-> other callbacks, such as `beforeEvaluate` and `onRunError`, are still called, so it looks healthy.
-
-Rebuilding against 3.0 finds every case, the silent one too: the old import doesn't compile.
+Rebuilding against 3.0 finds every case, the silent ones too: the old import doesn't compile.
 
 ### Serialized exceptions
 
@@ -145,7 +171,12 @@ Wherever a class name is printed, a moved type shows its new package:
   [internal subclass](error-handling.md#-what-happens-on-each-failure) in `core`, as they did on 2.x.
 - **`getMessage()`** is unchanged, except where it names a class, now under the new package: what an output
   supplier threw, a [root-cause note](exception-messages.md#-shortening-and-escaping), and a run-time throw
-  that has no message. A `load()` rejection with no message still reads `was rejected by its expression language`.
+  that has no message.
+
+At `load()`, what a language threw while compiling with no message, other than an `InvalidExpressionException`, is
+reported by its class name too: `Condition for rule 'r' failed to compile:`, then
+`io.github.brantunger.unruly.api.language.UnrulyException` for a moved type. An `InvalidExpressionException` with
+no message still reads `was rejected by its expression language`.
 
 Update any log filter, alert or test that matches the old names. Catch the type rather than match its name where
 you can.
@@ -171,9 +202,18 @@ doesn't link against 3.0's `unruly-engine-core`, and a 3.0 kit doesn't link agai
 versions by hand, or a Gradle build where another dependency asks for a newer `unruly-engine-core`, which Gradle
 then picks.
 
-**What to change:** move `unruly-engine-core`, `unruly-engine` and `unruly-engine-test` to 3.0.0 together, or import
-`unruly-engine-bom`, which pins the three to one version, as
-[Testing with the contract kit](languages/contract-kit.md#-testing-with-the-contract-kit) shows.
+**What to change:** [upgrade every artifact together](#-upgrade-every-artifact-together).
+
+With the kit and the engine at different versions, your test class still compiles. A runner that selects test
+classes fails, with `NoClassDefFoundError` as the cause. Gradle's `test` task prints
+`JUnit Jupiter > initializationError FAILED` and runs no test of the module; the JUnit ConsoleLauncher's
+`--select-class` prints `resolution failed`.
+
+A class-path or package scan, the launcher's `--scan-classpath` or `--select-package`, drops the contract test with
+no message and exits 0, so a green run with fewer tests is the symptom.
+
+The 3.0 kit is also stricter: a language that compiles against 3.0 and passed the 2.35 kit can fail it, as
+[Upgrading to 3.0](languages/contract-kit-upgrading.md#-upgrading-to-30) lists.
 
 ## 🔨 Language implementers
 
@@ -197,10 +237,10 @@ took in 2.x, a `Map<String, Class<?>>` included, and need no change.
 Keep the `null` check: `declared.get(name)` is `null` for a name nobody declared, as in 2.x, and `rawClass` throws
 `NullPointerException` for `null`.
 
-Each value is one of two kinds: a `Class`, as before, for a fact declared with a class literal, a primitive still as
-its wrapper; or a `ParameterizedType` whose raw type is a `Class`, such as `java.util.List<java.lang.String>`. A
-`FactType` never reaches you: you get the type it stands for. The builder rejects every other kind of `Type` when
-the fact is declared, so you never see one.
+Each value is one of two kinds: a `Class`, as before, for a fact declared with a class or a `FactType` of a type
+with no type arguments, a primitive still as its wrapper; or a `ParameterizedType` whose raw type is a `Class`,
+such as `java.util.List<java.lang.String>`. A `FactType` never reaches you: you get the type it stands for. The
+builder rejects every other kind of `Type` when the fact is declared, so you never see one.
 
 - **`CompileContext.rawClass(type)`**, a static method new in 3.0, returns the class of either kind: the class
   itself, or `List` for `List<String>`. A language with no use for type arguments calls it, as MVEL does.
@@ -210,38 +250,27 @@ the fact is declared, so you never see one.
 
 ### A language compiled against 2.x
 
-Rebuild a language jar compiled against 2.x, as [Jars compiled against 2.x](#jars-compiled-against-2x) says: most
-also name a moved type, such as `InvalidExpressionException`, `ExpressionKind` or `source.kind()`, and fail on it
-whatever the application declares, with `NoClassDefFoundError` or `NoSuchMethodError`. This change adds one more
-failure, which is the only one for a language that names no moved type.
+Rebuild a language jar compiled against 2.x. Most name a moved type, such as `InvalidExpressionException`,
+`ExpressionKind` or `source.kind()`, and fail on it whatever the application declares. The application gets the
+error wrapped, in a message that depends on where the language names the type:
+[A language compiled against 2.x](migrating-to-3-unrebuilt-jars.md#-a-language-compiled-against-2x) lists each.
 
-The call to `declaredFacts()` itself still links, because the method's erased signature is unchanged, and it returns
-without error. What happens next depends on how the application declared its facts:
-
-| The application declares | A 2.x language that reads the type as a `Class` |
-| --- | --- |
-| Every fact with a class, `fact("tags", List.class)`, as on 2.x | Reads `interface java.util.List`, as on 2.x |
-| A fact with type arguments, `fact("tags", new FactType<List<String>>() { })` | `ClassCastException` where it reads that fact's type, by `get` or while iterating |
-| The same, and the language only prints the type or passes it on as an object | No error: it sees the `ParameterizedType`, `java.util.List<java.lang.String>` |
-
-The `ClassCastException` surfaces wherever the language reads the value. `load()` throws, and `validate()` returns,
-a `RuleCompilationException` with it as the cause, whose message depends on the place. For a read in `newCompiler`:
-
-```text
-The '<name>' expression language failed to create a compiler: class sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl cannot be cast to class java.lang.Class ...
-```
-
-For a read in `compileCondition`, it starts `Condition for rule '<rule>' failed to compile: class ...` instead.
-
-Nothing fails silently, but nothing fails until an application declares a fact with type arguments, so rebuild the
-language against 3.0 rather than wait for it: the compiler then rejects the read,
-`incompatible types: Map<String,Type> cannot be converted to Map<String,Class<?>>`.
-
-An application or a test compiled against 2.x that only declares facts, with `fact(String, Class)`, `facts(Map)` or
-`LanguageTestContexts.compile(...)`, links at those calls and runs them unchanged on 3.0.
+A language that names no moved type links and runs, until an application declares a fact with type arguments. Then
+it fails with `ClassCastException` where it reads that fact's type as a `Class`, as
+[the same page](migrating-to-3-unrebuilt-jars.md#a-language-that-reads-a-declared-facts-type-as-a-class) shows.
 
 ## 🧰 If you implement RulesEngine
 
-Nothing beyond [the imports](#-the-apiexception-package-is-gone) yet: `validate(List<Rule>)` still returns
-`List<RuleCompilationException>`, now from `api`. Changes to the `RulesEngine` interface that land in 3.0.0 are added
-here.
+**What changed:** nothing in the interface. `validate(List<Rule>)` still returns `List<RuleCompilationException>`,
+now from `api`.
+
+**Who is affected:** decorators, test doubles and any other class that implements `RulesEngine`.
+
+**What to change:** [the imports](#-the-apiexception-package-is-gone), nothing else, and rebuild it, as every jar.
+
+- **Not rebuilt,** an implementation that only delegates links and works on 3.0, because only `validate`'s generic
+  signature names a moved type. One that catches or throws one of the exceptions fails with `NoClassDefFoundError`
+  the first time the class is used. One that only creates one fails with it when that statement runs.
+- **One that stores or sends the exceptions it catches:** see [Serialized exceptions](#serialized-exceptions).
+
+Changes to the `RulesEngine` interface that land in 3.0.0 are added here.
