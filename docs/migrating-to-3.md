@@ -110,13 +110,29 @@ Rebuilding against 3.0 finds every case, the silent one too: the old import does
 
 ### Serialized exceptions
 
-The four exception classes and `InvalidExpressionException.Issue` are `Serializable`, and a serialized object names its
-class in full. A stream a 2.x program wrote holds `io.github.brantunger.unruly.api.exception.RuleExecutionException`,
-which 3.0 doesn't have, so reading it on 3.0 throws `ClassNotFoundException`; a stream 3.0 wrote fails the same way
-on 2.x. Each class keeps its `serialVersionUID`, which doesn't help: it's compared only once the class is found.
+The four exception classes and `InvalidExpressionException.Issue` are `Serializable`. Don't read a serialized engine
+exception across the 2.x and 3.0 boundary: when you upgrade, drain or drop every stream that holds one. This affects
+an application that stores or sends the engine's exceptions with Java serialization, across a cache, a queue or a
+session store for example, and above all one that runs 2.x and 3.0 side by side during a rolling upgrade.
 
-This affects an application that stores or sends the engine's exceptions with Java serialization, across a cache or
-a queue for example.
+A serialized object names its class and each superclass in full, so what happens depends on which of those names
+moved:
+
+| The serialized object | Written by 2.x, read on 3.0 | Written by 3.0, read on 2.x |
+| --- | --- | --- |
+| One whose own class moved: what `load()` throws and `validate()` returns, the plain `RuleExecutionException` a listener's `onError` or `onRunError` receives for a fatal `Error`, or any exception your code creates from one of the four classes | `ClassNotFoundException` | `ClassNotFoundException` |
+| What `run()` throws for a failed or stopped run, which the listeners also receive: an internal subclass of `RuleExecutionException` | `InvalidClassException` | `InvalidClassException` |
+| Your own subclass of one of the four classes, such as a language's rejection | `InvalidObjectException`, or `InvalidClassException` once you change its `serialVersionUID`; `ClassNotFoundException` if its cause or a suppressed exception is one whose own class moved | **No error: it reads with fields missing** |
+
+The first row fails because the reader has no class of that name. The internal subclass kept its name, so 3.0 gives
+it a new `serialVersionUID`, and each version refuses the other's. Your own subclass keeps its name too, and 3.0
+refuses a 2.x stream of one because the stream holds no `api.language.UnrulyException`.
+
+**The one silent case:** 3.0 can't make 2.x refuse your own subclass. 2.x reads one that 3.0 wrote with no error,
+with its message, cause and stack trace, and without what the engine's classes hold: `getRuleName()`,
+`getExpressionKind()` and `issues()` return `null`, and `RuleCompilationException.failures()` throws
+`NullPointerException`. Only your application can close this: change the `serialVersionUID` of each such subclass
+when you move it to 3.0, declaring one if it has none, and 2.x then fails with `InvalidClassException`.
 
 ### Log output and messages
 

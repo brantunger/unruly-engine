@@ -35,3 +35,6 @@ gradlew.bat text eol=crlf
 *.gif binary
 *.ico binary
 *.pdf binary
+
+# Serialized Java objects, which tests read as stored
+*.ser binary
