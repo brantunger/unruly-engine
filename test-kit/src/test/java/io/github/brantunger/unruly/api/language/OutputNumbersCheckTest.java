@@ -7,8 +7,13 @@ import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 import org.opentest4j.TestAbortedException;
 
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
@@ -32,8 +37,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * keeps the low bits of a {@link Long} to set an {@code int} (#1384). Each of the int setter's refusals, each
  * {@code BigDecimal}, each {@code Long}, and NaN and -Infinity on the long setter, is pinned on its own: a
  * language that mishandles one infinity, NaN, or a finite whole double below an int, and nothing else fails naming
- * it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing anything. Apart from
- * {@link ContractKitChecksTest}, which has to compile without {@link ExpressionCompiler#convertOutput}.
+ * it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing anything. And
+ * {@code outputLongsNotNarrowed}, which no hook skips, must fail a language that keeps the low bits of a {@code Long}
+ * without opting in, as one whose whole numbers are {@code Long}s doesn't, whether its actions return their properties
+ * or change the output in place (#1405). Apart from {@link ContractKitChecksTest}, which has to compile without
+ * {@link ExpressionCompiler#convertOutput}.
  */
 @DisplayName("the contract test kit fails a language that opts into converting its numbers and doesn't")
 class OutputNumbersCheckTest {
@@ -621,5 +629,244 @@ class OutputNumbersCheckTest {
                 () -> runCheck(optingIn(new ToyExpressionLanguage("toy-properties", true)), CONCURRENT));
 
         assertInstanceOf(RuleExecutionException.class, failure.getCause(), failure::toString);
+    }
+
+    /** The check of a {@link Long} beyond an int, which no hook skips. */
+    private static final String LONGS = "outputLongsNotNarrowed";
+
+    /** A conversion that narrows a {@link Long} for an {@code int} setter with {@code intValue()}, and nothing else. */
+    private static final OutputConversion NARROWING_LONGS = (value, target) ->
+            value instanceof Long number && target == int.class ? number.intValue() : value;
+
+    /**
+     * A conversion that refuses a {@link Long} above an int for an {@code int} setter and narrows the rest with
+     * {@code intValue()}, and converts nothing else.
+     */
+    private static final OutputConversion LONGS_BOUNDED_ABOVE = (value, target) -> {
+        if (!(value instanceof Long number) || target != int.class) {
+            return value;
+        }
+        if (number > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(number + " is out of an int's range");
+        }
+        return number.intValue();
+    };
+
+    /**
+     * A conversion that converts a {@link Long} an int holds for an {@code int} setter and refuses any other, and
+     * converts nothing else: what a language whose whole numbers are {@code Long}s must do.
+     */
+    private static final OutputConversion EXACT_LONGS = (value, target) ->
+            value instanceof Long number && target == int.class ? Math.toIntExact(number) : value;
+
+    /**
+     * A conversion that narrows a {@link Long} for an {@code int} setter with {@code intValue()} and refuses the
+     * result when its sign isn't the {@code Long}'s, and converts nothing else: an overflow test that catches a
+     * {@code Long} whose low 32 bits have the other sign, as 3000000000's do, and not one whose low 32 bits keep it,
+     * as 5000000000's do.
+     */
+    private static final OutputConversion LONGS_SIGN_CHECKED = (value, target) -> {
+        if (!(value instanceof Long number) || target != int.class) {
+            return value;
+        }
+        int narrowed = number.intValue();
+        if (narrowed < 0 != number < 0) {
+            throw new IllegalArgumentException(number + " is out of an int's range");
+        }
+        return narrowed;
+    };
+
+    /**
+     * A conversion that does as {@link #LONGS_SIGN_CHECKED} does, and refuses a {@link Long} above an int as well, so
+     * that only one below an int whose low 32 bits are negative too is narrowed.
+     */
+    private static final OutputConversion LONGS_SIGN_CHECKED_BOUNDED_ABOVE = (value, target) -> {
+        if (value instanceof Long number && target == int.class && number > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(number + " is out of an int's range");
+        }
+        return LONGS_SIGN_CHECKED.convert(value, target);
+    };
+
+    /**
+     * A contract test for {@code language}, whose whole numbers are Java's and whose actions return their properties,
+     * which doesn't opt into {@code outputNumbersConverted}.
+     */
+    private static ExpressionLanguageContractTest returningProperties(ExpressionLanguage language) {
+        return new ToyPropertiesContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        };
+    }
+
+    /** A contract test for {@code language}, whose actions change the output in place, which doesn't opt in either. */
+    private static ExpressionLanguageContractTest inPlace(ExpressionLanguage language) {
+        return new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return language;
+            }
+        };
+    }
+
+    /** Runs every one of the kit's checks on the contract test, and returns the name of each that failed. */
+    private static List<String> failedChecks(ExpressionLanguageContractTest test) {
+        List<String> failed = new ArrayList<>();
+        for (Method check : ExpressionLanguageContractTest.class.getDeclaredMethods()) {
+            if (!check.isAnnotationPresent(Test.class)) {
+                continue;
+            }
+            try {
+                runCheck(test, check.getName());
+            } catch (TestAbortedException e) {
+                // Skipped by one of the toy's hooks, as it is in the toy's own contract test.
+            } catch (Throwable e) {
+                failed.add(check.getName());
+            }
+        }
+        return failed;
+    }
+
+    @Test
+    @DisplayName("a language whose whole numbers are Longs, which doesn't opt in, and whose convertOutput narrows a"
+            + " Long with intValue(), fails only the Long check (#1405)")
+    void narrowingLongsWithoutOptingInFails() {
+        ExpressionLanguage narrowing = converting(new ToyExpressionLanguage("toy-properties", true), NARROWING_LONGS);
+
+        assertEquals(List.of(LONGS), failedChecks(returningProperties(narrowing)));
+    }
+
+    @Test
+    @DisplayName("the failure of a language that narrows a Long without opting in names the Long, the setter and the"
+            + " low 32 bits it set (#1405)")
+    void narrowingLongsWithoutOptingInReported() {
+        ExpressionLanguage narrowing = converting(new ToyExpressionLanguage("toy-properties", true), NARROWING_LONGS);
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(returningProperties(narrowing), LONGS));
+
+        assertEquals("the Long 3000000000 was set on setCreditScore(int), as -1294967296, or the run failed for"
+                + " another reason: convertOutput must refuse a Long the target doesn't hold, or return it unchanged,"
+                + " not narrow it", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a Long above an int and narrows the rest with intValue(), without opting in,"
+            + " fails only the Long check, naming the Long below an int (#1405)")
+    void narrowingLongsBelowIntWithoutOptingInFails() {
+        ExpressionLanguage boundedAbove = converting(new ToyExpressionLanguage("toy-properties", true),
+                LONGS_BOUNDED_ABOVE);
+
+        assertEquals(List.of(LONGS), failedChecks(returningProperties(boundedAbove)));
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(returningProperties(boundedAbove), LONGS));
+        assertTrue(failure.getMessage().startsWith("the Long -3000000000 was set on setCreditScore(int), as"
+                + " 1294967296,"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose actions change the output in place, and whose convertOutput narrows a Long with"
+            + " intValue(), fails only the Long check (#1405)")
+    void narrowingLongsInPlaceFails() {
+        ExpressionLanguage narrowing = converting(new ToyExpressionLanguage(), NARROWING_LONGS);
+
+        assertEquals(List.of(LONGS), failedChecks(inPlace(narrowing)));
+    }
+
+    @Test
+    @DisplayName("the failure of a language whose actions change the output in place says what its convertOutput"
+            + " returned for the Long (#1405)")
+    void narrowingLongsInPlaceReported() {
+        AssertionFailedError above = assertThrows(AssertionFailedError.class,
+                () -> runCheck(inPlace(converting(new ToyExpressionLanguage(), NARROWING_LONGS)), LONGS));
+        AssertionFailedError below = assertThrows(AssertionFailedError.class,
+                () -> runCheck(inPlace(converting(new ToyExpressionLanguage(), LONGS_BOUNDED_ABOVE)), LONGS));
+
+        assertEquals("the language's actions change the output in place, so the writer never asks its convertOutput,"
+                + " but asked to convert the Long 3000000000 for setCreditScore(int) it returned the Integer"
+                + " -1294967296, which the setter would take: convertOutput must refuse a Long the target doesn't"
+                + " hold, or return it unchanged, not narrow it", above.getMessage());
+        assertTrue(below.getMessage().contains(" asked to convert the Long -3000000000 for setCreditScore(int) it"
+                + " returned the Integer 1294967296,"), below.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that returns the Long unchanged, as the default convertOutput does, or refuses it, or"
+            + " converts only a Long an int holds, passes the Long check, whether its actions return properties or"
+            + " change the output in place, as does one whose numbers are doubles (#1405)")
+    void unchangedOrRefusedLongsPass() throws Throwable {
+        runCheck(returningProperties(new ToyExpressionLanguage("toy-properties", true)), LONGS);
+        runCheck(inPlace(new ToyExpressionLanguage()), LONGS);
+        runCheck(optingIn(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true))), LONGS);
+        OutputConversion refusing = (value, target) -> {
+            throw new IllegalArgumentException(value + " isn't a " + target.getName());
+        };
+        runCheck(returningProperties(converting(new ToyExpressionLanguage("toy-properties", true), refusing)), LONGS);
+        runCheck(inPlace(converting(new ToyExpressionLanguage(), refusing)), LONGS);
+        assertEquals(List.of(), failedChecks(returningProperties(
+                converting(new ToyExpressionLanguage("toy-properties", true), EXACT_LONGS))));
+        assertEquals(List.of(), failedChecks(inPlace(converting(new ToyExpressionLanguage(), EXACT_LONGS))));
+    }
+
+    @Test
+    @DisplayName("a language that narrows a Long with intValue() and refuses only a result whose sign changed, which"
+            + " 5000000000's low 32 bits don't, fails only the Long check, naming that Long, whether its actions"
+            + " return properties or change the output in place (#1405)")
+    void signCheckedLongsFail() {
+        assertEquals(List.of(LONGS), failedChecks(returningProperties(
+                converting(new ToyExpressionLanguage("toy-properties", true), LONGS_SIGN_CHECKED))));
+        assertEquals(List.of(LONGS), failedChecks(inPlace(converting(new ToyExpressionLanguage(),
+                LONGS_SIGN_CHECKED))));
+
+        AssertionFailedError returned = assertThrows(AssertionFailedError.class, () -> runCheck(returningProperties(
+                converting(new ToyExpressionLanguage("toy-properties", true), LONGS_SIGN_CHECKED)), LONGS));
+        AssertionFailedError inPlace = assertThrows(AssertionFailedError.class,
+                () -> runCheck(inPlace(converting(new ToyExpressionLanguage(), LONGS_SIGN_CHECKED)), LONGS));
+        assertTrue(returned.getMessage().startsWith("the Long 5000000000 was set on setCreditScore(int), as"
+                + " 705032704,"), returned.getMessage());
+        assertTrue(inPlace.getMessage().contains(" asked to convert the Long 5000000000 for setCreditScore(int) it"
+                + " returned the Integer 705032704,"), inPlace.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a Long above an int, and below it only a result whose sign changed, which"
+            + " -5000000000's low 32 bits don't, fails only the Long check, naming that Long (#1405)")
+    void signCheckedLongsBelowIntFail() {
+        ExpressionLanguage boundedAbove = converting(new ToyExpressionLanguage("toy-properties", true),
+                LONGS_SIGN_CHECKED_BOUNDED_ABOVE);
+
+        assertEquals(List.of(LONGS), failedChecks(returningProperties(boundedAbove)));
+        AssertionFailedError returned = assertThrows(AssertionFailedError.class,
+                () -> runCheck(returningProperties(boundedAbove), LONGS));
+        AssertionFailedError inPlace = assertThrows(AssertionFailedError.class, () -> runCheck(
+                inPlace(converting(new ToyExpressionLanguage(), LONGS_SIGN_CHECKED_BOUNDED_ABOVE)), LONGS));
+        assertTrue(returned.getMessage().startsWith("the Long -5000000000 was set on setCreditScore(int), as"
+                + " -705032704,"), returned.getMessage());
+        assertTrue(inPlace.getMessage().contains(" asked to convert the Long -5000000000 for setCreditScore(int) it"
+                + " returned the Integer -705032704,"), inPlace.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose actions change the output in place, and whose convertOutput narrows a Long to a"
+            + " Short, a Byte or a Character, each of which the writer widens for an int setter, fails only the Long"
+            + " check, naming what it returned (#1405)")
+    void narrowingLongsToWhatWidensInPlaceFails() {
+        Map<String, OutputConversion> narrowings = new LinkedHashMap<>();
+        narrowings.put("the Short 24064,", (value, target) ->
+                value instanceof Long number && target == int.class ? (Object) number.shortValue() : value);
+        narrowings.put("the Byte 0,", (value, target) ->
+                value instanceof Long number && target == int.class ? (Object) number.byteValue() : value);
+        narrowings.put("the Character \u5e00,", (value, target) ->
+                value instanceof Long number && target == int.class ? (Object) (char) number.longValue() : value);
+
+        narrowings.forEach((returned, narrowing) -> {
+            assertEquals(List.of(LONGS), failedChecks(inPlace(converting(new ToyExpressionLanguage(), narrowing))),
+                    returned);
+            AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                    () -> runCheck(inPlace(converting(new ToyExpressionLanguage(), narrowing)), LONGS));
+            assertTrue(failure.getMessage().contains(" asked to convert the Long 3000000000 for setCreditScore(int)"
+                    + " it returned " + returned), failure.getMessage());
+        });
     }
 }
