@@ -93,9 +93,8 @@ module: then see [A named module with Maven](beyond-the-contract-kit.md#a-named-
 language. Extend it and supply expressions in your language, one method for each hook.
 
 The checks supply facts named `x`, `y`, `applicant` and `nest`, so your language must not reserve them. If it does,
-every check that builds an engine fails before building it, with `reservedFactNames() reserves [<names>], which the
-contract kit's checks supply as facts: the kit can't check a language that reserves x, y, applicant or nest`, where
-`<names>` are those of the four it reserves, sorted. The kit's checks:
+every check that builds an engine fails before building it, with a message starting
+`reservedFactNames() reserves [<names>]`, naming those it reserves, sorted. The kit's checks:
 
 | Check | Hooks | Skippable? | Passes when |
 | --- | --- | --- | --- |
@@ -108,6 +107,8 @@ contract kit's checks supply as facts: the kit can't check a language that reser
 | `outputNumbersConverted` | `alwaysTrue`, `putFact` | `convertsOutputNumbers()` returns `false`, the default | Through the default writer, `putFact("creditScore", "x")` sets a `WritableApplicant`'s `setCreditScore(int)` to 1 from the whole `Double` 1.0, and `putFact("balance", "x")` an `ExpressionLanguageContractTest.Account`'s `setBalance(long)` to 3000000000 from 3.0E9; each value [Output conversion](output-conversion.md#-an-example) lists as refused fails the rule, naming it, and leaves the property |
 | `outputNumbersConvertedConcurrently` | `alwaysTrue`, `putFact` | `convertsOutputNumbers()` returns `false`, the default | 8 threads, released together, 200 runs each, each set its own `WritableApplicant`'s credit score to its own whole `Double`; a race is caught only when it happens |
 | `outputUnconvertibleValueFailsTheRule` | `alwaysTrue`, `putFact` | No | Through the default writer, `putFact("name", "x")` given the `Double` 1.5 fails the rule with `Failed to set 'name' on the output for rule 'r': ...` and leaves an `ExpressionLanguageContractTest.Customer`'s `setName(String)` property as it was; with actions that change the output in place, the run passes, the `Customer` stays as it was, and `convertOutput(1.5, String.class)` returns neither `null` nor a `String`, or throws |
+| `outputLongsNotNarrowed` | `alwaysTrue`, `putFact` | No | `putFact("creditScore", "x")` given each `Long` [Output conversion](output-conversion.md#-an-example) lists, fails the rule, leaving `setCreditScore(int)`'s property; with actions that change the output in place, `convertOutput(x, int.class)` returns nothing the setter takes |
+| `declaredTypeArgumentsAccepted` | `alwaysTrue`, `putFact` | No | With `x` declared as a `List<String>` after `configure`, a rule loads and outputs exactly `{seen=[a]}` |
 | `actionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariable`, `putFact`, `putVariable`, `variableEquals`, `actionVariablesLastTheRun` | `declareVariable()` returns `null` | A later rule still sees the fact's value, the run that declares `y` while `y` is a fact doesn't throw, no later run's condition or action sees the declared variable, and a later rule in the same run doesn't, or must if `actionVariablesLastTheRun()` returns `true` |
 | `sharedStateStaysLocal` | `factEquals`, `changeSharedState`, `sharedStateEquals`, `putFact` | `changeSharedState()` returns `null` | `load()` refuses the changing action, or `sharedStateEquals` is false before the change and in a later run, even when the action fails |
 | `failedActionVariablesStayLocal` | `alwaysTrue`, `factEquals`, `declareVariableThenFail`, `putVariable` | `declareVariableThenFail()` returns `null` | `load()` refuses the name the later rule reads, or the run whose action declares a variable and then fails throws, and a later run doesn't see the variable |
@@ -144,21 +145,19 @@ Only the fourteen `@Nullable` hooks may return `null`: `assignment`, `declareVar
 `conditionDeclaration`, `declareVariableThenFail`, `bothConditions`, `changeSharedState`, `sharedStateEquals` and
 `endlessAction`.
 
-- `comparesWholeNumbersByValue()` skips its check by returning `false`, and `usableFactNames()` by returning an empty
-  collection.
 - `sharedStateEquals()` must be false, not throw, until an action changes the state, and not `null` once
   `changeSharedState()` isn't.
 - A language with no assignment syntax, such as CEL or JsonLogic, returns `null` from `assignment()`, not a syntax
   error.
-- `syntaxError()` and `actionSyntaxError()`, which defaults to `syntaxError()`, can't be skipped.
+- `actionSyntaxError()` defaults to `syntaxError()`, and neither can be skipped.
 - `language()` is called for each check and, except in `unreservedOutputReadAsFact` and `concurrentPrepares`, for
   each engine a check builds, so return a new instance.
 
 `convertsOutputNumbers()`, added in 2.32.0, skips `outputNumbersConverted` and `outputNumbersConvertedConcurrently` by
 returning `false`, the default. Return `true` once your language [converts](output-conversion.md) the numbers its
 actions return, as one whose numbers are all doubles does, or any language that converts a whole `Double` its actions
-return; a language whose whole numbers are `Integer`s or `Long`s needs no conversion for the other checks, and fails
-these if it opts in without one.
+return; a language whose whole numbers are `Integer`s or `Long`s fails these if it opts in without converting, and
+`outputLongsNotNarrowed` checks its `Long`s.
 
 The check writes the fact through the action `putFact("creditScore", "x")` builds, so that action must return its
 property through `ActionResult.set(...)`: the engine converts and writes only properties returned that way, and
@@ -167,7 +166,7 @@ property through `ActionResult.set(...)`: the engine converts and writes only pr
 `convertsOutputNumbers()` `false`.
 
 `outputUnconvertibleValueFailsTheRule`, added in 2.34.0, writes `name` the same way, and asks a compiler made with
-`compileContext()` directly when your actions change the output in place.
+`compileContext()` directly when your actions change the output in place, as `outputLongsNotNarrowed` does.
 
 `endlessAction()`, added in 2.28.0, returns an action that runs until its run passes its deadline, such as
 `while (true) {}`, in a language that stops it with [`onCancel`](custom.md#-stopping-a-run) or by polling
@@ -186,18 +185,16 @@ so per-thread state stays there.
 
 For `usableFactNamesAccepted`, return the names your `checkFactName` might wrongly reject, such as `credit_score2`.
 
-How each check builds its engines, what it wraps, and its limits: see
-[How each check runs](beyond-the-contract-kit.md#-how-each-check-runs).
-
 ### Upgrading the kit
 
-[Upgrading the contract test kit](contract-kit-upgrading.md) lists, for each version, the checks added or made
-stricter, and what each new failure means.
+[Upgrading the contract test kit](contract-kit-upgrading.md) lists each version's new and stricter checks and their
+failures.
 
 ### Beyond the kit
 
-[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises, how each check runs, a
-language that needs declared facts, imports or options, `LanguageTestContexts`, and a named module with Maven.
+[Testing beyond the contract kit](beyond-the-contract-kit.md) covers what no check exercises,
+[how each check runs](beyond-the-contract-kit.md#-how-each-check-runs), a language that needs declared facts, imports
+or options, `LanguageTestContexts`, and a named module with Maven.
 
 ## 🚧 Gotchas
 

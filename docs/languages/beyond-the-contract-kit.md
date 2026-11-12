@@ -31,7 +31,8 @@ whatever cancelled it, so an interrupt that lands as the adapter cancels for the
 the timeout.
 
 **The `CompileContext`.** Every check compiles with the context `configure` or `compileContext()` gives, empty by
-default, so a language that ignores imports, options, declared facts and the output type passes. Test each yourself;
+default, so a language that ignores imports, options, declared facts and the output type passes. A declared type cast
+to `Class` only when a condition reads the fact passes too. Test each yourself;
 [Implementing the interfaces](custom.md#-implementing-the-interfaces) says what the context carries.
 
 ## 🔧 A language that needs declared facts, imports or options
@@ -43,9 +44,8 @@ one. For `languageImports(...)`, use the
 The checks' expressions read `x`, `y`, `applicant`, `nest` and the names `usableFactNames()` returns. `x` is also a
 `Boolean`, a `String` and `null`, and `applicant` a record, two beans and a map, so declare both as `Object`: a fact of
 another type fails the run before your language sees it. Declare `nest` as `Object` too, or as
-`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type. Your language
-must not reserve `x`, `y`, `applicant` or `nest`: every check that builds an engine
-[then fails](contract-kit.md#-testing-with-the-contract-kit).
+`ExpressionLanguageContractTest.Nesting` if your language resolves properties from the declared type. It must not
+[reserve](contract-kit.md#-testing-with-the-contract-kit) those four names.
 
 ```java
 @Override
@@ -62,7 +62,8 @@ protected CompileContext compileContext() {
 
 If your language compiles only against declared facts and doesn't reserve or reject `output`, declare it as `Object` in
 `configure` too: `unreservedOutputReadAsFact` runs a rule that reads a fact by that name. A language that reserves it
-mustn't, since `build()` then fails.
+mustn't, since `build()` then fails. `declaredTypeArgumentsAccepted` redeclares `x` as a `List<String>` after
+`configure`.
 
 `configure` must not call `requireDeclaredFacts()`, since each run supplies only its check's facts, or set
 `runTimeout(...)`, `maxCopies(...)` below 2, another language, `defaultLanguage(...)` or `outputWriter(...)`: the
@@ -79,9 +80,10 @@ checks table, and where each falls short.
 
 Each check but `evaluateAgreesWithDetail` builds an engine with `allMatches(HashMap::new).language(language())` and
 [`configure(builder)`](#-a-language-that-needs-declared-facts-imports-or-options), which adds nothing by default, and
-closes it however the check ends. `copiesAtLoad` and `sessionsClosed` then add `copiesAtLoad(2)`, `compilerClosed`
-adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two, and `outputNumbersConvertedConcurrently` and
-`outputUnconvertibleValueFailsTheRule` one each, writing a bean with the default writer.
+closes it however the check ends. `copiesAtLoad` and `sessionsClosed` add `copiesAtLoad(2)`, `compilerClosed`
+adds `copiesAtLoad(1)`, and `outputNumbersConverted` builds two, `outputLongsNotNarrowed` one per `Long`,
+`outputNumbersConvertedConcurrently` and `outputUnconvertibleValueFailsTheRule` one each, writing a bean with the
+default writer.
 
 `concurrentPrepares` builds eight engines with one instance of your language. It makes the eight builders, calling
 `configure` for each, on the test's thread, then releases eight threads together. Each calls `prepare()`, builds its
@@ -144,8 +146,7 @@ earlier in the JVM has prepared a language of that class, its first answers are 
 
 `concurrentPrepares` has the same blind spot: a runtime your language sets up in a static field or initializer is
 checked only if nothing earlier in the JVM prepared a language of its class. And a race is likely, not
-certain, to show: a window a few instructions wide may close before a second thread reaches it. Nor does it check
-that `prepare()` is cheap once it has done its work.
+certain, to show. Nor does it check that `prepare()` is cheap once it has done its work.
 
 `unreservedOutputReadAsFact` checks `output` only. A name your expressions bind to a context or helper object is
 yours to [reserve](custom.md#-fact-names), or reject in `checkFactName`: no check finds it.
