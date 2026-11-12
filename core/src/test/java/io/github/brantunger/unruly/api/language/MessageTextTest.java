@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #728: the text helper a language shortens and escapes text with, as the engine does. What it returns is a contract
- * for 2.x, so every case here is written out rather than read from the engine.
+ * for 3.x, so every case here is written out rather than read from the engine.
  */
 @DisplayName("MessageText: shortening and escaping text for a message, as the engine does")
 class MessageTextTest {
@@ -278,7 +278,7 @@ class MessageTextTest {
                 assertThrows(NullPointerException.class, () -> MessageText.quoteWithin(null, 1)).getMessage());
     }
 
-    // #1152: the limits a language works out its room from. javac inlines them, so they can't change in 2.x.
+    // #1152: the limits a language works out its room from. javac inlines them, so they can't change in 3.x.
     @Test
     @DisplayName("the published limits are 200 characters for a name and 1,000 for other text, as quote and truncate "
             + "keep")

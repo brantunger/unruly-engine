@@ -21,8 +21,10 @@ import java.util.List;
  * <p>
  * <b>Implementing:</b> you may implement this interface, for example to decorate an engine or as a test double.
  * Implement {@link #load(List)}, {@link #validate(List)}, {@link #runWithResult(FactStore, RunOptions)} and
- * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults. A
- * method added in a later 2.x release is a {@code default} method, so an existing implementation keeps compiling.
+ * {@link #rules()}; {@link #run(FactStore)}, {@link #runWithResult(FactStore)} and {@link #close()} have defaults.
+ * Within a major, an added method is a {@code default} method, so an existing implementation keeps compiling. An
+ * implementation written for 2.x changes its imports for 3.0: see
+ * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/migrating-to-3.md">Migrating to 3.0</a>.
  * {@link RunResult#of(Object, List, List, String)} and {@link RuleSetInfo#of(List, String, java.time.Instant)} create
  * the values an implementation returns.
  * </p>

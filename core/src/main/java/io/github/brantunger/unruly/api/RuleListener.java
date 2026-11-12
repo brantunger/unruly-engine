@@ -34,9 +34,11 @@ import java.util.Map;
  * </p>
  *
  * <p>
- * <b>Implementing:</b> every callback has a default that does nothing, so override only the ones you need. A callback
- * added in a later 2.x release also has a default that does nothing, so an existing listener keeps compiling and
- * working.
+ * <b>Implementing:</b> every callback has a default that does nothing, so override only the ones you need. Within a
+ * major, a callback added later also has a default that does nothing, so an existing listener keeps compiling and
+ * working. A listener written for 2.x that overrides {@code onError} changes an import and is rebuilt for 3.0, or its
+ * override is no longer called: see
+ * <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/migrating-to-3.md">Migrating to 3.0</a>.
  * </p>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/listeners-and-logging.md">Listeners &amp;
