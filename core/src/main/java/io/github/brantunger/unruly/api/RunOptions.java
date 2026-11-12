@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.internal.Sorting;
-import io.github.brantunger.unruly.internal.Whitespace;
+import io.github.brantunger.unruly.core.Sorting;
+import io.github.brantunger.unruly.core.Whitespace;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
@@ -20,7 +20,7 @@ import java.util.Set;
  *
  * <p>
  * It's immutable: each {@code with} method returns a copy with one setting changed, so a shared instance can't be
- * changed by another caller. It's a final class rather than a record, so a later 2.x release can add settings without
+ * changed by another caller. It's a final class rather than a record, so a later 3.x release can add settings without
  * breaking code compiled against this one. {@code equals} and {@code hashCode} compare every setting; one added in a
  * later release takes part too.
  * </p>

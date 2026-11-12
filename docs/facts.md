@@ -1,6 +1,6 @@
 # 📁 Facts
 
-Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**, which is
+Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**,
 any Java object.
 
 **Who it's for:** rule authors and application developers.
@@ -132,20 +132,20 @@ A fact whose value is `null` and a fact that isn't there are different things to
 A language tells the first two from the third with `facts().containsKey(name)`. `FactStore.getValue(name)` can't:
 it returns `null` in all three cases.
 
-**In MVEL,** `x == null` is `true` for the first two, and fails the run for a missing fact. Use `isdef x` to check
+**In MVEL,** `x == null` is `true` for the first two, and fails the run for a missing fact. `isdef x` checks
 that a fact was supplied. See [Null and missing facts in MVEL](languages/mvel.md#null-and-missing-facts) for the
 messages and for a `Map` fact without a key.
 
 ## 🧲 Reading a fact's properties
 
 The engine hands each language the fact values as they are. It doesn't read properties itself: when a rule writes
-`applicant.creditScore`, the rule's language decides what that means and what happens when the property isn't there.
+`applicant.creditScore`, the rule's language decides what that means and what happens without the property.
 
 | Fact | MVEL | A language using `FactProperties` |
 | --- | --- | --- |
 | Public record or JavaBean | ✅ accessor or getter | ✅ component or getter |
-| `Map` with the key | ✅ | ✅ exact `String` key |
-| `Map` without the key | ❌ `could not access: <key>` | ❌ `IllegalArgumentException` |
+| `Map` with the key | ✅ `order['key']`; `order.key` unless `key` is [named like a method](languages/mvel-gotchas.md#-comparison-gotchas), as `size` is | ✅ exact `String` key |
+| `Map` without the key | ❌ `order.key`: `could not access: <key>`; ⚠️ `order['key']` is `null`, [silently](languages/mvel-gotchas.md#-comparison-gotchas) | ❌ `IllegalArgumentException` |
 | Public field, no getter | ✅ | ❌ not a property |
 | Class that isn't public | ⚠️ only through a public interface declaring the accessor, even on the class path | ✅ through a public interface, or where its package is open |
 
@@ -237,8 +237,8 @@ changes it, but they also share every value in it, so a value one run's rules ch
 
 ## 📣 Declaring facts
 
-Tell the engine which facts its rules use, and what type each one is. Nothing has to be declared, and an engine that
-declares nothing behaves exactly as before.
+Tell the engine which facts its rules use, and what type each one is: a class, or a
+[`FactType`](fact-types.md) to say what a list holds. Nothing has to be declared.
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
@@ -284,9 +284,8 @@ never turns an `Integer` into a `Long`, so declare `long.class` to accept narrow
 A `null` passes a primitive declaration too, and stays `null`, where Java would throw `NullPointerException` as it
 unboxed it. What happens next depends on where it goes. The default output writer never passes it to a primitive
 setter, so it fails the rule unless another setter of that name takes `null`. In MVEL, `output.x = n` stores `0`
-through an `int` setter, but into a public `int` field only on some runs, failing the rule on the others, while
-`output.setX(n)` fails the rule; see
-[Assignment gotchas](languages/mvel-gotchas.md#-assignment-gotchas).
+through an `int` setter, and `output.setX(n)` fails the rule; see
+[Assignment gotchas](languages/mvel-gotchas.md#-assignment-gotchas), also for a public `int` field.
 
 ### Catching a typo when the rules load
 

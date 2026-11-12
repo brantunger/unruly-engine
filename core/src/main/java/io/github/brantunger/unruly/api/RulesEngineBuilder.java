@@ -5,9 +5,10 @@ import io.github.brantunger.unruly.core.CopyLimit;
 import io.github.brantunger.unruly.core.EngineCompileContext;
 import io.github.brantunger.unruly.core.EngineConfiguration;
 import io.github.brantunger.unruly.core.Engines;
-import io.github.brantunger.unruly.internal.LanguageNames;
+import io.github.brantunger.unruly.core.LanguageNames;
 import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Type;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -119,7 +120,7 @@ public final class RulesEngineBuilder<O> {
     // null until the engine is built for the system clock, and the output writer below for beansAndMaps(): reading
     // either initializes classes, which build() leaves until the engine has made room for that (see Engines).
     private @Nullable Clock runClock;
-    private final Map<String, Class<?>> factTypes = new LinkedHashMap<>();
+    private final Map<String, Type> factTypes = new LinkedHashMap<>();
     private boolean allFactsDeclared;
     private Class<? super O> outputClass = Object.class;
     private @Nullable OutputWriter<? super O> writer;
@@ -176,10 +177,9 @@ public final class RulesEngineBuilder<O> {
      *
      * <p>
      * No match returns {@code null}, like the other engines. More than one match fires nothing, doesn't call the output
-     * supplier, and throws a {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} that names each
-     * matched rule in priority order and belongs to no rule: listeners get {@code afterEvaluate} for every rule the
-     * run doesn't skip, then {@code onRunError}. It depends on nothing language-specific: it counts the conditions
-     * that were true.
+     * supplier, and throws a {@link RuleExecutionException} that names each matched rule in priority order and belongs
+     * to no rule: listeners get {@code afterEvaluate} for every rule the run doesn't skip, then {@code onRunError}. It
+     * depends on nothing language-specific: it counts the conditions that were true.
      * </p>
      *
      * @param outputFactory Creates the output object. It is called once per run that matches exactly one rule and
@@ -307,9 +307,9 @@ public final class RulesEngineBuilder<O> {
      * language's compiler when a rule list given to {@link RulesEngine#load(List)} or
      * {@link RulesEngine#validate(List)} has a rule in that language, and creates the default language's compiler for a
      * list with no rules too. A throw from {@code newCompiler} then fails that rule list: {@code load()} throws, and
-     * {@code validate()} returns, a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with the
-     * throw as its cause. A language no such rule list uses never has its imports checked.
-     * Adding imports for the same language again adds them after the others.
+     * {@code validate()} returns, a {@link RuleCompilationException} with the throw as its cause. A language no such
+     * rule list uses never has its imports checked. Adding imports for the same language again adds them after the
+     * others.
      *
      * <p>
      * An import may have at most 1,000 characters, which {@link #build()} checks. {@link #build()} also fails if
@@ -503,29 +503,63 @@ public final class RulesEngineBuilder<O> {
      *                                  {@code load()} of such a rule list, which {@code validate()} reports too
      */
     public RulesEngineBuilder<O> fact(String name, Class<?> type) {
-        EngineCompileContext.checkDeclaration(name, type);
-        factTypes.put(name, type);
+        return fact(name, (Type) type);
+    }
+
+    /**
+     * Declares a fact the rules use, as {@link #fact(String, Class)} does, with a type that can carry type arguments,
+     * such as {@code List<String>}, so a language that checks its rules when they load can check what they do with
+     * the fact's elements:
+     *
+     * <pre>{@code
+     * builder.fact("tags", new FactType<List<String>>() { })
+     * }</pre>
+     *
+     * <p>
+     * The type is a {@link Class}, a {@link java.lang.reflect.ParameterizedType} whose raw type is a class, as another
+     * library's type token gives one, or a {@link FactType}, which is kept as the type it stands for. Only the type
+     * itself is checked: its type arguments reach the languages as written, wildcards and type variables included. A
+     * run's value is checked against the type's class alone, {@link java.util.List} for {@code List<String>}, as
+     * {@link io.github.brantunger.unruly.api.language.CompileContext#rawClass(Type) CompileContext.rawClass(type)}
+     * gives it: a value's type arguments are erased, so the engine can't check that a list's elements are strings,
+     * and a language that relied on the declaration finds out when a rule reads one.
+     * </p>
+     *
+     * @param name The fact's name, as rules refer to it
+     * @param type The type a run's value must be an instance of, by its class, or, for a primitive class, be widened
+     *             to
+     * @return This builder
+     * @throws NullPointerException     if {@code name} or {@code type} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is blank, or reserved, as for {@link #fact(String, Class)}; or
+     *                                  if {@code type} is a {@link java.lang.reflect.TypeVariable}, a
+     *                                  {@link java.lang.reflect.WildcardType}, a
+     *                                  {@link java.lang.reflect.GenericArrayType}, such as {@code List<String>[]}, a
+     *                                  {@code ParameterizedType} whose raw type isn't a class or an interface, or
+     *                                  any other implementation of {@code Type}: none has a class of its own to
+     *                                  check a run's value against. The message names the type
+     */
+    public RulesEngineBuilder<O> fact(String name, Type type) {
+        factTypes.put(name, EngineCompileContext.checkDeclaration(name, type));
         return this;
     }
 
     /**
-     * Declares several facts at once, as {@link #fact(String, Class)} does one.
+     * Declares several facts at once, as {@link #fact(String, Type)} does one.
      *
      * @param types The type of each fact, by name; copied, so later changes to the map don't change the engine
      * @return This builder
      * @throws NullPointerException     if {@code types}, a name or a type is {@code null}; nothing is declared
-     * @throws IllegalArgumentException if a name is blank; nothing is declared. A name one of the engine's languages
-     *                                  reserves is rejected by {@link #build()}, or by {@code load()}, as for
-     *                                  {@link #fact(String, Class)}
+     * @throws IllegalArgumentException if a name is blank, or a type is one no fact can be declared with; nothing is
+     *                                  declared. A name one of the engine's languages reserves is rejected by
+     *                                  {@link #build()}, or by {@code load()}, as for {@link #fact(String, Class)}
      */
-    public RulesEngineBuilder<O> facts(Map<String, ? extends Class<?>> types) {
+    public RulesEngineBuilder<O> facts(Map<String, ? extends Type> types) {
         Objects.requireNonNull(types, "types must not be null");
         // Each of the map's own entries is checked, before a copy could merge two equal names, and before any is
         // declared, so a rejected map leaves the builder as it was.
-        Map<String, Class<?>> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, ? extends Class<?>> entry : types.entrySet()) {
-            EngineCompileContext.checkDeclaration(entry.getKey(), entry.getValue());
-            copy.put(entry.getKey(), entry.getValue());
+        Map<String, Type> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, ? extends Type> entry : types.entrySet()) {
+            copy.put(entry.getKey(), EngineCompileContext.checkDeclaration(entry.getKey(), entry.getValue()));
         }
         factTypes.putAll(copy);
         return this;
@@ -556,10 +590,9 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * A run that starts while all of them are in use waits until one is free, so at most {@code maxCopies} runs make
      * progress at once. A run started from inside another run on the same thread, and a run that has waited five
-     * seconds without one single copy being given back, don't wait: each gets an extra copy that isn't kept. A run
-     * that is interrupted while it waits, or that passes its deadline there, throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}; an interrupted thread keeps its
-     * interrupt status set. A rule list whose languages all return
+     * seconds without one single copy being given back, don't wait: each gets an extra copy that isn't kept. A run that
+     * is interrupted while it waits, or that passes its deadline there, throws a {@link RuleExecutionException}; an
+     * interrupted thread keeps its interrupt status set. A rule list whose languages all return
      * {@link io.github.brantunger.unruly.api.language.Session#none()} needs no copies, and no limit applies to it.
      * </p>
      *
@@ -608,9 +641,8 @@ public final class RulesEngineBuilder<O> {
      * <p>
      * A run with a deadline waits for a slot for at most half the time it has left, and a run that sees no slot given
      * back for five seconds stops waiting; either then makes its copy without a slot, so no run fails for want of a
-     * copy. A run interrupted while it waits throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException}, and its thread keeps its interrupt
-     * status set. Runs on platform threads never wait.
+     * copy. A run interrupted while it waits throws a {@link RuleExecutionException}, and its thread keeps its
+     * interrupt status set. Runs on platform threads never wait.
      * </p>
      *
      * @return This builder
@@ -668,15 +700,14 @@ public final class RulesEngineBuilder<O> {
      * Stops a run that is still going after {@code timeout}. Without this, a run has no deadline.
      *
      * <p>
-     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy
-     * of the rules counts towards it. The engine checks it before each condition and each action, again when each
-     * one returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
-     * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an
-     * expression that is already running, nor interrupt the thread; only a language that checks
+     * The deadline is taken from when {@link RulesEngine#run(FactStore)} is called, and waiting for a compiled copy of
+     * the rules counts towards it. The engine checks it before each condition and each action, again when each one
+     * returns, and once the {@link OutputWriter} has set the properties an action returned, so a run whose last
+     * condition or action returns past its deadline fails even though that rule finished. It doesn't stop an expression
+     * that is already running, nor interrupt the thread; only a language that checks
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#isCancelled()}, or registers an action with
      * {@link io.github.brantunger.unruly.api.language.EvaluationContext#onCancel(Runnable)} that stops its runtime at
-     * the deadline, can stop inside one. A run past its deadline throws a
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} caused by a
+     * the deadline, can stop inside one. A run past its deadline throws a {@link RuleExecutionException} caused by a
      * {@link java.util.concurrent.TimeoutException}.
      * </p>
      *

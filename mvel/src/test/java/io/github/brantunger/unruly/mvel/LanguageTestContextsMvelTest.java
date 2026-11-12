@@ -1,10 +1,10 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;

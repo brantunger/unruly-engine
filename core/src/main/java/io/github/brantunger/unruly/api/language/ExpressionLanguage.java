@@ -11,8 +11,8 @@ import java.util.Set;
  * unique, conditions and actions aren't blank, rules run in priority order, a condition evaluates to a
  * {@link Boolean}, no fact has a blank name or a name one of the engine's languages reserves (see
  * {@link #reservedFactNames()} and {@link #reservesForEveryRuleList()}), and failures are reported as
- * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} or
- * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} and to listeners.
+ * {@link io.github.brantunger.unruly.api.RuleCompilationException} or
+ * {@link io.github.brantunger.unruly.api.RuleExecutionException} and to listeners.
  * </p>
  *
  * <p>
@@ -20,8 +20,9 @@ import java.util.Set;
  * </p>
  *
  * <p>
- * <b>Implemented by</b> expression languages. A method added to this interface in a later 2.x release is a
- * {@code default} method, so an existing language keeps compiling and working.
+ * <b>Implemented by</b> expression languages. Within a major, a method added to this interface is a {@code default}
+ * method, so an existing language keeps compiling and working. A language written for 2.x needs rebuilding for 3.0:
+ * see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/migrating-to-3.md">Migrating to 3.0</a>.
  * </p>
  *
  * @see <a href="https://github.com/brantunger/unruly-engine/blob/main/docs/languages/custom.md">Writing an expression
@@ -117,7 +118,7 @@ public interface ExpressionLanguage {
      * {@code run()} rejects a fact supplied with one only when the rule list the run uses has a rule in the language,
      * as it asks only those languages to {@link ExpressionCompiler#checkFactName(String) check a name}; and a fact
      * declared with one is rejected when such a rule list is compiled, rather than by {@code build()}: {@code load()}
-     * throws a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} for it, and
+     * throws a {@link io.github.brantunger.unruly.api.RuleCompilationException} for it, and
      * {@code validate()} returns one. A rule list without rules is the default language's. For such a rule list, the
      * names are still rejected for every fact, whatever rules read it (see
      * {@link ExpressionCompiler#factNamesRead()}), before any language checks the name, and with the same message. A

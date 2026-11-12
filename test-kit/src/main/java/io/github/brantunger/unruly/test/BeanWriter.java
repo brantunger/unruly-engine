@@ -9,8 +9,9 @@ import java.util.function.Supplier;
 
 /**
  * Sets the properties an action returns on a bean, with the default writer, instead of on the engine's map output, for
- * the contract kit's {@code outputNumbersConverted}, {@code outputNumbersConvertedConcurrently} and
- * {@code outputUnconvertibleValueFailsTheRule}: the check's engine keeps the map output every other check has, so
+ * the contract kit's {@code outputNumbersConverted}, {@code outputNumbersConvertedConcurrently},
+ * {@code outputUnconvertibleValueFailsTheRule} and {@code outputLongsNotNarrowed}: the check's engine keeps the map
+ * output every other check has, so
  * {@link ExpressionLanguageContractTest#configure} applies to it as to any other, and the bean's setters take what the
  * default writer, given the language's {@link OutputConverter}, makes of the values. An engine that calls the
  * three-argument {@code set}, one released before the converter, writes the bean without converting.

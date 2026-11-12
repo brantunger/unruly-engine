@@ -3,12 +3,10 @@ package io.github.brantunger.unruly.api.language;
 import io.github.brantunger.unruly.TestSupport;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +16,9 @@ import org.opentest4j.TestAbortedException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Proxy;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -5066,5 +5066,124 @@ class ContractKitChecksTest {
         assertTrue(returned.getMessage().startsWith("the endless action returned"), returned.getMessage());
         assertTrue(failed.getMessage().startsWith("the run failed for another reason than its timeout: "),
                 failed.getMessage());
+    }
+
+    /** The check that declares a fact with type arguments, which no hook skips. */
+    private static final String TYPE_ARGUMENTS = "declaredTypeArgumentsAccepted";
+
+    /**
+     * Wraps a language so that it reads each declared fact's type with a cast to {@link Class}, as a language ported
+     * from 2.x, whose {@code declaredFacts()} gave classes, does to compile against 3.0.
+     */
+    private static ExpressionLanguage castingDeclaredTypes(ExpressionLanguage language) {
+        return new ForwardingExpressionLanguage(language) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                Map<String, Class<?>> types = new HashMap<>();
+                context.declaredFacts().forEach((name, type) -> types.put(name, (Class<?>) type));
+                return language.newCompiler(context);
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("#1405: a language that casts a declared fact's type to Class fails only the check that declares a"
+            + " fact with type arguments, whether or not configure() declares the checks' facts as classes")
+    void castingDeclaredTypesFails() {
+        ExpressionLanguageContractTest undeclared = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return castingDeclaredTypes(new ToyExpressionLanguage());
+            }
+        };
+        ExpressionLanguageContractTest declared = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return castingDeclaredTypes(new ToyExpressionLanguage());
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact("x", Object.class).fact("y", Object.class).fact("applicant", Object.class)
+                        .fact("nest", Object.class);
+            }
+        };
+
+        assertEquals(List.of(TYPE_ARGUMENTS), failedChecks(undeclared));
+        assertEquals(List.of(TYPE_ARGUMENTS), failedChecks(declared));
+    }
+
+    @Test
+    @DisplayName("#1405: the failure of a language that casts a declared fact's type to Class says how the fact was"
+            + " declared, and to read its type as a Type")
+    void castingDeclaredTypesReported() {
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(castingDeclaredTypes(new ToyExpressionLanguage()), TYPE_ARGUMENTS));
+
+        assertTrue(failure.getMessage().startsWith("a rule that reads the fact x, declared as a List<String> with"
+                + " fact(\"x\", new FactType<List<String>>() { }), didn't load and run: declaredFacts() gives such a"
+                + " fact's type as a ParameterizedType, so read each type as a java.lang.reflect.Type, without casting"
+                + " it to a Class: "), failure.getMessage());
+        assertTrue(failure.getMessage().contains("cannot be cast to class java.lang.Class"), failure.getMessage());
+        assertInstanceOf(RuleCompilationException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("#1405: the failure of a language that can't load the rule for another reason than a cast says only"
+            + " how the fact was declared and what was thrown, without the advice about the cast")
+    void declaredTypeArgumentsFailureWithoutACastReported() {
+        ExpressionLanguage refusing = new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                if (context.declaredFacts().get("x") instanceof ParameterizedType) {
+                    throw new IllegalStateException("no lists here");
+                }
+                return super.newCompiler(context);
+            }
+        };
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(refusing, TYPE_ARGUMENTS));
+
+        assertTrue(failure.getMessage().startsWith("a rule that reads the fact x, declared as a List<String> with"
+                + " fact(\"x\", new FactType<List<String>>() { }), didn't load and run: "), failure.getMessage());
+        assertTrue(failure.getMessage().contains("no lists here"), failure.getMessage());
+        assertFalse(failure.getMessage().contains("ParameterizedType"), failure.getMessage());
+        assertInstanceOf(RuleCompilationException.class, failure.getCause());
+    }
+
+    @Test
+    @DisplayName("#1405: the check that declares a fact with type arguments passes a language that reads each type as"
+            + " a Type, and one whose configure() declares the fact as another class, which the check's declaration"
+            + " replaces")
+    void declaredTypeArgumentsPass() throws Throwable {
+        List<Type> seen = new ArrayList<>();
+        ExpressionLanguageContractTest declaringAnother = new ToyExpressionLanguageContractTest() {
+            @Override
+            protected ExpressionLanguage language() {
+                return new ForwardingExpressionLanguage(new ToyExpressionLanguage()) {
+                    @Override
+                    public ExpressionCompiler newCompiler(CompileContext context) {
+                        seen.add(context.declaredFacts().get("x"));
+                        return super.newCompiler(context);
+                    }
+                };
+            }
+
+            @Override
+            protected void configure(RulesEngineBuilder<Map<String, Object>> builder) {
+                builder.fact("x", Integer.class);
+            }
+        };
+
+        runCheck(new ToyExpressionLanguage(), TYPE_ARGUMENTS);
+        runCheck(declaringAnother, TYPE_ARGUMENTS);
+
+        assertFalse(seen.isEmpty(), "the check created no compiler");
+        for (Type type : seen) {
+            ParameterizedType list = assertInstanceOf(ParameterizedType.class, type);
+            assertEquals(List.class, list.getRawType());
+            assertEquals(List.of(String.class), List.of(list.getActualTypeArguments()));
+        }
     }
 }

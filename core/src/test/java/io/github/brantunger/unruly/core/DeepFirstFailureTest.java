@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.ChildJvm;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

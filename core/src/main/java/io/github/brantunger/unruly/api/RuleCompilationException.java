@@ -1,18 +1,21 @@
-package io.github.brantunger.unruly.api.exception;
+package io.github.brantunger.unruly.api;
 
 import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
+import io.github.brantunger.unruly.api.language.ExpressionKind;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.UnrulyException;
+
 /**
  * Exception thrown when a rule fails to compile, or when several do.
  *
  * <p>
- * {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} compiles every rule before it throws,
- * so one exception reports everything that failed: {@link #failures()} has one exception for each broken rule, for
- * a language that couldn't create its compiler and for each declared fact name the languages reject, and the name,
- * expression kind and issues of this exception are those of the first. A failure that isn't a rule's has no rule
- * name.
+ * {@link RulesEngine#load(java.util.List)} compiles every rule before it throws, so one exception reports everything
+ * that failed: {@link #failures()} has one exception for each broken rule, for a language that couldn't create its
+ * compiler and for each declared fact name the languages reject, and the name, expression kind and issues of this
+ * exception are those of the first. A failure that isn't a rule's has no rule name.
  * </p>
  */
 public class RuleCompilationException extends UnrulyException {
@@ -137,7 +140,7 @@ public class RuleCompilationException extends UnrulyException {
     }
 
     /**
-     * Returns the name of the rule that failed, as {@link io.github.brantunger.unruly.api.Rule#getRuleName()} returns
+     * Returns the name of the rule that failed, as {@link Rule#getRuleName()} returns
      * it. Unlike the message, it isn't escaped or shortened, so it can be used to look the rule up.
      *
      * @return The rule's name, or {@code null} if the failure isn't about one rule (for example an expression language

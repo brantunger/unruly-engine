@@ -1,6 +1,5 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.test.LanguageTestContexts;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

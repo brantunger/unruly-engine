@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

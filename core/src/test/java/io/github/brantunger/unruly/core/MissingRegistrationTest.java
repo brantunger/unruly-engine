@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.LinkageMissingRegistration;
-import io.github.brantunger.unruly.internal.Lookups;
 import org.graalvm.nativeimage.MissingReflectionRegistrationError;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

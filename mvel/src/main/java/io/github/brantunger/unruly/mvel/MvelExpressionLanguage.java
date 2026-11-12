@@ -68,7 +68,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *     {@link #newCompiler(CompileContext)} throws {@link IllegalArgumentException}. The engine creates MVEL's compiler
  *     when a rule list given to {@code load()} or {@code validate()} has an MVEL rule, and for a list with no rules
  *     too when MVEL is the default language. That rule list then fails: {@code load()} throws, and
- *     {@code validate()} returns, a {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} with
+ *     {@code validate()} returns, a {@link io.github.brantunger.unruly.api.RuleCompilationException} with
  *     the throw as its cause. A rule list that doesn't use MVEL never has its imports checked.</li>
  * </ul>
  *

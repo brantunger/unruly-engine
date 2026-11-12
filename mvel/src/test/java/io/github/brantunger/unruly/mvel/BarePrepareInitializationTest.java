@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * used without an engine, as through the contract kit's contexts, has only {@code prepare()}. So this runs
  * {@link BarePrepareScenario} in a new JVM, where no engine is built, and reads the {@code Initializing '...'} lines
  * {@code -Xlog:class+init} prints, a class without a static initializer included, to check {@code prepare()}
- * initializes both, and the engine's classes they only delegate to, {@code internal.Causes}, {@code internal.Lookups}
- * and {@code internal.ImportSize}, which this module can't name and which have no static initializer either, so only a
+ * initializes both, and the engine's classes they only delegate to, {@code core.Causes}, {@code core.Lookups}
+ * and {@code core.ImportSize}, which this module can't name and which have no static initializer either, so only a
  * call loads them. {@code ImportLimits}' limits are compile-time constants, which javac copies into the classes that
  * read them, and nothing else in {@code prepare()} imports or looks a class up.
  */
@@ -32,8 +32,8 @@ class BarePrepareInitializationTest {
     private static final String INITIALIZING = "Initializing '";
     // The facades, and the engine's classes they delegate to, which this module can't name in its own code.
     private static final List<String> CLASSES = List.of(Throwables.class.getName(), ImportLimits.class.getName(),
-            "io.github.brantunger.unruly.internal.Causes", "io.github.brantunger.unruly.internal.Lookups",
-            "io.github.brantunger.unruly.internal.ImportSize");
+            "io.github.brantunger.unruly.core.Causes", "io.github.brantunger.unruly.core.Lookups",
+            "io.github.brantunger.unruly.core.ImportSize");
 
     @Test
     @DisplayName("Throwables and ImportLimits, and the engine's classes they delegate to, are initialized by prepare(),"

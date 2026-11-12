@@ -1,10 +1,8 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.api.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

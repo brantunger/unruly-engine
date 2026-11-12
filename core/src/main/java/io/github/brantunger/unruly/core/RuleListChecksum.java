@@ -1,7 +1,6 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.internal.IsoInstant;
 
 import java.io.ByteArrayOutputStream;
 import java.security.MessageDigest;

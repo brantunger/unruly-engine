@@ -10,8 +10,6 @@ import java.util.Set;
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Widening;
 
 /**
  * Takes in a run's facts for an engine: collects their values, widening a boxed primitive to the primitive type its
@@ -24,8 +22,9 @@ final class FactIntake {
 
     // The engine's logger, which logs the facts a run is rejected for.
     private final Logger log;
-    // The declared type of each fact, by name, a primitive type as it was declared, and whether a run may supply only
-    // those facts.
+    // The class of the declared type of each fact, by name, a primitive type as it was declared and a parameterized
+    // type as its raw class, read once when the engine was built so that no run asks a type an application wrote for
+    // it, and whether a run may supply only those facts.
     private final Map<String, Class<?>> declaredFacts;
     private final boolean allFactsDeclared;
     // The facts declared with a primitive type, by name, which a run widens a boxed primitive to. Empty for most
@@ -49,9 +48,9 @@ final class FactIntake {
      */
     FactIntake(Logger log, EngineSettings settings) {
         this.log = log;
-        this.declaredFacts = settings.declaredFacts();
         this.allFactsDeclared = settings.allFactsDeclared();
         this.reservedNames = settings.reservedNames();
+        this.declaredFacts = settings.declaredClasses();
         Map<String, Class<?>> primitives = new HashMap<>();
         declaredFacts.forEach((name, type) -> {
             // void is primitive, but nothing widens to it, and no value is a Void.
@@ -201,13 +200,15 @@ final class FactIntake {
     /**
      * Checks one fact's value against the type it was declared with, or the type's wrapper if it's primitive: a value
      * that Java widens to a primitive type was widened when the facts were collected. A {@code null} value passes:
-     * nothing about it contradicts the declaration, and a language can't tell it from an absent fact either.
+     * nothing about it contradicts the declaration, and a language can't tell it from an absent fact either. A fact
+     * declared with a parameterized type, such as {@code List<String>}, is checked against its raw class,
+     * {@code List}, which the failure names: a value's type arguments are erased, so its elements can't be checked.
      *
      * @param name  The fact's name
      * @param value The fact's value, which may be {@code null}
-     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type, or of its
-     *                                  wrapper; for a primitive type and a number, a character or a boolean, the
-     *                                  message says why the value wasn't widened
+     * @throws IllegalArgumentException if the fact was declared and its value isn't an instance of that type's class,
+     *                                  or of its wrapper; for a primitive type and a number, a character or a
+     *                                  boolean, the message says why the value wasn't widened
      */
     private void checkDeclaredType(String name, Object value) {
         Class<?> declared = declaredFacts.get(name);

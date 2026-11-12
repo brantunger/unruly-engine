@@ -14,7 +14,6 @@ module io.github.brantunger.unruly.core {
     requires jdk.jfr;
 
     exports io.github.brantunger.unruly.api;
-    exports io.github.brantunger.unruly.api.exception;
     exports io.github.brantunger.unruly.api.language;
     // Only the test kit creates the context records, for unit tests of a language.
     exports io.github.brantunger.unruly.core to io.github.brantunger.unruly.test;

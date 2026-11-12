@@ -5,7 +5,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.core.Text;
 import java.util.List;
 
 /**

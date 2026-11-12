@@ -7,8 +7,9 @@ when, and on which thread.
 **You'll be able to:** implement the four interfaces, report compile errors as the engine expects, read facts of
 any shape, keep state in sessions or for one run, and [package](packaging.md) the language for both paths.
 **Before you start:** [Expression languages](README.md), [Facts](../facts.md) and
-[Compiled copies](../compiled-copies.md). Moving a language from 1.x?
-[Migrating a language or an engine](../migrating-to-2-implementers.md) lists what changed.
+[Compiled copies](../compiled-copies.md). Moving a language? From
+[2.x](../migrating-to-3.md#-language-implementers) or [1.x](../migrating-to-2-implementers.md), these list what
+changed.
 
 [← Documentation index](../README.md)
 
@@ -100,12 +101,12 @@ Implement these interfaces from `io.github.brantunger.unruly.api.language`:
 | `CompiledCondition`, `CompiledAction` | `evaluate(EvaluationContext, Session)` and `execute(ActionContext, Session)`; optionally `evaluateWithDetail(EvaluationContext, Session)` | A `Boolean`; an `ActionResult`; a `ConditionResult` |
 | `Session` | Optionally `close()`, if your expressions keep state while they run | Nothing |
 
-The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext` your language gets;
+The engine alone implements the sealed `CompileContext`, `EvaluationContext` and `ActionContext`;
 tests create them with [`LanguageTestContexts`](beyond-the-contract-kit.md#-testing-a-compiler-without-an-engine).
-Methods added to interfaces you implement are `default`, so an earlier 2.x language keeps working.
+Within a major, methods added to interfaces you implement are `default`; a 2.x language
+[needs rebuilding for 3.0](../migrating-to-3.md#-language-implementers).
 
 ```java
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.*;
 
 // MyParser and MyExpression stand for your language's own parser and compiled form.
@@ -170,9 +171,9 @@ own `IllegalStateException` around such a failure is safe to let through.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
 `imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
-`Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
-`allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
-facts.
+`Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, `Class`es (primitives as
+wrappers) or [`ParameterizedType`s](../fact-types.md#-what-a-language-is-told), with `allFactsDeclared()`. Reject
+an undeclared name only if that is `true`: otherwise runs may supply one.
 
 **Defining classes.** Define them in a loader that delegates to both `classLoader()` and your runtime's own loader,
 whose classes the context loader may not see.

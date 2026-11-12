@@ -3,11 +3,11 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ImportLimits;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

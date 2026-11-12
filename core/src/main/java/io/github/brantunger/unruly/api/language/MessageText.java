@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.core.Text;
 import java.util.Objects;
 
 /**
@@ -11,36 +11,34 @@ import java.util.Objects;
  *
  * <p>
  * Use it for text the engine shows as it came: a message a language logs itself, the message of an exception its own
- * library sees first, and the issues it throws in an
- * {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException}, which the engine copies untouched into
- * the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} it reports. Use {@link #quote} for a
- * name and {@code escape(truncate(text))} for other text. To end such text with a note of the language's own, such as
- * {@code " (caused by ...)"}, cut it with {@link #escapeWithin(String, int)},
+ * library sees first, and the issues it throws in an {@link InvalidExpressionException}, which the engine copies
+ * untouched into the {@link io.github.brantunger.unruly.api.RuleCompilationException} it reports. Use {@link #quote}
+ * for a name and {@code escape(truncate(text))} for other text. To end such text with a note of the language's own,
+ * such as {@code " (caused by ...)"}, cut it with {@link #escapeWithin(String, int)},
  * {@link #escapeWithin(String, int, int)} or {@link #quoteWithin(String, int)}, giving it the room the rest of the
  * message leaves: the escaped result, its {@code ... (N more characters)} included, fits in that room, so the note
  * stays whole. To end text it shortened its own way with the engine's note, use {@link #leftOut}.
  * </p>
  *
  * <p>
- * The engine shortens to 1,000 characters and escapes the message of an
- * {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException}, the message of a warning's issue when
- * it logs it, and the message of an exception from {@link ExpressionCompiler#checkFactName} when it logs it or, at
- * {@code load()}, reports it for a declared fact. <b>Leave a message the engine shortens raw: the engine escapes it
- * itself, and the count of what was left out of escaped text counts escaped characters.</b> Every cut the engine and
- * this class make, but {@link #truncate}'s, falls between code points and never inside an escape the engine writes or
- * inside raw text that reads as one (a backslash and {@code n}, {@code r} or {@code t}, or a backslash, {@code u} and
- * four lowercase hex digits): such text is left out whole, so up to 5 fewer characters show. A language may instead
- * escape such a message itself, when the escaped message fits in 1,000 characters, as
+ * The engine shortens to 1,000 characters and escapes the message of an {@link InvalidExpressionException}, the message
+ * of a warning's issue when it logs it, and the message of an exception from {@link ExpressionCompiler#checkFactName}
+ * when it logs it or, at {@code load()}, reports it for a declared fact. <b>Leave a message the engine shortens raw:
+ * the engine escapes it itself, and the count of what was left out of escaped text counts escaped characters.</b> Every
+ * cut the engine and this class make, but {@link #truncate}'s, falls between code points and never inside an escape the
+ * engine writes or inside raw text that reads as one (a backslash and {@code n}, {@code r} or {@code t}, or a
+ * backslash, {@code u} and four lowercase hex digits): such text is left out whole, so up to 5 fewer characters show. A
+ * language may instead escape such a message itself, when the escaped message fits in 1,000 characters, as
  * {@code escapeWithin(text, MAX_TEXT_LENGTH)} makes it; the engine then never shortens it.
  * </p>
  *
  * <p>
  * The escapes, the note {@code ... (N more characters)} and the limits, {@link #MAX_NAME_LENGTH} (200 characters,
- * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 2.x. javac inlines the
+ * UTF-16 units) for a name and {@link #MAX_TEXT_LENGTH} (1,000) for other text, are fixed for 3.x. javac inlines the
  * two constants into the classes that read them. Which characters above U+00FF are escaped follows Unicode 15.0 to
  * 17.0, as JDK 21 to 26 have it, from a table of the engine's own, whatever the running JDK's Unicode version, so a
- * later JDK escapes the same characters until a later 2.x release updates the table; below U+0100 the running JDK
- * decides, the same way on JDK 21 to 26. A later 2.x release may also escape more kinds of character.
+ * later JDK escapes the same characters until a later 3.x release updates the table; below U+0100 the running JDK
+ * decides, the same way on JDK 21 to 26. A later 3.x release may also escape more kinds of character.
  * </p>
  *
  * <p>
@@ -53,14 +51,14 @@ import java.util.Objects;
 public final class MessageText {
 
     /**
-     * The most characters (UTF-16 units) of a name {@link #quote} shows: 200, fixed for 2.x. javac inlines it into the
+     * The most characters (UTF-16 units) of a name {@link #quote} shows: 200, fixed for 3.x. javac inlines it into the
      * classes that read it.
      */
     public static final int MAX_NAME_LENGTH = Text.MAX_NAME_LENGTH;
 
     /**
      * The most characters (UTF-16 units) of other text {@link #truncate} keeps, and the length above which the engine
-     * shortens the messages the class description lists: 1,000, fixed for 2.x. javac inlines it into the classes that
+     * shortens the messages the class description lists: 1,000, fixed for 3.x. javac inlines it into the classes that
      * read it.
      */
     public static final int MAX_TEXT_LENGTH = Text.MAX_DESCRIPTION_LENGTH;
@@ -117,11 +115,10 @@ public final class MessageText {
 
     /**
      * Shortens text for a message to at most 1,000 characters (UTF-16 units), without escaping it. Text of at most
-     * 1,000 characters is returned as it is. Longer text keeps its first 1,000 characters, or 999 when the 1,000th is
-     * a high surrogate, so the text never ends in half a character, followed by {@code ... (N more characters)}, where
-     * N counts the text's own characters left out. 1,000 is also the length above which the engine shortens the
-     * messages the class description lists, such as that of an
-     * {@link io.github.brantunger.unruly.api.exception.InvalidExpressionException}.
+     * 1,000 characters is returned as it is. Longer text keeps its first 1,000 characters, or 999 when the 1,000th is a
+     * high surrogate, so the text never ends in half a character, followed by {@code ... (N more characters)}, where N
+     * counts the text's own characters left out. 1,000 is also the length above which the engine shortens the messages
+     * the class description lists, such as that of an {@link InvalidExpressionException}.
      *
      * <p>
      * Shorten first and escape after, {@code escape(truncate(text))}, so a cut never falls inside an escape and N

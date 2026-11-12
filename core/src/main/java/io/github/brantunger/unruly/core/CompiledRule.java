@@ -4,7 +4,6 @@ import io.github.brantunger.unruly.api.OutputConverter;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
-import io.github.brantunger.unruly.internal.Text;
 
 /**
  * A CompiledRule wraps a {@link Rule} together with its compiled condition and action

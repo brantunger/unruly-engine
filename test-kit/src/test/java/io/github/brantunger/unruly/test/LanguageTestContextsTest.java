@@ -4,10 +4,10 @@ import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunOptions;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
@@ -15,6 +15,7 @@ import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ForwardingExpressionLanguage;
 import io.github.brantunger.unruly.api.language.Session;
@@ -24,12 +25,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 import java.io.IOException;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -495,6 +499,108 @@ class LanguageTestContextsTest {
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactName, false)),
                 () -> assertNullMessage("type must not be null", () -> LanguageTestContexts.compile(
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactType, false)));
+    }
+
+    @Test
+    @DisplayName("a fact declared with a FactType is given as the parameterized type it stands for, as an engine gives"
+            + " it, by each compile method that takes declarations (#1390)")
+    void declaredFactsWithTypeArguments() {
+        ClassLoader loader = getClass().getClassLoader();
+        Map<String, Type> declared = Map.of("tags", new FactType<List<String>>() {
+        }, "age", int.class);
+
+        List<CompileContext> contexts = List.of(
+                LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false),
+                LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false,
+                        List.of()),
+                LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader, Object.class,
+                        Map.of(), declared, false, List.of()));
+
+        for (CompileContext context : contexts) {
+            ParameterizedType tags = assertInstanceOf(ParameterizedType.class, context.declaredFacts().get("tags"));
+            assertEquals("java.util.List<java.lang.String>", tags.getTypeName());
+            assertSame(List.class, CompileContext.rawClass(tags));
+            assertSame(Integer.class, context.declaredFacts().get("age"));
+        }
+    }
+
+    @Test
+    @DisplayName("a context's declared facts are unmodifiable and in the order of the map given, by each compile "
+            + "method that takes declarations (#1406)")
+    void declaredFactsUnmodifiableAndInOrder() {
+        ClassLoader loader = getClass().getClassLoader();
+        // Eight names, each tried as the first, so an order that doesn't follow the map's can't match by chance.
+        List<String> all = List.of("applicant", "limits", "tags", "history", "order", "account", "region", "score");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+            Map<String, Type> declared = new LinkedHashMap<>();
+            names.forEach(name -> declared.put(name, String.class));
+
+            List<CompileContext> contexts = List.of(
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false,
+                            List.of()),
+                    LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader,
+                            Object.class, Map.of(), declared, false, List.of()));
+            declared.clear();
+
+            for (CompileContext context : contexts) {
+                Map<String, Type> facts = context.declaredFacts();
+                assertEquals(names, List.copyOf(facts.keySet()));
+                assertThrows(UnsupportedOperationException.class, () -> facts.put("extra", String.class));
+                assertThrows(UnsupportedOperationException.class, () -> facts.remove(names.get(0)));
+                assertThrows(UnsupportedOperationException.class, facts::clear);
+                // As the map Map.copyOf made did.
+                assertThrows(NullPointerException.class, () -> facts.get(null));
+                assertThrows(NullPointerException.class, () -> facts.containsKey(null));
+                assertThrows(NullPointerException.class, () -> facts.getOrDefault(null, String.class));
+                assertThrows(NullPointerException.class, () -> facts.containsValue(null));
+                // A change with nothing to change is rejected too.
+                assertThrows(UnsupportedOperationException.class, () -> facts.remove("nobody"));
+                assertThrows(UnsupportedOperationException.class, () -> facts.putAll(Map.of()));
+                assertThrows(UnsupportedOperationException.class,
+                        () -> facts.computeIfPresent("nobody", (name, type) -> type));
+                assertEquals(names, List.copyOf(facts.keySet()));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a context's options are unmodifiable and in the order of the map given, by each compile method "
+            + "that takes options (#1406)")
+    void optionsUnmodifiableAndInOrder() {
+        ClassLoader loader = getClass().getClassLoader();
+        // Eight names, each tried as the first, so an order that doesn't follow the map's can't match by chance.
+        List<String> all = List.of("strict", "depth", "mode", "limit", "trace", "cache", "locale", "zone");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+            Map<String, String> given = new LinkedHashMap<>();
+            names.forEach(name -> given.put(name, "1"));
+
+            List<CompileContext> contexts = List.of(
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given, Map.of(), false),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given, Map.of(), false,
+                            List.of()),
+                    LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader,
+                            Object.class, given, Map.of(), false, List.of()));
+            given.clear();
+
+            for (CompileContext context : contexts) {
+                Map<String, String> options = context.options();
+                assertEquals(names, List.copyOf(options.keySet()));
+                assertThrows(UnsupportedOperationException.class, () -> options.put("extra", "1"));
+                assertThrows(UnsupportedOperationException.class, () -> options.remove("nobody"));
+                assertThrows(UnsupportedOperationException.class, () -> options.putAll(Map.of()));
+                // As the map Map.copyOf made did.
+                assertThrows(NullPointerException.class, () -> options.get(null));
+                assertThrows(NullPointerException.class, () -> options.containsKey(null));
+                assertThrows(NullPointerException.class, () -> options.containsValue(null));
+                assertEquals(names, List.copyOf(options.keySet()));
+            }
+        }
     }
 
     @Test

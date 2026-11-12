@@ -1,11 +1,9 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.api.RuleExecutionException;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 
 import java.util.Arrays;
-
 
 /**
  * A {@link RuleExecutionException} an engine throws from {@code run()} once it has logged it and told its listeners.
@@ -44,9 +42,17 @@ import java.util.Arrays;
  * and {@link CauseChains#stop} build one, reading its cause chain first and recording it with the thread's record
  * once it's built, so no run's thread state is read or written here, and no failure goes unrecorded.
  * </p>
+ *
+ * <p>
+ * No form unruly-engine 2.x serialized reads on 3.0, nor one 3.0 serialized on 2.x: the {@code serialVersionUID}
+ * changed in 3.0.0, so reading one throws {@link java.io.InvalidClassException}. What is said here of a form
+ * serialized before something was recorded is kept as a defence.
+ * </p>
  */
 final class ReportedFailure extends RuleExecutionException {
-    private static final long serialVersionUID = 1L;
+    // 2 since 3.0.0, which moved the superclass from api.exception to api: this class kept its name, so with the same
+    // number a form 2.x wrote would be read by 3.0, and one 3.0 wrote by 2.x, with no error and no rule name or kind.
+    private static final long serialVersionUID = 2L;
 
     /** Whether the run stopped, because it was interrupted or passed its deadline, rather than failed. */
     private final boolean stopped;

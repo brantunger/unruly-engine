@@ -2,8 +2,8 @@ package io.github.brantunger.unruly.test;
 
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngine;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.test.ExpressionLanguageContractTest.Nesting;
 import org.jspecify.annotations.Nullable;
 import org.opentest4j.AssertionFailedError;

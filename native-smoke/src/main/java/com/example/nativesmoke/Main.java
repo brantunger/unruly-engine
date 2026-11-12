@@ -2,11 +2,12 @@ package com.example.nativesmoke;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ActionResult;
 import io.github.brantunger.unruly.api.language.CancelRegistration;
 import io.github.brantunger.unruly.api.language.CompileContext;
@@ -40,7 +41,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * through reflection. It also writes and reads a class that isn't public through the engine's own reflection, as a
  * language other than MVEL would, where the image has no metadata for the public types above it. And it stops a run
  * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a pooled
- * platform thread. It prints one line and exits with 1 if a result is wrong.
+ * platform thread. And it declares two facts with their type arguments, one of them a class of its own, with
+ * {@code FactType}, whose constructor reads the generic superclass of the anonymous class it's written as, which the
+ * image has no metadata for, and checks what a language is told. It prints one line and exits with 1 if a result is
+ * wrong.
  */
 public final class Main {
 
@@ -63,6 +67,16 @@ public final class Main {
 
     /** The name of the language whose action spins until its run passes its deadline, and of its rule. */
     private static final String SPIN = "spin";
+
+    /** The name of the language that reports the declared facts it is told, and of its rule. */
+    private static final String TYPED = "typed";
+
+    /**
+     * What a language is told of two facts declared with their type arguments, a JDK class's and a class of this
+     * application's, and that a run with a list for the first passed the engine's check of its class.
+     */
+    private static final String TYPED_FACTS = "java.util.List<java.lang.String>,"
+            + "java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran";
 
     /**
      * The fact the rules read.
@@ -212,10 +226,13 @@ public final class Main {
         String factName = factNameOutcome();
         String hidden = hiddenOutcome();
         String deadline = deadlineOutcome();
+        String typedFacts = typedFactsOutcome();
         boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
-                && "prime,gold,standard".equals(hidden) && "timeout,platform".equals(deadline);
+                && "prime,gold,standard".equals(hidden) && "timeout,platform".equals(deadline)
+                && TYPED_FACTS.equals(typedFacts);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
                 + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
+                + " typedFacts=" + typedFacts
                 + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (jitDefault() ? "on" : "off"));
@@ -389,6 +406,59 @@ public final class Main {
                 return (e.getCause() instanceof TimeoutException ? "timeout" : "failed: " + e.getMessage()) + ","
                         + (thread == null ? "not run" : thread.isVirtual() ? "virtual" : "platform");
             }
+        }
+    }
+
+    // Two facts declared with their type arguments, as FactType keeps them: its constructor reads the generic
+    // superclass of each anonymous class below, and the type argument of the second is a class of this application's.
+    // The image has no metadata for either anonymous class, so this is what shows a strict image answers that read. A
+    // language that isn't MVEL reports the types it is told, by name, and a run supplies a list for the first fact,
+    // which the engine checks against the type's class. The image's error isn't an Exception, so it isn't caught
+    // here: it ends the run with a stack trace that names the read that threw.
+    private static String typedFactsOutcome() {
+        AtomicReference<String> told = new AtomicReference<>("not told");
+        ExpressionLanguage reporting = new ExpressionLanguage() {
+            @Override
+            public String name() {
+                return TYPED;
+            }
+
+            @Override
+            public ExpressionCompiler newCompiler(CompileContext context) {
+                told.set(context.declaredFacts().get("tags").getTypeName() + ","
+                        + context.declaredFacts().get("applicantsById").getTypeName());
+                return new ExpressionCompiler() {
+                    @Override
+                    public CompiledCondition compileCondition(Expression expression) {
+                        return (evaluation, session) -> true;
+                    }
+
+                    @Override
+                    public CompiledAction compileAction(Expression expression) {
+                        return (action, session) -> ActionResult.done();
+                    }
+
+                    @Override
+                    public Session newSession() {
+                        return Session.none();
+                    }
+                };
+            }
+        };
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(reporting).defaultLanguage(TYPED)
+                .fact("tags", new FactType<List<String>>() {
+                })
+                .fact("applicantsById", new FactType<Map<String, Applicant>>() {
+                })
+                .build()) {
+            engine.load(List.of(Rule.builder().ruleName(TYPED).condition("true").action(TYPED).build()));
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("tags", List.of("a"));
+            engine.run(facts);
+            return told.get() + ",ran";
+        } catch (RuntimeException e) {
+            return e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
         }
     }
 

@@ -172,6 +172,46 @@ class FlightRecorderEventsTest {
     }
 
     @Test
+    @DisplayName("a run that an action's fatal error ends, with no stop, is recorded as FAILED, not STOPPED")
+    void fatalErrorWithoutAStop(@TempDir Path dir) throws IOException {
+        OutOfMemoryError fatal = new OutOfMemoryError("from the action, on purpose");
+        StubExpressionLanguage language = new StubExpressionLanguage().action((action, session) -> {
+            throw fatal;
+        });
+        RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .language(language).defaultLanguage(StubExpressionLanguage.LANGUAGE_NAME).build();
+        engine.load(List.of(Rule.builder().ruleName("jfr-fatal-action").condition("c").action("a").build()));
+        String checksum = engine.rules().checksum();
+        AtomicReference<Throwable> thrown = new AtomicReference<>();
+        List<RecordedEvent> all;
+
+        // Closed however the test ends, so no recording is left running for the tests after it.
+        try (Recording recording = new Recording()) {
+            recording.enable(RUN_EVENT).withThreshold(Duration.ZERO);
+            recording.start();
+            logsOf(() -> {
+                try {
+                    engine.run(new FactMap<>());
+                } catch (OutOfMemoryError e) {
+                    thrown.set(e);
+                }
+            });
+            recording.stop();
+            Path file = dir.resolve("fatal-action.jfr");
+            recording.dump(file);
+            all = RecordingFile.readAllEvents(file);
+        }
+
+        assertSame(fatal, thrown.get());
+        List<RecordedEvent> runs = all.stream()
+                .filter(event -> event.getEventType().getName().equals(RUN_EVENT))
+                .filter(event -> checksum.equals(event.getString("ruleSetChecksum")))
+                .toList();
+        assertEquals(1, runs.size(), "one run event for the checksum: " + runs);
+        assertEquals("FAILED", runs.get(0).getString("outcome"));
+    }
+
+    @Test
     @DisplayName("anything but a LinkageError isn't taken for a missing Flight Recorder")
     void otherFailuresPropagate() {
         IllegalStateException bug = new IllegalStateException("not about Flight Recorder");

@@ -1,9 +1,5 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.internal.ImportSize;
-import io.github.brantunger.unruly.internal.Lookups;
-import io.github.brantunger.unruly.internal.Text;
-
 /**
  * Works out what the import strings an engine is built with name, and which class loader imported classes are looked up
  * with.

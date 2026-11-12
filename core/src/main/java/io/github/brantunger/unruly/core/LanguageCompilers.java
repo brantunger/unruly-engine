@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 

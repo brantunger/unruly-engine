@@ -41,12 +41,17 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
    runs, `LanguageTestContexts`.
 7. [Packaging a language](languages/packaging.md): services, the module path and native images.
 
-## 🔼 Upgrading from 1.x
+## 🔼 Upgrading
 
-1. [Migrating to 2.0](migrating-to-2.md): every change that can affect code written for 1.x.
-2. [Migrating a language or an engine](migrating-to-2-implementers.md), if you wrote an expression language or a
-   class that implements `RulesEngine`.
-3. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
+1. [Migrating to 3.0](migrating-to-3.md): every change from 2.x, from the artifacts' versions and the package moves
+   to the language SPI.
+2. [Running 2.x jars on 3.0](migrating-to-3-unrebuilt-jars.md): what a jar you don't rebuild does.
+3. From 1.x, [Migrating to 2.0](migrating-to-2.md) first: every change that can affect code written for 1.x.
+4. For an expression language or a class that implements `RulesEngine`: from 2.x,
+   [Language implementers](migrating-to-3.md#-language-implementers) and
+   [If you implement RulesEngine](migrating-to-3.md#-if-you-implement-rulesengine); from 1.x,
+   [Migrating a language or an engine](migrating-to-2-implementers.md).
+5. [Upgrading Kotlin code from 1.4 or earlier](kotlin.md#-upgrading-kotlin-code-from-14-or-earlier), for Kotlin.
 
 ## 📋 All guides
 
@@ -68,6 +73,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🔼 [Upgrading the contract test kit from 2.14 or earlier](languages/contract-kit-upgrading-older.md) | Language authors | The same, for the kits up to 2.15.0 |
 | 🔬 [Testing beyond the contract kit](languages/beyond-the-contract-kit.md) | Language authors | What the kit's checks leave untested, how each check runs, configuring the checks for your language, testing a compiler without an engine with `LanguageTestContexts`, and a named module with Maven |
 | 📁 [Facts](facts.md) | Rule authors and application developers | `FactStore`, `FactMap` and `Fact`, naming rules, null and missing facts, who sees facts, reusing and sharing a store, declaring facts, implementing `FactStore` |
+| 🧬 [Fact types](fact-types.md) | Application developers and language authors | Declaring a fact with its type arguments, such as a `List<String>`, with `FactType`; what a run checks; what a language is told |
 | 🧊 [Native image](native-image.md) | Application developers | Building a GraalVM native image: keeping MVEL's JIT off, registering reflection, the errors a missing registration gives, strict metadata, Flight Recorder, and what was tested |
 | 🌱 [Spring Boot](spring-boot.md) | Application developers | Configuring engines as beans, loading rules, reloading them, shutting down, virtual threads, and using several engines |
 | 👂 [Listeners & logging](listeners-and-logging.md) | Application developers | `RuleListener` callbacks, tracing, `LoggingRuleListener`, and logger configuration |
@@ -83,6 +89,8 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | 🧵 [Thread safety](thread-safety.md) | Application developers | What's shared, the engine's lifecycle and closing, the class loader `load()` captures, and reloading rules under traffic |
 | 📑 [Compiled copies](compiled-copies.md) | Application developers | What a run works on, how many copies an engine keeps and how to limit them, making them at load, and what a run waits for |
 | 🧶 [Virtual threads](virtual-threads.md) | Application developers | The copy limit that applies only there, build slots and `unlimitedCopies()`, what each costs, and the JDK versions that deadlock or pin a carrier |
+| 🔼 [Migrating to 3.0](migrating-to-3.md) | Everyone | Every change from 2.x that can affect your code: the artifacts' versions, the package moves, the language SPI change, the test kit and serialized exceptions |
+| 🔼 [Running 2.x jars on 3.0](migrating-to-3-unrebuilt-jars.md) | Everyone | What a listener, a language or a module compiled against 2.x does on 3.0 until it is rebuilt: the errors, the failures the engine wraps, and the three that never reach the application |
 | 🔼 [Migrating to 2.0](migrating-to-2.md) | Everyone | Every change from 1.x that can affect your code, who it affects, and what to change, including the move from GPL-3.0 to Apache-2.0 |
 | 🔼 [Migrating a language or an engine](migrating-to-2-implementers.md) | Language authors, `RulesEngine` implementers | What the 2.0 language SPI and `RulesEngine` interface need on top of the changes every caller sees |
 | 📖 [Glossary](glossary.md) | Everyone | Short definitions of the terms the guides use, each linked to the page that explains it |
@@ -92,5 +100,6 @@ For contributors: [CONTRIBUTING.md](../CONTRIBUTING.md) · [API compatibility](c
 [Build and gates](contributing/build-and-gates.md) ·
 [Dependency verification](contributing/dependency-verification.md) · [Docs style guide](contributing/style.md) ·
 [RELEASING.md](../RELEASING.md) · [The release-please token](contributing/release-token.md) ·
+[The release-notes override block](contributing/release-notes-override.md) ·
 [Windows CI hangs](contributing/windows-ci-hangs.md) · [SECURITY.md](../SECURITY.md) ·
 [Code of Conduct](../CODE_OF_CONDUCT.md)

@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RuleEvaluation;
 import io.github.brantunger.unruly.api.RuleEvaluation.Outcome;
 import io.github.brantunger.unruly.api.RuleListener;
@@ -10,7 +11,6 @@ import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;

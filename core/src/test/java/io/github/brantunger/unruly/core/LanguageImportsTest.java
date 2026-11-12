@@ -7,7 +7,6 @@ import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
-import io.github.brantunger.unruly.internal.ImportSize;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -1,12 +1,12 @@
 package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue.Severity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

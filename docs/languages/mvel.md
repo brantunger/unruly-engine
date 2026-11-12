@@ -26,7 +26,7 @@ Every example below was checked against the engine. For the full language, see t
 
 | To | Write |
 | --- | --- |
-| Read a property (getter, record accessor, public field or `Map` key) | `applicant.creditScore` |
+| Read a property (getter, record accessor, public field or `Map` key) | `applicant.creditScore`; for a `Map` key, `order['size']` (see [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas)) |
 | Call a method | `applicant.name.length() > 2` |
 | Compare | `applicant.name == 'Ada'`, `applicant.creditScore >= 650` |
 | Combine | `applicant.creditScore > 700 && applicant.name != empty` |
@@ -53,9 +53,8 @@ Every example below was checked against the engine. For the full language, see t
 | Make several calls on one object | `with (output) { put('a', 1), put('b', 2) }` |
 
 An action changes `output` in place, by calling a method, such as `output.setInterestRate(4.5)` or `output.put(...)`,
-or assigning a property. An assignment isn't always the same as calling the
-setter: it writes a public field of that name first, and picks among overloaded setters in an order that can change
-each time the JVM starts; see [Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
+or assigning a property, which isn't always calling the setter; see
+[Assignment gotchas](mvel-gotchas.md#-assignment-gotchas).
 
 The action's value is ignored: `output.approved = true; 42` is fine. Assigning to `output` itself,
 as in `output = [:]`, fails the rule with a `RuleExecutionException` (`Cannot assign 'output'`).
@@ -70,7 +69,7 @@ later `output.put(...)` calls change the discarded object.
 Assigning to a fact's name, as in `score = 10; output.put('score', score)`, creates an action-local variable:
 the fact keeps its value, which later rules see.
 
-A condition may also run several statements, branch or loop, as long as nothing in it assigns; see
+A condition may also run several statements, branch or loop, if nothing in it assigns; see
 [What rules can change](../writing-rules.md#-what-rules-can-change).
 
 ## 📥 Classes and imports
@@ -94,7 +93,7 @@ RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::n
         .imports("java.time.LocalDate")              // a single class
         .imports("java.util.Map.Entry")              // a nested class, spelled as in a Java import
         .imports("java.math", "java.time")           // several at once
-        .build();                                    // imports are resolved here
+        .build();                                    // single-class imports: looked up here, with this thread's loader
 
 engine.load(rules);
 ```
@@ -138,7 +137,7 @@ the rule.
 
 A rule reads a fact by its name, as a variable; see [Facts](../facts.md).
 `applicant.creditScore` reads a public getter, a record accessor or a public field. A
-misspelled property, or a private field with no getter, fails the run with
+misspelled property, or a private field without a getter, fails the run with
 `could not access: creditScor; in class: com.example.Applicant`.
 
 Where a rule's text holds a fact's name, MVEL rejects one it can't read as that fact, such as `my-fact`, `in` or
@@ -154,9 +153,9 @@ A fact set to `null` and a missing one differ:
 | `isdef x` | `true` | `false` |
 | `isdef x && x != null` | `false` | `false` |
 
-A fact with a `null` value and a `null` `FactReference` behave the same. Referring to a missing fact fails the rule with
+A fact with a `null` value and a `null` `FactReference` behave the same. Reading a missing fact fails the rule with
 a `RuleExecutionException` whose message has one of these, the second when the run's
-[compiled copy](../glossary.md#compiled-copy) has already run the rule with the fact present:
+[compiled copy](../glossary.md#compiled-copy) already ran the rule with the fact present:
 
 ```text
 [Error: unresolvable property or identifier: x]
@@ -169,7 +168,10 @@ Check with `isdef` for a fact that may be missing, and for `null` before reading
 .condition("isdef coapplicant && coapplicant != null && coapplicant.creditScore >= 700")
 ```
 
-A `Map` fact works the same way: a missing key is an error, not `null`, as it's usually a misspelling.
+A `Map` fact's missing key is an error when read as `order.missing`, as it's usually a misspelling; read as
+`order['missing']` it's `null`, which MVEL computes and compares with silently. A key named like a map method, such
+as `size`, calls it instead: write `order['size']`; see
+[Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 | Condition, for an `order` map with no `missing` key | Result |
 | --- | --- |
@@ -199,11 +201,11 @@ saying why:
 | Needed | Why |
 | --- | --- |
 | `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
-| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
+| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules. A [`List<String>`](../fact-types.md) counts as a `List` |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
-Strong typing also changes arithmetic: MVEL computes in the declared types, not doubles; see the
-Division row of [Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
+Strong typing also changes arithmetic; see the Division row of
+[Comparison gotchas](mvel-gotchas.md#-comparison-gotchas).
 
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
 doesn't catch a condition that isn't a boolean; the engine checks that for every language.

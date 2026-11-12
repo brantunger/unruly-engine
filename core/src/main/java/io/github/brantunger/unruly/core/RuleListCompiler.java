@@ -2,6 +2,7 @@ package io.github.brantunger.unruly.core;
 
 import org.slf4j.Logger;
 
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -13,17 +14,15 @@ import java.util.Set;
 import java.util.function.Function;
 
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledAction;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 
 /**
  * Compiles an engine's rule lists for {@code load()} and {@code validate()}: checks the list itself, compiles each rule
@@ -43,9 +42,11 @@ final class RuleListCompiler {
     private final Class<?> outputType;
     // Each language's options, by language name.
     private final Map<String, Map<String, String>> options;
-    // The declared type of each fact, by name, a primitive type as it was declared, and whether a run may supply only
-    // those facts.
-    private final Map<String, Class<?>> declaredFacts;
+    // The declared type of each fact, by name, as languages are told it, checked when the engine was built and given
+    // to every compile context as it is, and whether a run may supply only those facts.
+    private final Map<String, Type> declaredFacts;
+    // The declared facts' names, which a rule list's languages check.
+    private final Set<String> declaredNames;
     private final boolean allFactsDeclared;
     // The fact names the engine's languages reserve: those reserved for every rule list, which no declared fact has,
     // and those of the languages that reserve theirs only for the rule lists that use them, which a rule list's
@@ -73,6 +74,7 @@ final class RuleListCompiler {
         this.outputType = settings.outputType();
         this.options = settings.options();
         this.declaredFacts = settings.declaredFacts();
+        this.declaredNames = settings.declaredClasses().keySet();
         this.allFactsDeclared = settings.allFactsDeclared();
         this.reservedNames = settings.reservedNames();
         this.languageImports = settings.languageImports();
@@ -380,7 +382,7 @@ final class RuleListCompiler {
         List<RuleCompilationException> failures = new ArrayList<>();
         // Inside the load() or validate(), whose call-out each check is.
         FailureLog.Runs runs = FailureLog.inProgress();
-        for (String name : declaredFacts.keySet()) {
+        for (String name : declaredNames) {
             String reservedBy = reserved.get(name);
             if (reservedBy != null) {
                 // In the words build() rejects a name reserved for every rule list with.

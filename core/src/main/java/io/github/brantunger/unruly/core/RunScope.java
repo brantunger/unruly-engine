@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.RandomAccess;
 import java.util.concurrent.locks.LockSupport;
-import io.github.brantunger.unruly.internal.Causes;
 import java.util.function.Supplier;
 
 /**

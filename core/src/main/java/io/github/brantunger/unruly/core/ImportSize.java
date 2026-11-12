@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.internal;
+package io.github.brantunger.unruly.core;
 
 import org.jspecify.annotations.Nullable;
 
@@ -7,11 +7,12 @@ import org.jspecify.annotations.Nullable;
  * language's own imports before any class loader sees them, the former for a package name's shape too, and
  * {@code api.language.ImportLimits} publishes the limits and the reason, so a language bounds an import in an
  * expression's own text the same way, with the same message, rather than keeping a copy that could drift.
- * <b>Internal:</b> this class may change in any release, and isn't part of the API: its package isn't exported, and
- * the {@code api} and {@code core} packages share it. It has no static initializer of its own, so its first use deep
- * in a stack, as when a language's tests make a compile context with no engine built, can't break it. That's not
- * true of the JDK's tables of the characters above U+00FF, which {@link #checkPackageName} reads: so a caller that may
- * run with no engine built, as {@code EngineCompileContext} may, checks the room for building them first (#1366).
+ * <b>Internal:</b> this class may change in any release, and isn't part of the API. It's public only so that
+ * {@code api.language.ImportLimits}, in another package, can call it. It has no static initializer of its own, so its
+ * first use deep in a stack, as when a language's tests make a compile context with no engine built, can't break
+ * it. That's not true of the JDK's tables of the characters above U+00FF, which {@link #checkPackageName} reads: so
+ * a caller that may run with no engine built, as {@code EngineCompileContext} may, checks the room for building them
+ * first (#1366).
  */
 public final class ImportSize {
 
@@ -68,7 +69,7 @@ public final class ImportSize {
      * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters or more
      *                                  than {@value #MAX_IMPORT_PARTS} dot-separated parts, as {@link #problem} says
      */
-    public static void checkSize(String name) {
+    static void checkSize(String name) {
         String problem = problem(name);
         if (problem != null) {
             throw rejected(name, problem);
@@ -83,7 +84,7 @@ public final class ImportSize {
      * @param name An import string
      * @throws IllegalArgumentException if {@code name} has more than {@value #MAX_IMPORT_LENGTH} characters
      */
-    public static void checkLength(String name) {
+    static void checkLength(String name) {
         String tooLong = tooLong(name);
         if (tooLong != null) {
             throw rejected(name, tooLong);
@@ -111,7 +112,7 @@ public final class ImportSize {
      *                                  {@code '<name>' is neither a class nor a valid package name}, the name quoted
      *                                  as {@link Text#quote} quotes it, and no cause, as nothing was looked up
      */
-    public static void checkPackageName(String name) {
+    static void checkPackageName(String name) {
         if (!isPackageName(name)) {
             throw new IllegalArgumentException("'" + Text.quote(name)
                     + "' is neither a class nor a valid package name");

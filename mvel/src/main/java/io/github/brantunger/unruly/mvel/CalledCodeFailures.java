@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.exception.UnrulyException;
+import io.github.brantunger.unruly.api.language.UnrulyException;
 
 import java.lang.reflect.InvocationTargetException;
 

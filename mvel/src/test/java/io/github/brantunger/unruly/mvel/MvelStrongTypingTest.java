@@ -2,15 +2,17 @@ package io.github.brantunger.unruly.mvel;
 
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException.Issue.Severity;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException.Issue.Severity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,10 @@ class MvelStrongTypingTest {
 
     /** An applicant as a record, whose components MVEL reads as properties. */
     public record Applicant(int creditScore, String name) {
+    }
+
+    /** A generic bean, declared with its type argument, whose own members MVEL can check. */
+    public record Holder<T>(T value, int count) {
     }
 
     /** An output object with a real property, so an action can be type-checked. */
@@ -252,8 +258,28 @@ class MvelStrongTypingTest {
     void anArrayOfRecordsIsChecked() {
         RulesEngine<Decision> engine = strongTyping(builder -> builder.fact("others", Applicant[].class)).build();
 
-        assertThrows(RuleCompilationException.class,
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
                 () -> engine.load(List.of(rule("others[0].creditScor >= 750", "output.score = 1"))));
+
+        // The misspelled member, not the refusal an array MVEL can't check gets, which is the same exception.
+        assertTrue(thrown.getMessage().contains("creditScor"), thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("an array of Strings is type-checked: a valid rule over it loads and runs, and a misspelled method "
+            + "fails load() (#1406)")
+    void anArrayOfStringsIsChecked() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.fact("names", String[].class)).build();
+        FactStore<Object> facts = applicant();
+        facts.setValue("names", new String[] {"Alexandra", "Bo"});
+
+        engine.load(List.of(rule("names[0].length() > 3 && names.length == 2", "output.score = names[0].length()")));
+        assertEquals(9, engine.run(facts).getScore());
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule("names[0].lengthh() > 3", "output.score = 1"))));
+        assertTrue(thrown.getMessage().contains("strict-mode"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("lengthh"), thrown.getMessage());
     }
 
     @Test
@@ -298,6 +324,53 @@ class MvelStrongTypingTest {
     void aListFactFailsLoading() {
         assertCantApply(strongTyping(builder -> builder.fact("items", List.class)), "output.score = 1",
                 "fact 'items' is declared as java.util.List");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as a List<String> fails load() as a List does: MVEL reads the"
+            + " type's class alone (#1390)")
+    void aListOfStringsFactFailsLoading() {
+        assertCantApply(strongTyping(builder -> builder.fact("items", new FactType<List<String>>() {
+                })), "output.score = 1",
+                "fact 'items' is declared as java.util.List, whose members MVEL can't check");
+    }
+
+    @Test
+    @DisplayName("with strongTyping on, a fact declared as a bean with a type argument is checked by its class (#1390)")
+    void aParameterizedBeanFactIsChecked() {
+        RulesEngineBuilder<Decision> builder = strongTyping(builder1 -> builder1.fact("holder",
+                new FactType<Holder<String>>() {
+                }));
+        FactStore<Object> facts = applicant();
+        facts.setValue("holder", new Holder<>("a", 2));
+
+        try (RulesEngine<Decision> engine = builder.build()) {
+            engine.load(List.of(rule("holder.count > 1", "output.score = 1")));
+            assertEquals(1, engine.run(facts).getScore());
+
+            RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                    () -> engine.load(List.of(rule("holder.coun > 1", "output.score = 1"))));
+            assertTrue(thrown.getMessage().contains("coun"), thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("with strongTyping on and several facts MVEL can't check declared after a bean, load() names the "
+            + "first of them declared, whichever that is (#1406)")
+    void theFirstDynamicFactDeclaredIsNamed() {
+        // Eight names, each tried as the first one declared, so naming the first can't pass by chance: an order that
+        // doesn't follow the declarations names the same fact in nearly every rotation.
+        List<String> all = List.of("limits", "tags", "history", "order", "account", "region", "scores", "notes");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+
+            assertCantApply(strongTyping(builder -> {
+                names.forEach(name -> builder.fact(name, Map.class));
+                return builder;
+            }), "output.score = 1", "fact '" + names.get(0) + "' is declared as java.util.Map, whose members MVEL "
+                    + "can't check");
+        }
     }
 
     @Test
@@ -393,5 +466,27 @@ class MvelStrongTypingTest {
 
         assertTrue(thrown.getMessage().contains("MVEL has no option 'strongTypng'; its only option is strongTyping"),
                 thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("with several options MVEL doesn't have, load() names the first one set, whichever that is (#1406)")
+    void theFirstUnknownOptionSetIsNamed() {
+        // Eight names, each tried as the first one set, so naming the first can't pass by chance.
+        List<String> all = List.of("strict", "depth", "mode", "limit", "trace", "cache", "locale", "zone");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+
+            try (RulesEngine<Decision> engine = strongTyping(builder -> {
+                names.forEach(name -> builder.option("mvel", name, "1"));
+                return builder;
+            }).build()) {
+                RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                        () -> engine.load(List.of(rule("true", "output.score = 1"))));
+
+                assertTrue(thrown.getMessage().contains("MVEL has no option '" + names.get(0) + "'; its only option "
+                        + "is strongTyping"), thrown.getMessage());
+            }
+        }
     }
 }

@@ -19,14 +19,13 @@ import org.jspecify.annotations.Nullable;
  * language understands it. By default that calls {@link #set(Object, String, Object)} with the value as the action
  * returned it, so a writer written as a lambda, or one that doesn't override it, never converts; one that does override
  * it may ask the converter for a value of the type it needs. What it throws is treated as what an action throws. It
- * fails the rule with a
- * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} naming the rule and the property, which
- * listeners receive in {@code onError}; a fatal {@link Error}, such as an {@link OutOfMemoryError}, is rethrown
- * unchanged once they have. But when the thread was interrupted, or the run passed its deadline, by the time it threw,
- * the run stops, as a cancelled run does, with an exception whose {@code getRuleName()} is {@code null}, which
- * keeps what it threw as a suppressed exception; unless that is or wraps an {@link Error}, which fails the rule all
- * the same. A run that was interrupted, or passed its deadline, while the writer set the properties without throwing
- * stops once every one is set, and they stay set. It must be thread-safe, because runs on many threads share it.
+ * fails the rule with a {@link RuleExecutionException} naming the rule and the property, which listeners receive in
+ * {@code onError}; a fatal {@link Error}, such as an {@link OutOfMemoryError}, is rethrown unchanged once they have.
+ * But when the thread was interrupted, or the run passed its deadline, by the time it threw, the run stops, as a
+ * cancelled run does, with an exception whose {@code getRuleName()} is {@code null}, which keeps what it threw as a
+ * suppressed exception; unless that is or wraps an {@link Error}, which fails the rule all the same. A run that was
+ * interrupted, or passed its deadline, while the writer set the properties without throwing stops once every one is
+ * set, and they stay set. It must be thread-safe, because runs on many threads share it.
  * </p>
  *
  * @param <O> The type of the output objects it writes to

@@ -80,10 +80,10 @@ class EngineApiShapeTest {
             + " clock, output, options and each language's own imports")
     // The copy limit has two setters: maxCopies(n) for every thread, and unlimitedCopies() to turn it off.
     void builderSettings() {
-        assertEquals(List.of("allMatches", "build", "clock", "copiesAtLoad", "defaultLanguage", "fact", "facts",
-                "firstMatch", "imports", "imports", "language", "languageImports", "languageImports", "listener",
-                "listeners", "maxCopies", "option", "outputType", "outputWriter", "requireDeclaredFacts", "runTimeout",
-                "uniqueMatch", "unlimitedCopies"),
+        assertEquals(List.of("allMatches", "build", "clock", "copiesAtLoad", "defaultLanguage", "fact", "fact",
+                "facts", "firstMatch", "imports", "imports", "language", "languageImports", "languageImports",
+                "listener", "listeners", "maxCopies", "option", "outputType", "outputWriter", "requireDeclaredFacts",
+                "runTimeout", "uniqueMatch", "unlimitedCopies"),
                 names(RulesEngineBuilder.class));
     }
 
@@ -92,7 +92,7 @@ class EngineApiShapeTest {
             + " options and its own imports")
     void compileContextSettings() {
         assertEquals(List.of("allFactsDeclared", "classImports", "classLoader", "declaredFacts", "languageImports",
-                "options", "outputType", "packageImports", "warn"),
+                "options", "outputType", "packageImports", "rawClass", "warn"),
                 names(CompileContext.class));
     }
 }

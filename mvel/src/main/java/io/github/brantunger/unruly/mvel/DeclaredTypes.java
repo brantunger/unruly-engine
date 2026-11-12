@@ -3,6 +3,7 @@ package io.github.brantunger.unruly.mvel;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 
+import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,7 +25,8 @@ import java.util.Map;
  *     <li>at least one fact is declared;</li>
  *     <li>no declared type is dynamic: {@link Object}, a {@link Map}, a {@link Collection}, or an array of one of
  *     them. MVEL's strict mode rejects {@code order.id} on a map and {@code items[0].qty} on a list, whose elements it
- *     has no type for;</li>
+ *     has no type for. MVEL reads the class of each declared type alone, so a fact declared with its type arguments,
+ *     such as {@code List<String>}, is as dynamic as a {@code List};</li>
  *     <li>the output type isn't dynamic either, because an action writes to {@code output}. The default output type is
  *     {@link Object}, so an engine that was never told one can't be type-checked.</li>
  * </ul>
@@ -42,8 +44,9 @@ final class DeclaredTypes {
     }
 
     /**
-     * Returns the types to compile a rule list's expressions against: every declared fact, plus the output object an
-     * action writes to. An empty map means compiling as MVEL does by default.
+     * Returns the types to compile a rule list's expressions against: the class of every declared fact's type, as
+     * {@link CompileContext#rawClass(Type)} gives it, plus the output object an action writes to. An empty map means
+     * compiling as MVEL does by default.
      *
      * @param context What the engine is compiling this rule list with
      * @return The type of each name an expression may refer to, or an empty map when {@code strongTyping} is off
@@ -54,25 +57,27 @@ final class DeclaredTypes {
         if (!strongTyping(context.options())) {
             return Map.of();
         }
-        Map<String, Class<?>> declared = context.declaredFacts();
+        Map<String, Type> declared = context.declaredFacts();
         if (!context.allFactsDeclared()) {
             throw cantApply("the engine wasn't built with requireDeclaredFacts()");
         }
         if (declared.isEmpty()) {
             throw cantApply("no facts were declared");
         }
-        for (Map.Entry<String, Class<?>> fact : declared.entrySet()) {
-            if (isDynamic(fact.getValue())) {
+        Map<String, Class<?>> inputs = new LinkedHashMap<>();
+        for (Map.Entry<String, Type> fact : declared.entrySet()) {
+            Class<?> type = CompileContext.rawClass(fact.getValue());
+            if (isDynamic(type)) {
                 throw new IllegalArgumentException(MessageQuotes.quotedWithClass(CANT_APPLY + "fact '", fact.getKey(),
-                        "' is declared as ", fact.getValue().getName(), ", whose members MVEL can't check"));
+                        "' is declared as ", type.getName(), ", whose members MVEL can't check"));
             }
+            inputs.put(fact.getKey(), type);
         }
         if (isDynamic(context.outputType())) {
             throw new IllegalArgumentException(MessageQuotes.quotedWithin(CANT_APPLY + "the output type is ",
                     context.outputType().getName(), ", and an action writes to the output; build the engine with "
                             + "outputType(...)"));
         }
-        Map<String, Class<?>> inputs = new LinkedHashMap<>(declared);
         // Only an action binds the output, but a condition that referred to it would be a mistake either way: it
         // reads facts, and the engine gives it no output object.
         inputs.put(ActionContext.OUTPUT_NAME, context.outputType());

@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api;
 
-import io.github.brantunger.unruly.internal.IsoInstant;
+import io.github.brantunger.unruly.core.IsoInstant;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
@@ -20,7 +20,7 @@ import java.util.Objects;
  * </p>
  *
  * <p>
- * It's a final class rather than a record, so a later 2.x release can add accessors without breaking code compiled
+ * It's a final class rather than a record, so a later 3.x release can add accessors without breaking code compiled
  * against this one. {@code equals} compares every field; a field added in a later release takes part too.
  * {@code hashCode} hashes only the checksum and the load time, which equal information shares, so that it doesn't
  * walk every rule.

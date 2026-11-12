@@ -18,8 +18,9 @@ engine compiles once and runs against your facts from any number of threads.</p>
 there, not during a run. {@link io.github.brantunger.unruly.api.RulesEngine#run(io.github.brantunger.unruly.api.FactStore)}
 runs the rules against a {@link io.github.brantunger.unruly.api.FactStore}, such as a
 {@link io.github.brantunger.unruly.api.FactMap}.</li>
-<li>{@link io.github.brantunger.unruly.api.RuleListener} observes each run, condition and action; what {@code load}
-and {@code run} throw is in {@link io.github.brantunger.unruly.api.exception}.</li>
+<li>{@link io.github.brantunger.unruly.api.RuleListener} observes each run, condition and action; {@code load}
+throws {@link io.github.brantunger.unruly.api.RuleCompilationException} and {@code run} throws
+{@link io.github.brantunger.unruly.api.RuleExecutionException}.</li>
 <li>Writing an expression language starts at {@link io.github.brantunger.unruly.api.language}, and testing one at
 {@link io.github.brantunger.unruly.test}.</li>
 </ol>

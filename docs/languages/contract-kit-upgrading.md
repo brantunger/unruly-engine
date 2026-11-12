@@ -10,6 +10,36 @@ What changed in the contract kit's checks from one version to the next, and what
 
 ---
 
+## 🔼 Upgrading to 3.0
+
+In 3.0.0 `outputLongsNotNarrowed` and `declaredTypeArgumentsAccepted` were added, and `outputNumbersConverted` got
+stricter. Neither new check needs a new hook, and no hook skips either. A language that passed the 2.35 kit may now
+fail any of the three, and each new failure is a real defect:
+
+| Check | Now fails a language that | The defect |
+| --- | --- | --- |
+| `outputLongsNotNarrowed` | Sets `setCreditScore(int)`, or fails nothing, from the `Long` 3000000000, -3000000000, 5000000000 or -5000000000, whatever `convertsOutputNumbers()` returns; or, with actions that change the output in place, returns from `convertOutput(x, int.class)` for one of them a value the setter takes: an `Integer`, or a `Short`, a `Byte` or a `Character`, which the writer widens | `convertOutput` narrows a `Long` with `intValue()`, which keeps the low 32 bits: an action that returns 5000000000 sets 705032704 and fails nothing. Refusing only a result whose sign changed isn't enough: 705032704 is positive too |
+| `outputNumbersConverted` | Returns `true` from `convertsOutputNumbers()`, and sets `setCreditScore(int)`, or fails nothing, from the first two of those `Long`s | The same narrowing, in a language that also converts `Double`s |
+| `declaredTypeArgumentsAccepted` | Fails to load or run a rule whose action is `putFact("seen", "x")` once `x` is declared with `fact("x", new FactType<List<String>>() { })`, or whose run, given the list `[a]`, returns an output that isn't exactly `{seen=[a]}` | It casts each type `declaredFacts()` gives to `Class`, as 2.x let it. 3.0 gives a `Type`, which is a `ParameterizedType` for a fact declared with type arguments, so every `load()` of an application that declares one throws `ClassCastException` |
+
+A language that returns a `Long` unchanged for an `int` target still passes both `Long` checks: the writer doesn't
+narrow it, so the write fails the rule. A language whose whole numbers are `Long`s leaves `convertsOutputNumbers()`
+`false`, as it has no `Double` to convert, so only `outputLongsNotNarrowed` reaches it.
+
+`declaredTypeArgumentsAccepted` declares `x` after `configure`, and a later declaration replaces an earlier one, so a
+`configure` that declares `x` needs no change. Read each declared type as a `java.lang.reflect.Type`: a `Class` for
+a fact declared with one, or with a `FactType` that has no type arguments, such as `FactType<String>`, and a
+`ParameterizedType`, whose `getRawType()` is the class, for one declared with type arguments.
+
+3.0 also changes the engine's API, so move the kit and the engine together, as
+[Migrating from 2.x to 3.0](../migrating-to-3.md#-upgrade-the-test-kit-with-the-engine) says.
+
+One requirement is now written down, with no check changed: the condition `bothConditions(condition, other)` returns
+must fail when `condition` fails, whatever `other` is, as MVEL's `&&` does. A language whose `&&` absorbs an error on
+one side when the other side is `false`, as CEL's does, fails `nestedRunFailsInsideACondition` with
+`the run started inside the condition didn't fail`, though its nested runs are right. Return
+`condition + " ? " + other + " : false"` from the hook.
+
 ## 🔼 Upgrading from 2.34
 
 In 2.35.0 `outputNumbersConvertedConcurrently` was added, and `evaluateAgreesWithDetail` and

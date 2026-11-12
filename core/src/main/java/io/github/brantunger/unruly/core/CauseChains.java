@@ -1,8 +1,6 @@
 package io.github.brantunger.unruly.core;
 
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.Text;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -319,7 +317,7 @@ final class CauseChains {
      * or load already logged it, and a run told its listeners. Only a failure an engine threw counts: a
      * {@link ReportedFailure}, of any engine, or a failure a nested run or load on this thread logged and threw as is,
      * such as a fact it rejected or a rule that failed to compile (see {@link FailureLog}). A
-     * {@link io.github.brantunger.unruly.api.exception.RuleExecutionException} a language or a rule throws itself was
+     * {@link io.github.brantunger.unruly.api.RuleExecutionException} a language or a rule throws itself was
      * never logged. Nor was an exception wrapped around that failure with a message of its own (see {@link #below}),
      * so a chain that holds one is news, and is taken for no nested run's failure here.
      *

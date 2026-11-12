@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Throwables;
 import org.jspecify.annotations.Nullable;

@@ -13,7 +13,7 @@ package io.github.brantunger.unruly.core;
  * throws a {@link ReportedFailure} that the code around it finds in the cause chain of what it caught (see
  * {@link CauseChains#nestedRunFailure}). A nested run that rejects its facts, and a nested {@code load()} that
  * fails, throw the exception their callers expect instead, an {@link IllegalArgumentException} or a
- * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, so nothing on it says it was logged: the
+ * {@link io.github.brantunger.unruly.api.RuleCompilationException}, so nothing on it says it was logged: the
  * place that logs one records it here, and the code around it finds it in the cause chain all the same. So does a
  * fatal {@link Error}, which is rethrown unchanged (see {@link FailurePolicy#fatalError}): the first place that logs
  * one records it here, and every other place on the same thread that catches the same instance leaves it out, unless
@@ -73,7 +73,7 @@ package io.github.brantunger.unruly.core;
  *
  * <p>
  * The record also holds the last {@value #MAX_LOGGED} exceptions the engine built around a failure, that aren't a
- * {@link ReportedFailure}, such as the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} of a
+ * {@link ReportedFailure}, such as the {@link io.github.brantunger.unruly.api.RuleCompilationException} of a
  * rule whose language failed with a nested run's failure, or the {@link IllegalStateException} of
  * {@link io.github.brantunger.unruly.api.language.FactProperties} around a nested run's failure that a fact's accessor
  * threw, so the code around one knows it for the engine's own words, which add nothing to a nested failure, however
@@ -497,7 +497,7 @@ final class FailureLog {
 
     /**
      * Records a failure a {@code load()} has just logged, or one made of failures it logged, and throws as the
-     * {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} its caller expects, as
+     * {@link io.github.brantunger.unruly.api.RuleCompilationException} its caller expects, as
      * {@link #loggedByRun} does for a run.
      *
      * @param failure The exception that was logged
@@ -631,7 +631,7 @@ final class FailureLog {
 
     /**
      * Records an exception the engine has just built around a failure, that isn't a {@link ReportedFailure}, such as
-     * the {@link io.github.brantunger.unruly.api.exception.RuleCompilationException} of an expression that failed to
+     * the {@link io.github.brantunger.unruly.api.RuleCompilationException} of an expression that failed to
      * compile, or the {@link IllegalArgumentException} of a language that failed to check a fact name, so the code
      * around it takes it for adding nothing to a nested failure it holds, as a {@link ReportedFailure} adds nothing,
      * however its text reads (see {@link #isEngineWrapper}). Its message has the nested failure's text in it, and an

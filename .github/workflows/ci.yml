@@ -2,17 +2,17 @@ name: CI
 
 on:
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run it supersedes. A run on main is never cancelled once it has started:
-# the next push to main waits for it, so a run that starts gets to its cache save. It isn't a queue, though. GitHub
-# keeps only one waiting run per concurrency group, so a push to main that lands while an earlier one is still
-# waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
+# A new push to a pull request cancels the run it supersedes. A push's run is never cancelled once it has started:
+# the next push to the same branch waits for it, so a run on main that starts gets to its cache save. It isn't a
+# queue, though. GitHub keeps only one waiting run per concurrency group, so a push that lands while an earlier one to
+# the same branch is still waiting replaces it, and the replaced commit gets a cancelled run and no build of its own.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -20,10 +20,10 @@ concurrency:
 jobs:
   # Sorts a pull request or a push into a scope: docs (documentation only), release (only what a release-please pull
   # request changes) or code. The build, build-windows, native-image and dependency-graph jobs skip docs; a release
-  # pull request runs one build leg, ubuntu-latest on JDK 21 with the coverage gate, and skips build-windows and
-  # native-image; docs-and-hygiene checks every run. A push is only ever docs or code, so a release's merge runs every
-  # leg, and it's docs only when the previous push's run passed. A docs push loses nothing by skipping: a cache key
-  # hashes the Gradle files, so it saves no cache, and it can't change coverage.
+  # pull request runs build-windows, native-image and one leg of the build's matrix, ubuntu-latest on JDK 21 with the
+  # coverage gate; docs-and-hygiene checks every run. A push is only ever docs or code, so a release's merge runs
+  # every leg, and it's docs only when the previous push's run passed. A docs push loses nothing by skipping: a cache
+  # key hashes the Gradle files, so it saves no cache, and it can't change coverage.
   changes:
     runs-on: ubuntu-latest
     # actions: read lets the step below look up the previous push's run.
@@ -51,11 +51,11 @@ jobs:
       # or a mode change alone.
       # code: anything else, or an empty diff. So is a path release-please starts to change in future: the safe default.
       # So is a push whose before is all zeros (a new branch), isn't in the clone, or isn't an ancestor of sha (a force
-      # push), and so is a docs push unless a push run of ci.yml on main for before ended in success. A push that lands
-      # while another run waits replaces that run (see concurrency above), so the replaced commit is never built, and a
-      # docs push after it must build in full. A run in progress isn't cancelled: this run waited for it, so before's
-      # run has finished by now. A failed, cancelled or missing run, or a failed lookup, gives code. A docs run that
-      # passed counts too: it skipped the build only because its own before had passed.
+      # push), and so is a docs push unless a push run of ci.yml on the pushed branch for before ended in success. A
+      # push that lands while another run waits replaces that run (see concurrency above), so the replaced commit is
+      # never built, and a docs push after it must build in full. A run in progress isn't cancelled: this run waited
+      # for it, so before's run has finished by now. A failed, cancelled or missing run, or a failed lookup, gives
+      # code. A docs run that passed counts too: it skipped the build only because its own before had passed.
       # --no-renames lists a moved file's old path too, so moving a file into docs/ still counts as code.
       - name: Find what the pull request or push changes
         id: diff
@@ -63,6 +63,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -94,9 +95,9 @@ jobs:
           # Only a docs push asks, so a code push makes no API call. A lookup that fails doesn't stop the step: it gives
           # code, so a GitHub API error costs a full build, not a failed changes job.
           if [ "$scope" = docs ] && [ "$EVENT" != pull_request ]; then
-            passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=$BEFORE" \
+            passed=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=push&branch=$BRANCH&head_sha=$BEFORE" \
               --jq '[.workflow_runs[] | select(.conclusion == "success")] | length') || passed=""
-            echo "Push runs of ci.yml on main for $BEFORE that ended in success: '$passed'"
+            echo "Push runs of ci.yml on $BRANCH for $BEFORE that ended in success: '$passed'"
             [[ "$passed" =~ ^[1-9][0-9]*$ ]] || scope=code
           fi
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
@@ -118,11 +119,11 @@ jobs:
       # Compilation stays on the Java 21 toolchain; -PtestJdk runs the tests on JDK 25 and 26, on Linux only. The
       # windows-latest leg is its own job, build-windows below, because only it may write checks.
       #
-      # A release pull request runs only the ubuntu-latest JDK 21 leg: it changes a version and the changelog, and the
-      # merge's push, whose scope is never release, runs every leg. A job-level if: can't read matrix, so the matrix
-      # itself is picked here, from two literals, before any leg exists. Any scope but release, an empty one included
-      # (a changes job that failed or was cancelled), gets the full matrix. The lines below share one indent, so YAML
-      # folds them into one line, and the expression and its JSON hold no line break.
+      # Of this matrix, a release pull request runs only the ubuntu-latest JDK 21 leg: it changes a version and the
+      # changelog, and the merge's push, whose scope is never release, runs every leg. A job-level if: can't read
+      # matrix, so the matrix itself is picked here, from two literals, before any leg exists. Any scope but release,
+      # an empty one included (a changes job that failed or was cancelled), gets the full matrix. The lines below
+      # share one indent, so YAML folds them into one line, and the expression and its JSON hold no line break.
       matrix: >-
         ${{ fromJSON(needs.changes.outputs.scope == 'release'
         && '{"os": ["ubuntu-latest"], "java-version": ["21"]}'
@@ -152,8 +153,9 @@ jobs:
           distribution: 'temurin'
 
       # Validates the Gradle wrapper, and caches Gradle's dependencies, wrapper and build cache between runs. Runs on
-      # main save the cache; pull requests only read it, and each OS has its own. The basic provider is open source;
-      # the default, enhanced one isn't. The configuration cache isn't saved, because that needs an encryption key.
+      # main save the cache; pull requests and pushes to develop only read it (setup-gradle writes only from the
+      # default branch), and each OS has its own. The basic provider is open source; the default, enhanced one isn't.
+      # The configuration cache isn't saved, because that needs an encryption key.
       #
       # On the ubuntu-latest JDK 21 leg it also injects the dependency-graph plugin into the build, as the
       # dependency-graph job below does on main, but only generates the graph: nothing is submitted or uploaded, so
@@ -253,10 +255,10 @@ jobs:
             **/replay_pid*.log
 
   # The windows-latest JDK 21 leg of the build, as its own job only so that it alone may write checks, for the Windows
-  # heartbeat (see its Build & Test step). It runs when the build's windows-latest leg did: not on a docs pull request
-  # or push, whose build is skipped, nor on a release pull request, whose build runs only ubuntu-latest. Its name is
-  # the one that leg's check had. Its steps are the build job's for windows-latest and JDK 21, written out: a job can't
-  # take another's steps.
+  # heartbeat (see its Build & Test step). It is skipped only on a docs pull request or push, as the build is. A
+  # release pull request runs it, though the build's matrix is then one ubuntu-latest leg, and so does an empty scope
+  # (a failed changes job). Its name is the one the build's windows-latest leg's check had. Its steps are the build
+  # job's for windows-latest and JDK 21, written out: a job can't take another's steps.
   #
   # checks: write lets any code that runs in this job, Gradle's plugins, the dependencies and the tests among them,
   # create or change a check run on any commit of the repository, a required one's name included: it comes from the
@@ -264,7 +266,7 @@ jobs:
   build-windows:
     name: build (windows-latest, 21)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'release' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' }}
     runs-on: windows-latest
     timeout-minutes: 20
     permissions:
@@ -405,10 +407,11 @@ jobs:
   # native-image's default. The engine makes MVEL's reflective optimizer the default, so MVEL generates no classes at
   # run time, which a native image can't do.
   # Then builds and runs it again with strict reachability metadata, which GraalVM says will become the default.
-  # Skipped on a docs pull request or push, or a release pull request; an empty scope (a failed changes job) runs it.
+  # Skipped only on a docs pull request or push: a release pull request runs it, and so does an empty scope (a failed
+  # changes job).
   native-image:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' && needs.changes.outputs.scope != 'release' }}
+    if: ${{ !cancelled() && needs.changes.outputs.scope != 'docs' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -464,9 +467,8 @@ jobs:
       # GraalVM for JDK 23 and later name the option --exact-reachability-metadata.
       - name: Build the native image with strict metadata
         run: |
-          packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.exception
-          packages=$packages,io.github.brantunger.unruly.api.language,io.github.brantunger.unruly.core
-          packages=$packages,io.github.brantunger.unruly.internal
+          packages=io.github.brantunger.unruly.api,io.github.brantunger.unruly.api.language
+          packages=$packages,io.github.brantunger.unruly.core
           packages=$packages,io.github.brantunger.unruly.mvel,io.github.brantunger.unruly.mvel.warmup
           native-image --no-fallback -H:+ReportExceptionStackTraces \
             -H:+UnlockExperimentalVMOptions "-H:ThrowMissingRegistrationErrors=$packages" \
@@ -477,9 +479,9 @@ jobs:
         run: native-smoke/build/native/native-smoke-strict
 
   # Checks documentation, workflows and repository hygiene with Python, git and a downloaded actionlint and zizmor,
-  # without Gradle. A failed step fails the job, and so ci-result, except the style check and, for now, zizmor, which
-  # only warn (continue-on-error). Each check runs even when an earlier one failed (!cancelled()), so a run reports
-  # them all. See docs/contributing/build-and-gates.md for running them locally.
+  # without Gradle. A failed step fails the job, and so ci-result, except the style check, which only warns
+  # (continue-on-error). Each check runs even when an earlier one failed (!cancelled()), so a run reports them all.
+  # See docs/contributing/build-and-gates.md for running them locally.
   docs-and-hygiene:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -521,18 +523,18 @@ jobs:
           "$RUNNER_TEMP/actionlint" -color
 
       # zizmor checks the workflows for security mistakes actionlint doesn't look for: template injection, dangerous
-      # triggers, wide permissions. It runs offline, and .github/zizmor.yml configures it. It only warns until #1328
-      # makes it fail the job. Like actionlint, the tarball isn't an action, so Dependabot doesn't bump it: to update,
-      # change the version and take the sha256 of zizmor-x86_64-unknown-linux-gnu.tar.gz from the release's assets.
+      # triggers, wide permissions. It runs offline, and .github/zizmor.yml configures it. A finding fails the job, as
+      # actionlint's do. Like actionlint, the tarball isn't an action, so Dependabot doesn't bump it: to update, change
+      # the version and take the sha256 of zizmor-x86_64-unknown-linux-gnu.tar.gz from the release's assets.
       - name: Workflow security
         if: ${{ !cancelled() }}
-        continue-on-error: true
         env:
           ZIZMOR_VERSION: 1.31.1
           ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
         run: |
           tarball=zizmor-x86_64-unknown-linux-gnu.tar.gz
-          curl -sSfL -o "$RUNNER_TEMP/$tarball"             "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/$tarball"
+          curl -sSfL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/$tarball"
           echo "$ZIZMOR_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" zizmor
           "$RUNNER_TEMP/zizmor" --offline .github/workflows
@@ -558,9 +560,9 @@ jobs:
   # One result for the jobs above, for branch protection to require: a docs run or a release pull request skips build
   # legs, and a leg that doesn't run reports no per-OS check. The build passes when it succeeded (on a release pull
   # request, its one leg), or was skipped on docs; build-windows and native-image when they succeeded, or were skipped
-  # on docs or a release pull request; docs-and-hygiene only when it succeeded. Any other result fails, such as that
-  # of a job cancelled before a runner took it. The changes job isn't judged: when it fails, its scope is empty, so
-  # the build and native-image run in full, and they decide.
+  # on docs, so a release pull request that skips either fails; docs-and-hygiene only when it succeeded. Any other
+  # result fails, such as that of a job cancelled before a runner took it. The changes job isn't judged: when it
+  # fails, its scope is empty, so the build, build-windows and native-image run in full, and they decide.
   ci-result:
     if: ${{ !cancelled() }}
     needs: [ changes, build, build-windows, native-image, docs-and-hygiene ]
@@ -589,13 +591,12 @@ jobs:
           }
           failed=""
           passed "$BUILD" docs || failed="$failed build"
-          passed "$BUILD_WINDOWS" docs release || failed="$failed build-windows"
-          passed "$NATIVE_IMAGE" docs release || failed="$failed native-image"
+          passed "$BUILD_WINDOWS" docs || failed="$failed build-windows"
+          passed "$NATIVE_IMAGE" docs || failed="$failed native-image"
           [ "$DOCS_AND_HYGIENE" = success ] || failed="$failed docs-and-hygiene"
           if [ -n "$failed" ]; then
-            echo "::error::Didn't pass:$failed. The build passes when it succeeded, or was skipped on docs;" \
-              "build-windows and native-image when they succeeded, or were skipped on docs or a release pull" \
-              "request; docs-and-hygiene only when it succeeded."
+            echo "::error::Didn't pass:$failed. The build, build-windows and native-image pass when they succeeded," \
+              "or were skipped on docs; docs-and-hygiene only when it succeeded."
             exit 1
           fi
 
@@ -603,10 +604,9 @@ jobs:
   # not just the coordinates declared in build.gradle.kts.
   dependency-graph:
     # Dependabot alerts use the default branch's graph, so only a push to `main` has anything to submit. The trigger
-    # above already limits pushes to `main`, so the ref test can't fail today; it's kept so that adding a branch
-    # there can't start overwriting the default branch's graph. (In release.yml the same test is live, because
-    # workflow_dispatch can be launched from any ref.) A docs push changes no dependency, so it skips; when the changes
-    # job fails, its scope is empty, so this runs.
+    # above runs pushes to develop too, so the ref test is what keeps a develop push from overwriting the default
+    # branch's graph. (In release.yml the same test guards workflow_dispatch, which can be launched from any ref.) A
+    # docs push changes no dependency, so it skips; when the changes job fails, its scope is empty, so this runs.
     needs: changes
     if: >-
       ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -634,5 +634,11 @@ jobs:
       # The action runs Gradle with -Dorg.gradle.dependency.verification=off, so nothing this job downloads, the
       # plugin it injects included, is checked against gradle/verification-metadata.xml. The build job's
       # ubuntu-latest JDK 21 leg resolves the same plugin with verification on.
+      # The basic provider is open source; the default, enhanced one isn't (see the build job's Set up Gradle). Read-
+      # only, because basic's entry is one per OS, shared with the build legs: this job finishes first, so it would
+      # save the Linux entry before they do, without the build's own outputs in it.
       - name: Submit dependency graph
         uses: gradle/actions/dependency-submission@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-provider: basic
+          cache-read-only: true

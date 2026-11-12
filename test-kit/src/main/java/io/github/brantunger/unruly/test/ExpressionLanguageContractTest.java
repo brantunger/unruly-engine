@@ -3,15 +3,14 @@ package io.github.brantunger.unruly.test;
 import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RuleEvaluation;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.ExpressionKind;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
-import io.github.brantunger.unruly.api.exception.UnrulyException;
 import io.github.brantunger.unruly.api.language.ActionContext;
 import io.github.brantunger.unruly.api.language.CompileContext;
 import io.github.brantunger.unruly.api.language.CompiledCondition;
@@ -19,10 +18,12 @@ import io.github.brantunger.unruly.api.language.ConditionResult;
 import io.github.brantunger.unruly.api.language.EvaluationContext;
 import io.github.brantunger.unruly.api.language.Expression;
 import io.github.brantunger.unruly.api.language.ExpressionCompiler;
+import io.github.brantunger.unruly.api.language.ExpressionKind;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 import io.github.brantunger.unruly.api.language.MessageText;
 import io.github.brantunger.unruly.api.language.Session;
 import io.github.brantunger.unruly.api.language.Throwables;
+import io.github.brantunger.unruly.api.language.UnrulyException;
 import io.github.brantunger.unruly.test.KitResources.ClosedQuietly;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.DisplayName;
@@ -109,7 +110,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * the output's setters, so that a whole double sets an {@code int} or a {@code long} property, and a fraction, an
  * infinity, NaN or a whole number the setter's type doesn't hold exactly, as a {@code Double} or a {@code BigDecimal},
  * fails the rule, opts into two more checks with {@link #convertsOutputNumbers()}, one of which converts on several
- * threads at once.
+ * threads at once. One conversion is checked without opting in, since a language whose whole numbers are {@code Long}s
+ * has no reason to: {@code outputLongsNotNarrowed} requires a {@code Long} beyond an {@code int} that an action returns
+ * for an {@code int} setter to fail the rule, not to be narrowed. And {@code declaredTypeArgumentsAccepted} declares a
+ * fact as a {@code List<String>}, whose declared type isn't a {@code Class}, and requires a rule to load and run.
  * </p>
  *
  * @see <a href=
@@ -338,7 +342,9 @@ public abstract class ExpressionLanguageContractTest {
      * whole number the setter's type doesn't hold exactly fails the rule rather than being rounded or narrowed. By
      * default, {@code false}, which skips {@code outputNumbersConverted}: a language whose whole numbers are Java's,
      * {@link Integer}s or {@link Long}s, needs no conversion to pass the other checks, and the default writer widens an
-     * {@link Integer} for a {@code long} setter by itself. A language whose numbers are all doubles, as JavaScript's
+     * {@link Integer} for a {@code long} setter by itself. A conversion such a language does have, of a {@code Long}
+     * for an {@code int} setter, is checked whatever this returns: {@code outputLongsNotNarrowed}, which no hook
+     * skips, feeds the two {@code Long}s below, and two more. A language whose numbers are all doubles, as JavaScript's
      * and JsonLogic's are, opts in once it converts them; so may any language that converts a whole double its action
      * returns, as one that reads a {@code Double} fact and returns it does.
      *
@@ -352,7 +358,10 @@ public abstract class ExpressionLanguageContractTest {
      * that casts a whole double it has bounded above only sets {@code Integer.MIN_VALUE} for the last. Then the
      * {@link BigDecimal}s 1.5 and 3E9, which must each fail the rule and leave the score as well: a language whose
      * decimals are {@code BigDecimal}s, as Groovy's are, and narrows one with {@code intValue()} sets 1 and the low
-     * 32 bits. Then {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes a {@code long}:
+     * 32 bits. Then the {@link Long}s 3000000000 and -3000000000, which must each fail the rule and leave the score:
+     * a language whose whole numbers are {@code Long}s, as CEL's are, and narrows one with {@code intValue()} sets
+     * the low 32 bits (#1384). Then {@link #putFact putFact("balance", "x")} on an {@link Account}, whose setter takes
+     * a {@code long}:
      * 3.0E9 must set the balance to 3000000000, and {@code Infinity}, 2<sup>53</sup>&nbsp;+&nbsp;2, the first whole
      * double past where a double counts by ones, 1.5, {@code NaN}, {@code -Infinity} and
      * -(2<sup>53</sup>&nbsp;+&nbsp;2) must each fail the rule and leave it: a language that rounds with
@@ -488,6 +497,14 @@ public abstract class ExpressionLanguageContractTest {
      * first isn't checked by them: the first passes it, and the second is skipped when the nested run, stopping at
      * the right side, never reads the getter that makes it fail. By default, {@code null}.
      *
+     * <p>
+     * The condition must also fail when {@code condition} fails, whatever {@code other} is, as MVEL's {@code &&}
+     * does: {@code nestedRunFailsInsideACondition} needs the getter's throw to fail the nested run's condition, whose
+     * {@code other} is false there. A language whose {@code &&} absorbs an error on one side when the other side is
+     * false, as CEL's does, returns <code>{inner=2}</code> from that run instead, and the check reports a nested run
+     * that didn't fail; such a language returns {@code condition ? other : false} (#1384).
+     * </p>
+     *
      * @param condition The condition evaluated first
      * @param other     The condition evaluated second
      * @return The condition, or {@code null} if the language's conditions can't require both of two conditions, which
@@ -575,7 +592,7 @@ public abstract class ExpressionLanguageContractTest {
      *     <li>A declaration of the name {@link #unusableFactName()} returns: {@code load()} checks every declared
      *     name with the language, or, for a compiler whose {@code factNamesRead()} returns a set, every declared name
      *     in it, and the language rejects that one. Most checks then fail to load their rules, with a
-     *     {@link io.github.brantunger.unruly.api.exception.RuleCompilationException}, and the checks that expect a
+     *     {@link io.github.brantunger.unruly.api.RuleCompilationException}, and the checks that expect a
      *     load to fail then pass or fail for reasons unrelated to the language.</li>
      *     <li>{@code runTimeout(...)}: a run that outlasts it fails, and its check with it.</li>
      *     <li>{@code maxCopies(...)} below 2: two checks make two copies of the rules when they load, which
@@ -607,8 +624,10 @@ public abstract class ExpressionLanguageContractTest {
      * one. Listeners that don't change the output may be added: the engine only logs what a listener throws, unless
      * it's a fatal {@link Error}, but {@code beforeExecute} and {@code afterExecute} are given the output the checks
      * compare. {@code evaluateAgreesWithDetail} builds no engine, and compiles with {@link #compileContext()} instead,
-     * as {@code outputUnconvertibleValueFailsTheRule} does for a language whose actions change the output in place: a
-     * language that overrides both keeps them consistent.
+     * as {@code outputUnconvertibleValueFailsTheRule} and {@code outputLongsNotNarrowed} do for a language whose
+     * actions change the output in place: a language that overrides both keeps them consistent.
+     * {@code declaredTypeArgumentsAccepted} declares the fact {@code x} as a {@code List<String>} after this, which
+     * replaces a declaration of {@code x} made here.
      * </p>
      *
      * @param builder The builder of an engine a check is about to build
@@ -619,8 +638,8 @@ public abstract class ExpressionLanguageContractTest {
     /**
      * Returns the context {@code evaluateAgreesWithDetail} compiles its condition with, since that check compiles it
      * with the language's compiler, outside an engine, and the context of the compiler
-     * {@code outputUnconvertibleValueFailsTheRule} asks to convert a value when the language's actions change the
-     * output in place. By default, {@link LanguageTestContexts#compile()}, which has
+     * {@code outputUnconvertibleValueFailsTheRule} and {@code outputLongsNotNarrowed} ask to convert a value when the
+     * language's actions change the output in place. By default, {@link LanguageTestContexts#compile()}, which has
      * no imports, options or declared facts.
      *
      * <p>
@@ -1219,8 +1238,8 @@ public abstract class ExpressionLanguageContractTest {
 
     @Test
     @DisplayName("a whole Double an action returns reaches a setter taking an int or a long, and a fraction, an"
-            + " infinity, NaN or a whole number the setter's type doesn't hold exactly, as a Double or a BigDecimal,"
-            + " fails the rule")
+            + " infinity, NaN or a whole number the setter's type doesn't hold exactly, as a Double, a BigDecimal or a"
+            + " Long, fails the rule")
     void outputNumbersConverted() throws Exception {
         assumeTrue(convertsOutputNumbers(), "the language doesn't convert the numbers its actions return");
         // The writer is set after configure(), so configure() can't replace it: the applicant, not the map, is written.
@@ -1254,6 +1273,13 @@ public abstract class ExpressionLanguageContractTest {
             for (String x : new String[] {"1.5", "3E9"}) {
                 assertRefused(engine, new BigDecimal(x), "the BigDecimal " + x, "setCreditScore(int)",
                         applicant::getCreditScore, 1);
+            }
+            // A language whose whole numbers are Longs, as CEL's are, and narrows one with intValue() sets the low 32
+            // bits of 3000000000, 705032704 for 5000000000, and fails nothing; one that bounds it above only does so
+            // for -3000000000 (#1384). Refusals only, as for the BigDecimals: a language that returns a Long
+            // unchanged for an int setter, as one whose numbers are doubles may, also fails the rule.
+            for (long x : new long[] {3_000_000_000L, -3_000_000_000L}) {
+                assertRefused(engine, x, "the Long " + x, "setCreditScore(int)", applicant::getCreditScore, 1);
             }
         });
 
@@ -1292,9 +1318,9 @@ public abstract class ExpressionLanguageContractTest {
 
     /**
      * Runs rule {@code r} of {@code engine}, whose action puts the fact {@code x} on the property {@code setter} sets,
-     * with {@code x} the {@link Double} or {@link BigDecimal} {@code value}, which {@code setter}'s type doesn't hold
-     * exactly, and requires the run to fail in {@code r} and the property, read by {@code read}, to still be
-     * {@code before}: a language that narrows the number, as {@code Number.intValue()} or {@code longValue()} does,
+     * with {@code x} the {@link Double}, {@link BigDecimal} or {@link Long} {@code value}, which {@code setter}'s type
+     * doesn't hold exactly, and requires the run to fail in {@code r} and the property, read by {@code read}, to still
+     * be {@code before}: a language that narrows the number, as {@code Number.intValue()} or {@code longValue()} does,
      * sets the type's extreme, a rounded number or the low bits instead.
      *
      * @param engine The engine, with rule {@code r} loaded
@@ -1452,6 +1478,74 @@ public abstract class ExpressionLanguageContractTest {
                         + " String");
             }
         });
+    }
+
+    /**
+     * Has an action return a {@link Long} beyond an {@code int}, 3000000000, -3000000000, 5000000000 and then
+     * -5000000000, for a property whose only setter takes an {@code int}: the write must fail the rule and leave the
+     * property, whether the language's {@code convertOutput} refuses the {@code Long} or returns it unchanged, which
+     * the writer doesn't narrow. A language whose whole numbers are {@code Long}s, as CEL's are, and narrows one with
+     * {@code intValue()} sets the low 32 bits, 705032704 for 5000000000, and fails nothing; one that bounds it above
+     * only does so for -3000000000 (#1384). The low 32 bits of the first two have the other sign, and those of the
+     * last two keep the {@code Long}'s, so a language that narrows and then refuses only a result whose sign changed
+     * is caught by the last two. {@code outputNumbersConverted} feeds the first two {@code Long}s, but only to a
+     * language that opts in with {@link #convertsOutputNumbers()}, which one whose whole numbers are {@code Long}s
+     * doesn't, as it has no {@code Double} to convert; so no hook skips this check (#1405). For a language whose
+     * actions change the output in place, which never reach the writer, the check asks the language's compiler, made
+     * with {@link #compileContext()}, to convert each {@code Long} for an {@code int} itself, as
+     * {@code outputUnconvertibleValueFailsTheRule} does, and fails it when that returns a value the writer would set
+     * on an {@code int} setter: an {@link Integer}, or a {@link Short}, a {@link Byte} or a {@link Character}, which
+     * it widens. A refusal, or any other exception it throws, passes there, as either fails the write.
+     */
+    @Test
+    @DisplayName("a Long beyond an int that an action returns for a setter taking an int fails the rule, whether or"
+            + " not the language opts into converting numbers")
+    void outputLongsNotNarrowed() throws Exception {
+        for (long x : new long[] {3_000_000_000L, -3_000_000_000L, 5_000_000_000L, -5_000_000_000L}) {
+            // The writer is set after configure(), as outputNumbersConverted's is.
+            WritableApplicant applicant = new WritableApplicant(7);
+            BeanWriter writer = new BeanWriter(applicant);
+            AtomicReference<@Nullable RuntimeException> thrown = new AtomicReference<>();
+            closing(builder(language()).outputWriter(writer).build(), engine -> {
+                engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(CREDIT_SCORE, "x"))));
+                try {
+                    engine.run(new FactMap<>(new Fact<>("x", x)));
+                } catch (RuntimeException e) {
+                    thrown.set(e);
+                }
+            });
+            RuntimeException failure = thrown.get();
+            if (writer.asked()) {
+                if (!(failure instanceof RuleExecutionException ruleFailure)) {
+                    throw new AssertionFailedError("the Long " + x + " was set on setCreditScore(int), as "
+                            + applicant.getCreditScore() + ", or the run failed for another reason: convertOutput"
+                            + " must refuse a Long the target doesn't hold, or return it unchanged, not narrow it",
+                            failure);
+                }
+                assertEquals("r", ruleFailure.getRuleName(), () -> describe(ruleFailure));
+                assertEquals(7, applicant.getCreditScore(), "the Long " + x + " changed the credit score");
+                continue;
+            }
+            // An action that changes the output in place: the language's conversion is asked directly.
+            closing(new ClosedQuietly<>(language().newCompiler(compileContext())), compiler -> {
+                Object converted;
+                try {
+                    converted = compiler.resource().convertOutput(x, int.class);
+                } catch (Exception e) {
+                    // A refusal, or any other failure, fails the write, and the rule, as the writer would.
+                    return;
+                }
+                // What the default writer sets on an int setter: an Integer, and what Java widens to an int.
+                if (converted instanceof Integer || converted instanceof Short || converted instanceof Byte
+                        || converted instanceof Character) {
+                    throw new AssertionFailedError("the language's actions change the output in place, so the writer"
+                            + " never asks its convertOutput, but asked to convert the Long " + x + " for"
+                            + " setCreditScore(int) it returned the " + converted.getClass().getSimpleName() + " "
+                            + describe(converted) + ", which the setter would take: convertOutput must refuse a Long"
+                            + " the target doesn't hold, or return it unchanged, not narrow it");
+                }
+            });
+        }
     }
 
     @Test
@@ -1943,6 +2037,38 @@ public abstract class ExpressionLanguageContractTest {
                         + " that set, so a fact a rule reads that it leaves out is never checked; return null if the"
                         + " compiler can't tell");
             }
+        });
+    }
+
+    /**
+     * Declares the fact {@code x} as a {@code List<String>}, through a {@link FactType}, and requires a rule that puts
+     * {@code x} on the output to load, run and put the list. Since 3.0,
+     * {@link CompileContext#declaredFacts()} gives each fact's {@link java.lang.reflect.Type}, which for a fact
+     * declared with type arguments is a {@link java.lang.reflect.ParameterizedType}, so a language that casts each
+     * one to a {@link Class}, as one ported from 2.x may, fails every {@code load()} of an application that declares
+     * such a fact (#1405). The failure says so when a {@link ClassCastException} is among its causes, and
+     * otherwise only that the rule didn't load and run. The fact is declared after {@link #configure}, and a later
+     * declaration replaces an earlier one, so a {@code configure} that declares {@code x} itself needs no special
+     * case. No hook skips the check.
+     */
+    @Test
+    @DisplayName("a rule list loads and runs when a fact is declared with type arguments")
+    void declaredTypeArgumentsAccepted() throws Exception {
+        List<String> value = List.of("a");
+        closing(builder(language()).fact("x", new FactType<List<String>>() { }).build(), engine -> {
+            Map<String, Object> output;
+            try {
+                engine.load(List.of(rule("r", 1, alwaysTrue(), putFact(SEEN, "x"))));
+                output = engine.run(new FactMap<>(new Fact<>("x", value)));
+            } catch (RuntimeException e) {
+                // The advice only for a failed cast: a load or a run can fail for another reason.
+                boolean cast = Throwables.causeChain(e).stream().anyMatch(ClassCastException.class::isInstance);
+                throw new AssertionFailedError("a rule that reads the fact x, declared as a List<String> with"
+                        + " fact(\"x\", new FactType<List<String>>() { }), didn't load and run: "
+                        + (cast ? "declaredFacts() gives such a fact's type as a ParameterizedType, so read each type"
+                        + " as a java.lang.reflect.Type, without casting it to a Class: " : "") + describe(e), e);
+            }
+            assertSameOutput(Map.of(SEEN, value), output);
         });
     }
 

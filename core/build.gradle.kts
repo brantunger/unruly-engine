@@ -41,9 +41,8 @@ mavenPublishing {
 apiCheck {
     artifactId = artifact
     // core is internal: the module exports it only to the test kit's module, and a class in it is public only where
-    // the builder, the API package or the test kit needs it. internal is what api and core share: the module doesn't
-    // export it at all.
-    excludedPackages = listOf("io.github.brantunger.unruly.core", "io.github.brantunger.unruly.internal")
+    // the API packages or the test kit need it.
+    excludedPackages = listOf("io.github.brantunger.unruly.core")
     // Except the members the published test kit links against: an older kit can run on a newer core, so
     // japicmpTestKitLinkage checks the ones this file lists.
     testKitLinkage = layout.settingsDirectory.file("config/japicmp/test-kit-linkage.txt")
@@ -59,10 +58,9 @@ tasks.named<Test>("test") {
     jvmArgs("-XX:StackShadowPages=20")
 }
 
-// The Javadoc documents the API only. core's and internal's public classes exist for the API package and the test
-// kit, not users.
+// The Javadoc documents the API only. core's public classes exist for the API packages and the test kit, not users.
 tasks.named<Javadoc>("javadoc") {
-    exclude("io/github/brantunger/unruly/core/**", "io/github/brantunger/unruly/internal/**")
+    exclude("io/github/brantunger/unruly/core/**")
     // Lets javadoc find the excluded classes that the documented ones use.
     (options as StandardJavadocDocletOptions).addPathOption("-source-path").value = listOf(file("src/main/java"))
 }

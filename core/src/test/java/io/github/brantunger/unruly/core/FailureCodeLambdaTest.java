@@ -1,14 +1,9 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.ClassFiles;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.ImportLimits;
 import io.github.brantunger.unruly.api.language.Throwables;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.ImportSize;
-import io.github.brantunger.unruly.internal.Lookups;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Whitespace;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -31,8 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * was logged, and {@link ListenerNotifier},
  * which tells listeners of it, use neither, nor does {@link Closing}, which closes what a failed borrow made. #1097:
  * nor {@link CopyPermits}, which only a run that has to wait for a permit, or looks for a build slot, uses, nor
- * {@link RuleCompilationException}, which every failed load creates. #1241: nor the readers and text helpers the
- * {@code internal} package holds for them, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
+ * {@link RuleCompilationException}, which every failed load creates. #1241: nor the readers and text helpers this
+ * package holds for them and {@code api}, {@link Causes}, {@link Text}, {@link Lookups} and {@link ImportSize}, nor
  * what {@code api.language} publishes of them, {@link Throwables}, {@link ImportLimits} and the {@link FatalErrors}
  * bridge, which a language's first failure may be the first to call. #1244: nor {@link RetireQueue}, which retires
  * the rule sets an engine no longer uses, as a {@code load()} or {@code close()} deep in a stack may. #1292: nor

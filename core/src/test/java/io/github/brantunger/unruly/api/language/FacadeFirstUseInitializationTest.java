@@ -2,12 +2,12 @@ package io.github.brantunger.unruly.api.language;
 
 import io.github.brantunger.unruly.ChildJvm;
 import io.github.brantunger.unruly.api.Rule;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.ImportSize;
-import io.github.brantunger.unruly.internal.LanguageNames;
-import io.github.brantunger.unruly.internal.Lookups;
-import io.github.brantunger.unruly.internal.Text;
-import io.github.brantunger.unruly.internal.Widening;
+import io.github.brantunger.unruly.core.Causes;
+import io.github.brantunger.unruly.core.ImportSize;
+import io.github.brantunger.unruly.core.LanguageNames;
+import io.github.brantunger.unruly.core.Lookups;
+import io.github.brantunger.unruly.core.Text;
+import io.github.brantunger.unruly.core.Widening;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,12 +40,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * StringUTF16 for the life of the JVM, which the library can't avoid for a call with no engine built; a separate
  * issue covers it. #1292: the blank check of a rule's name and tags, a run's tags, a language's name and a fact's
  * name, {@code String.isBlank()}, read the same table for a name that starts with such a character, with no engine
- * built, until the engine's own {@code internal.Whitespace} decided that; so the scenario builds a rule, declares
+ * built, until the engine's own {@code core.Whitespace} decided that; so the scenario builds a rule, declares
  * facts, adds a language and makes run options with such names too, between the markers. #1298: a rule's build and
  * run options sorted their tags in a {@code TreeSet}, whose static initializer, and {@code TreeMap}'s, the JVM runs
- * on its first use, with no engine built, until the engine's own {@code internal.Sorting} sorted them; the scenario
+ * on its first use, with no engine built, until the engine's own {@code core.Sorting} sorted them; the scenario
  * used to initialize {@code TreeSet} before its first marker, and now the build and the options between the markers
- * must initialize neither. #1313: the engine's own {@code internal.Text}, which the escaping calls reach, held the
+ * must initialize neither. #1313: the engine's own {@code core.Text}, which the escaping calls reach, held the
  * characters above U+00FF it escapes in two arrays, built by a static initializer, so it was measured safe; it now
  * decides them with comparisons, has no static initializer, and the calls must initialize it. #1271: a language's
  * tests make a compile context with no engine built, which checks each package import's shape, as {@code build()}
@@ -53,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * between the markers; the context's constructor checked its options and declarations with two lambdas, whose call
  * sites, when linked, initialized the JDK's method handle classes, and {@code java.lang.Long} on JDK 21, and it now
  * checks them with loops. #1322: a context keeps a declared fact's type as its wrapper, which the engine's own
- * {@code internal.Widening} gives, and Widening's static initializer built tables, one of them of five method
+ * {@code core.Widening} gives, and Widening's static initializer built tables, one of them of five method
  * references, whose linking initialized the JDK's method handle classes, and {@code java.lang.Long} on JDK 21; it now
  * decides with comparisons and has no static initializer, so the scenario makes three contexts with a declared fact,
  * an {@code int}, a {@code long} and a {@code String}, and the calls must initialize it, and not {@code java.lang.Long}
@@ -86,7 +86,7 @@ class FacadeFirstUseInitializationTest {
             ImportSize.class.getName(), Causes.class.getName(), Text.class.getName(), Rule.class.getName(),
             Rule.RuleBuilder.class.getName(), "io.github.brantunger.unruly.core.EngineCompileContext",
             "io.github.brantunger.unruly.core.FactNames", LanguageNames.class.getName(),
-            "io.github.brantunger.unruly.internal.Whitespace", "io.github.brantunger.unruly.internal.Sorting",
+            "io.github.brantunger.unruly.core.Whitespace", "io.github.brantunger.unruly.core.Sorting",
             Widening.class.getName(), "io.github.brantunger.unruly.core.CharacterTables");
     // JDK 21 doesn't initialize Long at startup, so there the calls are the first that could (#1260).
     private static final String LONG = INITIALIZING + "java/lang/Long'";

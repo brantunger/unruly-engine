@@ -1,8 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.TestSupport;
-import io.github.brantunger.unruly.api.exception.InvalidExpressionException;
-import io.github.brantunger.unruly.internal.Causes;
+import io.github.brantunger.unruly.api.language.InvalidExpressionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;

@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * #1241: the limits on an import and the reason one is rejected, as the engine bounds its own imports, for a language
- * that bounds an inline import the same way. The limits and the wording are a contract for 2.x, so every case here is
+ * that bounds an inline import the same way. The limits and the wording are a contract for 3.x, so every case here is
  * written out rather than read from the engine. {@code core.ImportSizeTest} checks that the engine's own rejection is
  * the quoted import followed by the same reason.
  */
@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ImportLimitsContractTest {
 
     @Test
-    @DisplayName("the limits are 1,000 characters and 64 dot-separated parts, fixed for 2.x")
+    @DisplayName("the limits are 1,000 characters and 64 dot-separated parts, fixed for 3.x")
     void limitsAreFixed() {
         assertEquals(1_000, ImportLimits.MAX_IMPORT_LENGTH);
         assertEquals(64, ImportLimits.MAX_IMPORT_PARTS);

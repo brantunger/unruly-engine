@@ -1,6 +1,6 @@
 package io.github.brantunger.unruly.api.language;
 
-import io.github.brantunger.unruly.internal.ImportSize;
+import io.github.brantunger.unruly.core.ImportSize;
 import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
@@ -14,20 +14,20 @@ import java.util.Objects;
  * again with each dot from the right replaced by {@code $}, so the work grows with the number of parts.
  *
  * <p>
- * The limits and the reason's wording are fixed for 2.x. The class is stateless, and {@link #importSizeProblem}
+ * The limits and the reason's wording are fixed for 3.x. The class is stateless, and {@link #importSizeProblem}
  * allocates only the reason it returns.
  * </p>
  */
 public final class ImportLimits {
 
     /**
-     * The most characters (UTF-16 units) an import may have: 1,000, fixed for 2.x. javac inlines it into the classes
+     * The most characters (UTF-16 units) an import may have: 1,000, fixed for 3.x. javac inlines it into the classes
      * that read it.
      */
     public static final int MAX_IMPORT_LENGTH = ImportSize.MAX_IMPORT_LENGTH;
 
     /**
-     * The most dot-separated parts an import may have: 64, fixed for 2.x. javac inlines it into the classes that read
+     * The most dot-separated parts an import may have: 64, fixed for 3.x. javac inlines it into the classes that read
      * it.
      */
     public static final int MAX_IMPORT_PARTS = ImportSize.MAX_IMPORT_PARTS;

@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * {@link DeepFirstToStringScenario} in a new JVM, so the deep call is the JVM's first, and checks that it returned its
  * text, and that the formatter, streams, {@code ExceptionInInitializerError} and engine builds work after it. #1313:
  * the three that show names with no engine built (a rule's {@code toString()} shows none) show them through the
- * engine's own {@code internal.Text}, whose static initializer built two arrays of the characters it escapes: with
+ * engine's own {@code core.Text}, whose static initializer built two arrays of the characters it escapes: with
  * {@code Text} and {@code api.Names} loaded and linked but not initialized, as a class-data archive leaves them, the
  * deep call overflowed inside it and left {@code Text}, and every later build, failing. On a plain class path the load
  * and verify ahead of it overflowed first, so the call passed. Now {@code Text} has no static initializer, and the
@@ -52,7 +52,7 @@ class DeepFirstToStringTest {
     private static final String BY_THREAD = " by thread \"";
     private static final String BY_DEEP_THREAD = "by thread \"" + DeepFirstToStringScenario.DEEP_THREAD + "\"";
     // The engine's Text, as -Xlog:class+init names it.
-    private static final String TEXT = INITIALIZING + "io/github/brantunger/unruly/internal/Text'";
+    private static final String TEXT = INITIALIZING + "io/github/brantunger/unruly/core/Text'";
 
     @Test
     @DisplayName("deep, with no engine built, a rule's first toString() shows its validity window")

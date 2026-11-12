@@ -1,7 +1,7 @@
 package io.github.brantunger.unruly.mvel;
 
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
+import io.github.brantunger.unruly.api.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

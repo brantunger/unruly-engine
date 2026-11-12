@@ -1,9 +1,9 @@
 package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
 import io.github.brantunger.unruly.api.language.StubExpressionLanguage;
 
 import java.util.HashMap;

@@ -35,7 +35,7 @@ Each project writes its report to `<project>/build/reports/japicmp/report.html` 
 reports as the artifact `api-compatibility-report-jdk21-<os>` when a job fails. The task is configured in
 `buildSrc/src/main/kotlin/unruly.library.gradle.kts`, and each project's `apiCheck { }` block in its `build.gradle.kts`
 says which artifact it compares and which packages it leaves out. `unruly-engine-core` leaves out its internal `core`
-and `internal` packages, except the `core` constructors and methods the test kit calls, which
+package, except the constructors and methods the test kit calls, which
 [The test kit's links into core](#-the-test-kits-links-into-core) covers.
 
 ## 🚫 What counts as a break
@@ -92,10 +92,10 @@ An intended break belongs in a major release, and needs three things:
    format. Every change to a listed element is accepted, not only the reported one.
 2. Title the PR with a `!`, such as `feat!: make the engine classes package-private`, and describe the migration
    under "Behavior changes".
-3. Add a section to [Migrating to 2.0](../migrating-to-2.md): who is affected, and what to change.
+3. Add a section to [Migrating to 3.0](../migrating-to-3.md): who is affected, and what to change.
 
-A break in the language SPI or in `RulesEngine` goes in
-[Migrating a language or an engine](../migrating-to-2-implementers.md) instead.
+A break in the language SPI goes under [Language implementers](../migrating-to-3.md#-language-implementers) there,
+and one in `RulesEngine` under [If you implement RulesEngine](../migrating-to-3.md#-if-you-implement-rulesengine).
 
 A line applies while the baseline is from an earlier major version, so a release from that version published in the
 meantime doesn't turn it off. Once the new major version is published and becomes the baseline, the build warns that
@@ -235,4 +235,3 @@ verifies the download like every other dependency: see [The API baseline](depend
 | Sealing an interface | ❌ | japicmp doesn't see it: add the `!` by hand |
 | A change to one of the `core` members the test kit calls | ❌ | A released test kit on a newer `core` stops linking; `:core:japicmpTestKitLinkage` checks them |
 | Any other change to a class in the `core` package | ✅ | Internal: exported only to the test kit's module, and left out of the check |
-| Any change to a class in the `internal` package | ✅ | Internal: exported to no module, and left out of the check |

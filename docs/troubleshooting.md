@@ -1,10 +1,10 @@
 # 🩺 Troubleshooting
 
-Symptoms, their usual causes, and the page that explains each one. Every answer links to the guide that owns it.
+Symptoms, their usual causes, and the guide that owns each answer.
 
 **Who it's for:** everyone.
-**You'll be able to:** find out why a rule didn't fire, read an exception from `build()`, `load()` or `run()`, and
-work out why rules that pass in tests fail in production.
+**You'll be able to:** find why a rule didn't fire, read an exception from `build()`, `load()` or `run()`, and
+see why rules that pass in tests fail in production.
 **Before you start:** nothing. [Exceptions by method](exceptions-by-method.md) lists each method's exceptions.
 
 [← Documentation index](README.md)
@@ -44,10 +44,10 @@ flowchart TD
     classDef yours    fill:#f1f5f9,stroke:#64748b,color:#0f172a,stroke-dasharray:4 3
 ```
 
-In words: if `run()` threw, read [An exception from run()](#-an-exception-from-run). If it didn't, check whether the
-condition is true for these facts; if not, check the fact's name and value (in MVEL, an enum compared with a string
-is `false`). If it is true and the engine is first-match, a higher-priority match fires instead. If the engine is
-all-matches, a lower-priority action may have overwritten the output.
+If `run()` threw, read [An exception from run()](#-an-exception-from-run). If not, check whether the
+condition is true for these facts; if it isn't, check the fact's name and value (in MVEL, an enum compared with a
+string is `false`). If it is, a higher-priority match fires instead in a first-match engine, or a lower-priority
+action may have overwritten the output in an all-matches one.
 
 Otherwise check the rules are loaded: `engine.rules().rules()` lists them, and an empty list returns `null`. A loaded
 rule the run skipped reads `SKIPPED` in `runWithResult(facts).evaluations()`; see
@@ -89,20 +89,20 @@ The output supplier returns a shared object, so every run adds to it. See
 
 ### How do I see why a rule didn't apply?
 
-Read `runWithResult(facts).evaluations()`: one outcome for every loaded rule. See
+Read `runWithResult(facts).evaluations()`: one outcome per loaded rule. See
 [What a run reports](run-results.md#-what-a-run-reports).
 
 ### A rule's outcome is SKIPPED
 
-The run didn't evaluate the rule: the rule is disabled, the run started outside its
-validity window by the engine's clock, or the run was given tags and the rule carries none of them. A rule with no
-tags is skipped by every run given tags, and tags are compared case included. To tell which, compare
+The run didn't evaluate the rule: it's disabled, the run started outside its validity window by the engine's clock,
+or the run was given tags and the rule carries none of them (a rule with no tags is skipped by every run given tags;
+tags are compared case included). To tell which, compare
 the rule's `isEnabled()`, `getValidFrom()`, `getValidTo()` and `getTags()` with `result.startedAt()` and
 `result.tags()`. See [Choosing which rules a run uses](engines-and-runs.md#-choosing-which-rules-a-run-uses).
 
 ## 🔧 An exception from build()
 
-Most of these are `IllegalStateException` from `build()`. The two that start with `Two expression languages` and
+Most of these are `IllegalStateException` from `build()`. The two starting with `Two expression languages` and
 `An expression language's name` are `IllegalArgumentException` from `language(...)`, and the last three are
 `IllegalArgumentException` from `build()`.
 
@@ -122,8 +122,8 @@ Most of these are `IllegalStateException` from `build()`. The two that start wit
 | `Can't import '...'` | An import over 1,000 characters, or 64 dot-separated parts inline or in `imports(...)`, or whose class lacks a dependency | [Classes and imports](languages/mvel.md#-classes-and-imports); [Imports](languages/README.md#-choosing-a-language-per-rule) |
 | `'output' is reserved for the output object and cannot be declared as a fact`, or `'...' is reserved by the '...' expression language` | `fact(...)` or `facts(...)` declared a name a non-MVEL language reserves for every rule list; MVEL's `output` fails [`load()`](#-an-exception-from-load) | Rename the fact; see [Naming rules](facts.md#-naming-rules) |
 
-A well-formed package name that doesn't exist, such as `"com.nope"`, is accepted by `build()` and `load()`. In MVEL,
-a rule that uses a class from it fails at `run()` as if the import were missing; see
+`build()` and `load()` accept a well-formed package name that doesn't exist, such as `"com.nope"`. In MVEL,
+a rule using a class from it fails at `run()` as if the import were missing; see
 [Classes and imports](languages/mvel.md#-classes-and-imports).
 
 ## 🚨 An exception from load()
@@ -131,7 +131,7 @@ a rule that uses a class from it fails at `run()` as if the import were missing;
 `load()` throws one `RuleCompilationException` for the whole list. `failures()` has one entry per broken rule; a
 language that can't create its compiler or tell which facts its rules read, and a rejected
 [declared fact](glossary.md#declared-fact) name, are listed with them. The previous rules stay loaded.
-`validate(rules)` returns the same problems without loading anything, with one exception; see
+`validate(rules)` returns the same problems without loading, with one exception; see
 [Checking a list before loading it](engines-and-runs.md#checking-a-list-before-loading-it).
 
 | Message contains | Fix |
@@ -170,8 +170,8 @@ the rule. See [Classes and imports](languages/mvel.md#-classes-and-imports) and 
 | `IllegalArgumentException` | `' is reserved for the output object`, `' is reserved by`, `must not be blank` | A blank or [reserved](facts.md#-naming-rules) fact name |
 | `IllegalArgumentException` | `' is not a valid fact name`, `' cannot be used as a fact name` | In MVEL, the name isn't an identifier, is a keyword or class name, or starts the name of a class the rules use; see [Fact names MVEL rejects](languages/mvel-fact-names.md#-fact-names-mvel-rejects) |
 | `IllegalArgumentException` | `was declared as`, `wasn't declared`, `was declared, but the run didn't supply it` | A fact doesn't match its declaration; see [Declaring facts](facts.md#-declaring-facts) |
-| `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, a class that isn't imported, or a member of a [static field named in full](languages/mvel-gotchas.md#-calling-java-code); see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
-| `RuleExecutionException` | `could not resolve class` | In MVEL, `new X()` for a class that isn't imported, or imported from a package that doesn't exist; see [Classes and imports](languages/mvel.md#-classes-and-imports) |
+| `RuleExecutionException` | `unresolvable property or identifier`, `unable to resolve variable` | In MVEL, a missing fact, a class not imported, a static read of a class [imported by name where the context class loader couldn't see it](thread-safety.md#-class-loaders), or a member of a [static field named in full](languages/mvel-gotchas.md#-calling-java-code); see [Null and missing facts](languages/mvel.md#null-and-missing-facts) and [Classes and imports](languages/mvel.md#-classes-and-imports) |
+| `RuleExecutionException` | `could not resolve class` | In MVEL, `new X()` for a class not imported, imported from a package that doesn't exist, or imported by name on a thread whose context class loader couldn't see it; see [Classes and imports](languages/mvel.md#-classes-and-imports) and [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `could not access: ` | In MVEL, a misspelled property, a private field without a getter, or a `Map` without the key; see [Facts in MVEL](languages/mvel.md#-facts-in-mvel) for a property and [Reading a fact's properties](facts.md#-reading-a-facts-properties) for a `Map` |
 | `RuleExecutionException` | `could not access field` | In MVEL, the fact's class isn't public, or its package isn't exported on the module path; see [Calling Java code](languages/mvel-gotchas.md#-calling-java-code) and [Installation](../README.md#-installation) |
 | `RuleExecutionException` | `could not access property (` | In MVEL, an action sets a property the output has no setter or public field for, such as a record's component, and the output isn't a `Map`; see [Mostly in actions](languages/mvel.md#mostly-in-actions) |
@@ -187,10 +187,10 @@ the rule. See [Classes and imports](languages/mvel.md#-classes-and-imports) and 
 | `RuleExecutionException` | `NoClassDefFoundError` or `ClassNotFoundException` naming a fact or output class, with MVEL's JIT, [after about 50 runs](languages/mvel-gotchas.md#-a-rule-failing-for-ever-after-about-50-quick-runs) | That class isn't reachable from the `load()` thread's context class loader; see [Class loaders](thread-safety.md#-class-loaders) |
 | `RuleExecutionException` | `NoClassDefFoundError`, `IllegalAccessError` as the cause | A `LinkageError` from a rule, reported naming the rule; see [Exceptions by method](exceptions-by-method.md). On the module path, see [Installation](../README.md#-installation) |
 
-A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. In a stack trace the class shows as
-`io.github.brantunger.unruly.core.ReportedFailure`, the engine's internal subclass of `RuleExecutionException`. Catch
-`RuleExecutionException`, never the class name. Line breaks in a language's message are escaped in the engine's
-message; the original is `getCause()`. See [Reading exception messages](exception-messages.md).
+A [stop](glossary.md#stop) and a failure are both `RuleExecutionException`. A stack trace shows the class as
+`io.github.brantunger.unruly.core.ReportedFailure`, the engine's internal subclass: catch `RuleExecutionException`,
+never that name. Line breaks in a language's message are escaped in the engine's; the original is `getCause()`. See
+[Reading exception messages](exception-messages.md).
 
 ## 🚢 It works in tests but not in production
 
@@ -200,7 +200,7 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
   with `could not access field`: the module path needs MVEL's module name and an export; see
   [Installation](../README.md#-installation).
 
-- **No log output:** there's no SLF4J provider on the class path; see
+- **No log output:** no SLF4J provider is on the class path; see
   [Logging setup](listeners-and-logging.md#-logging-setup).
 
 ### Under load, or at shutdown
@@ -218,8 +218,8 @@ message; the original is `getCause()`. See [Reading exception messages](exceptio
 
 ### With facts the tests never used
 
-**A rule that passed its tests fails on a fact or property name:** the production facts have another shape, such as
-a bean without the property or a `Map` without the key, and `load()` checks names only as
+**A rule that passed its tests fails on a fact or property name:** the production facts have another shape, a bean
+without the property or a `Map` without the key, and `load()` checks names only as
 [noted above](#-an-exception-from-load); see
 [Caught when loading or only when running?](error-handling.md#-caught-when-loading-or-only-when-running). Test each
-rule against facts shaped like production's; see [Testing rules](writing-rules.md#-testing-rules).
+rule on facts shaped like production's: [Testing rules](writing-rules.md#-testing-rules).

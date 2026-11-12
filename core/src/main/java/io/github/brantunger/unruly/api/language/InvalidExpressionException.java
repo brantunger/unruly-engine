@@ -1,4 +1,4 @@
-package io.github.brantunger.unruly.api.exception;
+package io.github.brantunger.unruly.api.language;
 
 import org.jspecify.annotations.Nullable;
 
@@ -7,18 +7,18 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Thrown by an {@link io.github.brantunger.unruly.api.language.ExpressionCompiler} to reject an expression: one that
- * breaks a rule the engine enforces, such as a condition that assigns to a fact, or one with an error the language can
- * point to, such as a syntax error.
+ * Thrown by an {@link ExpressionCompiler} to reject an expression: one that breaks a rule the engine enforces, such as
+ * a condition that assigns to a fact, or one with an error the language can point to, such as a syntax error.
  *
  * <p>
  * The message says what is wrong without naming the rule, such as
  * {@code contains an assignment ('=' at line 1, column 16)}, and the {@link #issues() issues} say where, when the
  * language knows. {@link io.github.brantunger.unruly.api.RulesEngine#load(java.util.List)} reports it as a
- * {@link RuleCompilationException} whose message names the expression and the rule first:
- * {@code Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 16)}. That exception has the
- * same issues, and this exception as its cause. Anything else an expression compiler throws is the cause too, but the
- * message then reads {@code Condition for rule 'prime-rate' failed to compile: } followed by the exception's message.
+ * {@link io.github.brantunger.unruly.api.RuleCompilationException} whose message names the expression and the rule
+ * first: {@code Condition for rule 'prime-rate' contains an assignment ('=' at line 1, column 16)}. That exception
+ * has the same issues, and this exception as its cause. Anything else an expression compiler throws is the cause too,
+ * but the message then reads {@code Condition for rule 'prime-rate' failed to compile: } followed by the exception's
+ * message.
  * </p>
  */
 public class InvalidExpressionException extends UnrulyException {

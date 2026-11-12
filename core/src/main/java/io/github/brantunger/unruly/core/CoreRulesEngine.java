@@ -18,18 +18,15 @@ import java.util.function.Supplier;
 
 import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
+import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RuleListener;
 import io.github.brantunger.unruly.api.RuleSetInfo;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RunContext;
 import io.github.brantunger.unruly.api.RunOptions;
 import io.github.brantunger.unruly.api.RunResult;
-import io.github.brantunger.unruly.api.exception.RuleCompilationException;
-import io.github.brantunger.unruly.api.exception.RuleExecutionException;
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
-import io.github.brantunger.unruly.internal.Causes;
-import io.github.brantunger.unruly.internal.IsoInstant;
-import io.github.brantunger.unruly.internal.Text;
 
 /**
  * The engine, whatever its match policy: loading rules, which {@link RuleListCompiler} compiles and
