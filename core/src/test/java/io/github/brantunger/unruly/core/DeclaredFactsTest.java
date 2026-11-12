@@ -14,13 +14,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.lang.reflect.Type;
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -37,6 +41,30 @@ class DeclaredFactsTest {
     }
 
     private static final Rule RULE = Rule.builder().ruleName("r").condition("true").action("put ok true").build();
+
+    // Eight names, so an order that only happens to be the declared one is rare, and each tried as the first one
+    // declared, so a test of what comes first can't pass by chance: an order that doesn't follow the declarations
+    // puts the same name first in nearly every rotation (#1406).
+    private static final List<String> NAMES =
+            List.of("applicant", "limits", "tags", "history", "order", "account", "region", "score");
+
+    /** The eight names in the eight orders that go round from each one of them. */
+    private static List<List<String>> rotations() {
+        List<List<String>> rotations = new ArrayList<>();
+        for (int first = 0; first < NAMES.size(); first++) {
+            List<String> names = new ArrayList<>(NAMES.subList(first, NAMES.size()));
+            names.addAll(NAMES.subList(0, first));
+            rotations.add(names);
+        }
+        return rotations;
+    }
+
+    /** A builder that declares each name as a String, one by one and in the order given. */
+    private static RulesEngineBuilder<Map<String, Object>> declaring(List<String> names) {
+        RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder.allMatches(HashMap::new);
+        names.forEach(name -> builder.fact(name, String.class));
+        return builder;
+    }
 
     private static RulesEngine<Map<String, Object>> engine(
             java.util.function.UnaryOperator<RulesEngineBuilder<Map<String, Object>>> configuration) {
@@ -131,6 +159,141 @@ class DeclaredFactsTest {
 
         assertEquals("Fact 'applicant' was declared, but the run didn't supply it, and this engine was built with "
                 + "requireDeclaredFacts()", thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("with requireDeclaredFacts, a run that leaves out every declared fact is told of the first one "
+            + "declared, whichever that is (#1406)")
+    void missingNamesTheFirstDeclared() {
+        for (List<String> names : rotations()) {
+            try (RulesEngine<Map<String, Object>> engine = declaring(names).language(new ToyExpressionLanguage())
+                    .requireDeclaredFacts().build()) {
+                engine.load(List.of(RULE));
+
+                IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                        () -> engine.run(new FactMap<>()));
+
+                assertEquals("Fact '" + names.get(0) + "' was declared, but the run didn't supply it, and this engine "
+                        + "was built with requireDeclaredFacts()", thrown.getMessage());
+            }
+        }
+    }
+
+    /** The declared names a language is given when an engine built by {@code builder} loads a rule, in order. */
+    private static List<String> namesToldToTheLanguage(RulesEngineBuilder<Map<String, Object>> builder) {
+        List<String> told = new ArrayList<>();
+        try (RulesEngine<Map<String, Object>> engine = builder.language(new StubExpressionLanguage()
+                .onNewCompiler(context -> told.addAll(context.declaredFacts().keySet()))).build()) {
+            engine.load(List.of(RULE));
+        }
+        return told;
+    }
+
+    @Test
+    @DisplayName("a language is given the declared facts in the order they were declared, one by one or with "
+            + "facts(map) (#1406)")
+    void languageIsGivenTheDeclaredOrder() {
+        for (List<String> names : rotations()) {
+            Map<String, Class<?>> ordered = new LinkedHashMap<>();
+            names.forEach(name -> ordered.put(name, String.class));
+
+            assertEquals(names, namesToldToTheLanguage(declaring(names)));
+            assertEquals(names, namesToldToTheLanguage(
+                    RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new).facts(ordered)));
+        }
+    }
+
+    @Test
+    @DisplayName("the declared facts a language is given, by an engine or by a context made outside one, throw "
+            + "NullPointerException when asked for a null name or type (#1406)")
+    void declaredFactsRejectANullName() {
+        List<Map<String, Type>> told = new ArrayList<>();
+        try (RulesEngine<Map<String, Object>> engine = declaring(NAMES).language(new StubExpressionLanguage()
+                .onNewCompiler(context -> told.add(context.declaredFacts()))).build()) {
+            engine.load(List.of(RULE));
+        }
+        told.add(new EngineCompileContext(Set.of(), Set.of(), ClassLoader.getSystemClassLoader(), Object.class,
+                Map.of(), Map.of("age", int.class), true).declaredFacts());
+
+        assertEquals(2, told.size());
+        for (Map<String, Type> facts : told) {
+            assertThrows(NullPointerException.class, () -> facts.get(null));
+            assertThrows(NullPointerException.class, () -> facts.containsKey(null));
+            assertThrows(NullPointerException.class, () -> facts.getOrDefault(null, String.class));
+            assertThrows(NullPointerException.class, () -> facts.containsValue(null));
+            assertNull(facts.get("nobody"));
+            assertFalse(facts.containsKey("nobody"));
+            assertFalse(facts.containsValue(Object.class));
+        }
+    }
+
+    @Test
+    @DisplayName("the declared facts a language is given, by an engine or by a context made outside one, throw "
+            + "UnsupportedOperationException from every method that could change them, even one with nothing to "
+            + "change (#1406)")
+    void declaredFactsRejectEveryChange() {
+        List<Map<String, Type>> told = new ArrayList<>();
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>allMatches(HashMap::new)
+                .fact("age", int.class).language(new StubExpressionLanguage()
+                        .onNewCompiler(context -> told.add(context.declaredFacts()))).build()) {
+            engine.load(List.of(RULE));
+        }
+        told.add(new EngineCompileContext(Set.of(), Set.of(), ClassLoader.getSystemClassLoader(), Object.class,
+                Map.of(), Map.of("age", int.class), true).declaredFacts());
+
+        assertEquals(2, told.size());
+        told.forEach(DeclaredFactsTest::assertRejectsEveryChange);
+    }
+
+    private static void assertRejectsEveryChange(Map<String, Type> facts) {
+        assertAll(
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.put("age", Integer.class)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.remove("nobody")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.remove(null)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.remove("nobody", String.class)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.putAll(Map.of())),
+                () -> assertThrows(UnsupportedOperationException.class, facts::clear),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.putIfAbsent("age", String.class)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.replace("nobody", String.class)),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.replace("nobody", String.class, Long.class)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> facts.replaceAll((name, type) -> type)),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.computeIfAbsent("age", name -> String.class)),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.computeIfPresent("nobody", (name, type) -> type)),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.compute("nobody", (name, type) -> type)),
+                () -> assertThrows(UnsupportedOperationException.class,
+                        () -> facts.merge("age", Integer.class, (old, type) -> old)));
+        assertEquals(Map.of("age", Integer.class), facts);
+    }
+
+    @Test
+    @DisplayName("the declared names a language can't use are listed by load() in the order they were declared "
+            + "(#1406)")
+    void unusableDeclaredNamesAreListedInDeclaredOrder() {
+        Pattern named = Pattern.compile("Declared fact '([a-z]+)' can't be used: ");
+        for (List<String> names : rotations()) {
+            try (RulesEngine<Map<String, Object>> engine = declaring(names)
+                    .language(new StubExpressionLanguage().checkFactName(name -> {
+                        throw new IllegalArgumentException("no name is one rules can refer to");
+                    })).build()) {
+
+                RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                        () -> engine.load(List.of(RULE)));
+
+                assertTrue(thrown.getMessage().startsWith("8 failures while loading the rules: "),
+                        thrown.getMessage());
+                List<String> listed = new ArrayList<>();
+                Matcher matcher = named.matcher(thrown.getMessage());
+                while (matcher.find()) {
+                    listed.add(matcher.group(1));
+                }
+                assertEquals(names, listed);
+            }
+        }
     }
 
     @Test

@@ -60,7 +60,8 @@ final class EngineSettings {
         this.outputType = configuration.outputType();
         this.options = configuration.options();
         this.declaredFacts = declaredFacts;
-        this.declaredClasses = Map.copyOf(declaredClasses);
+        // The map resolve() filled, which nothing else holds, kept in the order the facts were declared.
+        this.declaredClasses = Collections.unmodifiableMap(declaredClasses);
         this.allFactsDeclared = configuration.allFactsDeclared();
         this.languageImports = configuration.languageImports();
         this.copyLimit = configuration.copyLimit();

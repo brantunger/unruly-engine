@@ -10,6 +10,7 @@ import io.github.brantunger.unruly.api.language.ToyExpressionLanguage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,29 @@ class LanguageOptionsTest {
 
         assertEquals(Map.of("strict", "true", "depth", "2"), toy.get().options());
         assertEquals(Map.of("strict", "false"), other.get().options());
+    }
+
+    @Test
+    @DisplayName("a language sees its options in the order they were set, whichever was set first (#1406)")
+    void optionsInTheOrderSet() {
+        // Eight names, each tried as the first one set, so an order that doesn't follow the builder's can't match by
+        // chance.
+        List<String> all = List.of("strict", "depth", "mode", "limit", "trace", "cache", "locale", "zone");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+            AtomicReference<CompileContext> captured = new AtomicReference<>();
+            RulesEngineBuilder<Map<String, Object>> builder = RulesEngineBuilder
+                    .<Map<String, Object>>allMatches(HashMap::new)
+                    .language(new Capturing(new ToyExpressionLanguage(), captured));
+            names.forEach(name -> builder.option("toy", name, "1"));
+
+            try (RulesEngine<Map<String, Object>> engine = builder.build()) {
+                engine.load(List.of(rule("toy")));
+            }
+
+            assertEquals(names, List.copyOf(captured.get().options().keySet()));
+        }
     }
 
     @Test

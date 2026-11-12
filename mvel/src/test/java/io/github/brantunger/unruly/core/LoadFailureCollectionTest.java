@@ -13,10 +13,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -196,11 +194,11 @@ class LoadFailureCollectionTest {
         assertEquals(3, ex.failures().size(), ex.getMessage());
         assertTrue(ex.getMessage().startsWith("3 failures while loading the rules: "), ex.getMessage());
         assertEquals("broken", ex.failures().get(0).getRuleName());
-        // The declared facts are an unordered map, so the two rejections may come in either order.
-        Set<String> rejected = ex.failures().subList(1, 3).stream()
+        // In the order the facts were declared (#1406).
+        List<String> rejected = ex.failures().subList(1, 3).stream()
                 .map(failure -> failure.getMessage().replaceAll(" can't be used: .*", ""))
-                .collect(Collectors.toSet());
-        assertEquals(Set.of("Declared fact 'empty'", "Declared fact 'nil'"), rejected);
+                .toList();
+        assertEquals(List.of("Declared fact 'empty'", "Declared fact 'nil'"), rejected);
     }
 
     @Test

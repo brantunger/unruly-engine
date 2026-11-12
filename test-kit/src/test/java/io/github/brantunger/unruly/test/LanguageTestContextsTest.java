@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -520,6 +521,85 @@ class LanguageTestContextsTest {
             assertEquals("java.util.List<java.lang.String>", tags.getTypeName());
             assertSame(List.class, CompileContext.rawClass(tags));
             assertSame(Integer.class, context.declaredFacts().get("age"));
+        }
+    }
+
+    @Test
+    @DisplayName("a context's declared facts are unmodifiable and in the order of the map given, by each compile "
+            + "method that takes declarations (#1406)")
+    void declaredFactsUnmodifiableAndInOrder() {
+        ClassLoader loader = getClass().getClassLoader();
+        // Eight names, each tried as the first, so an order that doesn't follow the map's can't match by chance.
+        List<String> all = List.of("applicant", "limits", "tags", "history", "order", "account", "region", "score");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+            Map<String, Type> declared = new LinkedHashMap<>();
+            names.forEach(name -> declared.put(name, String.class));
+
+            List<CompileContext> contexts = List.of(
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false,
+                            List.of()),
+                    LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader,
+                            Object.class, Map.of(), declared, false, List.of()));
+            declared.clear();
+
+            for (CompileContext context : contexts) {
+                Map<String, Type> facts = context.declaredFacts();
+                assertEquals(names, List.copyOf(facts.keySet()));
+                assertThrows(UnsupportedOperationException.class, () -> facts.put("extra", String.class));
+                assertThrows(UnsupportedOperationException.class, () -> facts.remove(names.get(0)));
+                assertThrows(UnsupportedOperationException.class, facts::clear);
+                // As the map Map.copyOf made did.
+                assertThrows(NullPointerException.class, () -> facts.get(null));
+                assertThrows(NullPointerException.class, () -> facts.containsKey(null));
+                assertThrows(NullPointerException.class, () -> facts.getOrDefault(null, String.class));
+                assertThrows(NullPointerException.class, () -> facts.containsValue(null));
+                // A change with nothing to change is rejected too.
+                assertThrows(UnsupportedOperationException.class, () -> facts.remove("nobody"));
+                assertThrows(UnsupportedOperationException.class, () -> facts.putAll(Map.of()));
+                assertThrows(UnsupportedOperationException.class,
+                        () -> facts.computeIfPresent("nobody", (name, type) -> type));
+                assertEquals(names, List.copyOf(facts.keySet()));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a context's options are unmodifiable and in the order of the map given, by each compile method "
+            + "that takes options (#1406)")
+    void optionsUnmodifiableAndInOrder() {
+        ClassLoader loader = getClass().getClassLoader();
+        // Eight names, each tried as the first, so an order that doesn't follow the map's can't match by chance.
+        List<String> all = List.of("strict", "depth", "mode", "limit", "trace", "cache", "locale", "zone");
+        for (int first = 0; first < all.size(); first++) {
+            List<String> names = new ArrayList<>(all.subList(first, all.size()));
+            names.addAll(all.subList(0, first));
+            Map<String, String> given = new LinkedHashMap<>();
+            names.forEach(name -> given.put(name, "1"));
+
+            List<CompileContext> contexts = List.of(
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given, Map.of(), false),
+                    LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, given, Map.of(), false,
+                            List.of()),
+                    LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader,
+                            Object.class, given, Map.of(), false, List.of()));
+            given.clear();
+
+            for (CompileContext context : contexts) {
+                Map<String, String> options = context.options();
+                assertEquals(names, List.copyOf(options.keySet()));
+                assertThrows(UnsupportedOperationException.class, () -> options.put("extra", "1"));
+                assertThrows(UnsupportedOperationException.class, () -> options.remove("nobody"));
+                assertThrows(UnsupportedOperationException.class, () -> options.putAll(Map.of()));
+                // As the map Map.copyOf made did.
+                assertThrows(NullPointerException.class, () -> options.get(null));
+                assertThrows(NullPointerException.class, () -> options.containsKey(null));
+                assertThrows(NullPointerException.class, () -> options.containsValue(null));
+                assertEquals(names, List.copyOf(options.keySet()));
+            }
         }
     }
 

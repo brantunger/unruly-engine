@@ -1,9 +1,7 @@
 package io.github.brantunger.unruly.core;
 
 import java.lang.reflect.Type;
-import java.util.AbstractMap;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * An engine's declared facts as its languages are told them, by name: each type checked, a primitive class as its
@@ -13,10 +11,7 @@ import java.util.Set;
  * engine was built is what holds, for the languages as for the engine's check of a run's values. Only the engine
  * makes one, so a map from anywhere else is still checked. It's unmodifiable, and has no static initializer.
  */
-final class DeclaredFacts extends AbstractMap<String, Type> {
-
-    // An unmodifiable copy.
-    private final Map<String, Type> types;
+final class DeclaredFacts extends NullRejectingMap<Type> {
 
     /**
      * Keeps the declarations an engine has checked.
@@ -24,27 +19,6 @@ final class DeclaredFacts extends AbstractMap<String, Type> {
      * @param types The type to tell languages of each fact, by name, already checked; copied
      */
     DeclaredFacts(Map<String, Type> types) {
-        this.types = Map.copyOf(types);
-    }
-
-    @Override
-    public Set<Entry<String, Type>> entrySet() {
-        return types.entrySet();
-    }
-
-    // Looked up, where AbstractMap would search every entry.
-    @Override
-    public Type get(Object name) {
-        return types.get(name);
-    }
-
-    @Override
-    public boolean containsKey(Object name) {
-        return types.containsKey(name);
-    }
-
-    @Override
-    public int size() {
-        return types.size();
+        super(types);
     }
 }

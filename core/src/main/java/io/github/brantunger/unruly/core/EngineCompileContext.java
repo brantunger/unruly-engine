@@ -110,7 +110,8 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
         }
         packageImports = Set.copyOf(packageImports);
         classImports = Set.copyOf(classImports);
-        options = Map.copyOf(options);
+        // In the order they were given; each was checked above.
+        options = new NullRejectingMap<>(options);
         reservedFactNames = Set.copyOf(reservedFactNames);
         // An engine's declarations were checked when it was built, and are kept as they are: checking one again asks
         // a parameterized type an application wrote for its raw type, which could answer otherwise by now, or throw.
@@ -120,7 +121,7 @@ public record EngineCompileContext(Set<String> packageImports, Set<Class<?>> cla
             for (Map.Entry<String, Type> fact : declaredFacts.entrySet()) {
                 declared.put(fact.getKey(), declaredType(fact.getKey(), fact.getValue()));
             }
-            declaredFacts = Map.copyOf(declared);
+            declaredFacts = new NullRejectingMap<>(declared);
         }
         languageImportNames = List.copyOf(languageImportNames);
     }

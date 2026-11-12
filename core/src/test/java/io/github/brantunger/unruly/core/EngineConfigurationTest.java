@@ -110,7 +110,50 @@ class EngineConfigurationTest {
                 () -> assertThrows(UnsupportedOperationException.class,
                         () -> configuration.options().get("toy").clear()),
                 () -> assertThrows(UnsupportedOperationException.class,
-                        () -> configuration.declaredFacts().clear()));
+                        () -> configuration.declaredFacts().clear()),
+                // As the map Map.copyOf made did (#1406).
+                () -> assertThrows(NullPointerException.class, () -> configuration.declaredFacts().get(null)),
+                () -> assertThrows(NullPointerException.class,
+                        () -> configuration.declaredFacts().containsKey(null)),
+                () -> assertThrows(NullPointerException.class,
+                        () -> configuration.declaredFacts().getOrDefault(null, String.class)),
+                () -> assertThrows(NullPointerException.class,
+                        () -> configuration.declaredFacts().containsValue(null)));
+    }
+
+    @Test
+    @DisplayName("a null declared fact name or type, and a null option name, value or map of options, is rejected "
+            + "with a NullPointerException (#1406)")
+    void nullDeclarationsAndOptionsRejected() {
+        assertAll(
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, Map.of(), declared(null, String.class))),
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, Map.of(), declared("name", null))),
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, Map.of(), null)),
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, options("toy", option(null, "true")), Map.of())),
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, options("toy", option("strict", null)), Map.of())),
+                () -> assertThrows(NullPointerException.class, () -> configuration(LANGUAGES, List.of(), List.of(),
+                        LIMIT, CLOCK, Object.class, WRITER, options("toy", null), Map.of())));
+    }
+
+    @Test
+    @DisplayName("a language's options throw NullPointerException when asked for a null name or value, and "
+            + "UnsupportedOperationException from a change with nothing to change (#1406)")
+    void optionsRejectNullAndEveryChange() {
+        Map<String, String> values = configuration(LANGUAGES, List.of(), List.of(), LIMIT, CLOCK, Object.class,
+                WRITER, options("toy", option("strict", "true")), Map.of()).options().get("toy");
+
+        assertAll(
+                () -> assertThrows(NullPointerException.class, () -> values.get(null)),
+                () -> assertThrows(NullPointerException.class, () -> values.containsKey(null)),
+                () -> assertThrows(NullPointerException.class, () -> values.getOrDefault(null, "false")),
+                () -> assertThrows(NullPointerException.class, () -> values.containsValue(null)),
+                () -> assertThrows(UnsupportedOperationException.class, () -> values.remove("nobody")),
+                () -> assertThrows(UnsupportedOperationException.class, () -> values.putAll(Map.of())));
     }
 
     private static EngineConfiguration<Object> withLanguageImports(Map<String, List<String>> languageImports) {
