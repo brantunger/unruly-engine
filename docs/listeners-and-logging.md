@@ -212,7 +212,7 @@ The run event's fields:
 | `matchPolicy` | `firstMatch`, `allMatches` or `uniqueMatch` |
 | `rulesEvaluated`, `rulesFired` | Conditions evaluated and actions run to completion, also for a run that failed or stopped part-way. Rules the run skips count in neither |
 | `ruleSetChecksum` | The [checksum](glossary.md#checksum) of the rules the run used |
-| `outcome` | `COMPLETED`; `STOPPED` when the run reported a stop because it was interrupted or passed its deadline, also while waiting for a copy; `FAILED` for any other exception, a rule's failure included, even once the run must stop; see [What stops a run](stopping-runs.md#-what-stops-a-run) |
+| `outcome` | `COMPLETED`; `STOPPED` when the run reported a stop because it was interrupted or passed its deadline, also while waiting for a copy; `FAILED` for other exceptions and errors, rule failures included, even once the run must stop; see [What stops a run](stopping-runs.md#-what-stops-a-run) |
 
 The run event doesn't record the run's tags or the instant its validity windows were judged at. A listener can read
 both from the `RunContext`.

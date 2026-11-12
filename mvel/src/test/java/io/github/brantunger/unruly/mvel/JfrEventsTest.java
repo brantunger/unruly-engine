@@ -26,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +88,13 @@ class JfrEventsTest {
     public static final class Thrower {
         public boolean fail() {
             throw new IllegalStateException("the condition failed on purpose");
+        }
+    }
+
+    /** Something a condition can call to fail the run with a fatal error. No memory is used up. */
+    public static final class FatalThrower {
+        public boolean fail() {
+            throw new OutOfMemoryError("from the condition, on purpose");
         }
     }
 
@@ -206,11 +214,19 @@ class JfrEventsTest {
         return runs.get(0);
     }
 
+    /**
+     * The rule events of one run, in the order the run evaluated them. A recording file doesn't keep that order: when
+     * a thread's Flight Recorder buffer fills, what it holds moves to a global buffer, which is written after the
+     * thread's own, so an event can come back after one committed later. Sorted by start time, as one thread runs a
+     * run's rules one after the other; by end time when two start in the same clock tick.
+     */
     private static List<RecordedEvent> ruleEvents(List<RecordedEvent> all, RecordedEvent run) {
         long engine = run.getLong("engineId");
         long runId = run.getLong("runId");
         return events(all, RULE_EVENT,
-                event -> event.getLong("engineId") == engine && event.getLong("runId") == runId);
+                event -> event.getLong("engineId") == engine && event.getLong("runId") == runId).stream()
+                .sorted(Comparator.comparing(RecordedEvent::getStartTime).thenComparing(RecordedEvent::getEndTime))
+                .toList();
     }
 
     private static String describe(RecordedEvent event) {
@@ -352,6 +368,26 @@ class JfrEventsTest {
         assertEquals(2, run.getInt("rulesEvaluated"));
         assertEquals(0, run.getInt("rulesFired"), "the actions never ran");
         assertEquals(List.of("jfr-fail-first CONDITION MATCHED", "jfr-fail-throws CONDITION FAILED"),
+                ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
+    }
+
+    @Test
+    @DisplayName("a condition that throws a fatal error records FAILED on the rule and on the run, not STOPPED")
+    void fatalErrorInCondition() throws IOException {
+        RulesEngine<Map<String, Object>> engine =
+                RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new).build();
+        engine.load(List.of(rule("jfr-fatal-throws", 1, "thrower.fail()")));
+        FactStore<Object> facts = new FactMap<>();
+        facts.setValue("thrower", new FatalThrower());
+        String checksum = engine.rules().checksum();
+
+        Recording recording = recordEverything();
+        assertThrows(OutOfMemoryError.class, () -> engine.run(facts));
+        List<RecordedEvent> all = stop(recording, "fatal");
+
+        RecordedEvent run = runEvent(all, checksum);
+        assertEquals("FAILED", run.getString("outcome"));
+        assertEquals(List.of("jfr-fatal-throws CONDITION FAILED"),
                 ruleEvents(all, run).stream().map(JfrEventsTest::describe).toList());
     }
 
