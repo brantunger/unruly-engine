@@ -60,9 +60,15 @@ public record EngineConfiguration<O>(Map<String, ExpressionLanguage> languages, 
         imports = List.copyOf(imports);
         listeners = List.copyOf(listeners);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
-        options.forEach((language, values) -> copied.put(language, Map.copyOf(values)));
+        // Map.copyOf rejects a null map, name or value as before; the copy kept is in the order they were set.
+        options.forEach((language, values) -> {
+            Map.copyOf(values);
+            copied.put(language, new NullRejectingMap<>(values));
+        });
         options = Collections.unmodifiableMap(copied);
-        declaredFacts = Map.copyOf(declaredFacts);
+        // Map.copyOf rejects a null map, name or type as before; the copy kept is in the order they were declared.
+        Map.copyOf(declaredFacts);
+        declaredFacts = new NullRejectingMap<>(declaredFacts);
         Map<String, List<String>> copiedImports = new LinkedHashMap<>();
         languageImports.forEach((language, names) -> copiedImports.put(language, List.copyOf(names)));
         languageImports = Collections.unmodifiableMap(copiedImports);
