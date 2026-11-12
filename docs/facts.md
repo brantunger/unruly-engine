@@ -1,6 +1,6 @@
 # 📁 Facts
 
-Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**, which is
+Facts are the inputs to a run. Each fact has a **name**, which rules use as a variable, and a **value**,
 any Java object.
 
 **Who it's for:** rule authors and application developers.
@@ -132,20 +132,20 @@ A fact whose value is `null` and a fact that isn't there are different things to
 A language tells the first two from the third with `facts().containsKey(name)`. `FactStore.getValue(name)` can't:
 it returns `null` in all three cases.
 
-**In MVEL,** `x == null` is `true` for the first two, and fails the run for a missing fact. Use `isdef x` to check
+**In MVEL,** `x == null` is `true` for the first two, and fails the run for a missing fact. `isdef x` checks
 that a fact was supplied. See [Null and missing facts in MVEL](languages/mvel.md#null-and-missing-facts) for the
 messages and for a `Map` fact without a key.
 
 ## 🧲 Reading a fact's properties
 
 The engine hands each language the fact values as they are. It doesn't read properties itself: when a rule writes
-`applicant.creditScore`, the rule's language decides what that means and what happens when the property isn't there.
+`applicant.creditScore`, the rule's language decides what that means and what happens without the property.
 
 | Fact | MVEL | A language using `FactProperties` |
 | --- | --- | --- |
 | Public record or JavaBean | ✅ accessor or getter | ✅ component or getter |
 | `Map` with the key | ✅ `order['key']`; `order.key` unless `key` is [named like a method](languages/mvel-gotchas.md#-comparison-gotchas), as `size` is | ✅ exact `String` key |
-| `Map` without the key | ❌ `could not access: <key>` | ❌ `IllegalArgumentException` |
+| `Map` without the key | ❌ `order.key`: `could not access: <key>`; ⚠️ `order['key']` is `null`, [silently](languages/mvel-gotchas.md#-comparison-gotchas) | ❌ `IllegalArgumentException` |
 | Public field, no getter | ✅ | ❌ not a property |
 | Class that isn't public | ⚠️ only through a public interface declaring the accessor, even on the class path | ✅ through a public interface, or where its package is open |
 
