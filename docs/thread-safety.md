@@ -239,9 +239,15 @@ application class loader or a test harness that isolates each case. Load the rul
 restore the old one. A package import needs it at `load()` only.
 
 A single-class import of one of them, `imports("com.plugin.Applicant")`, needs it around `build()` too, or the name
-is imported as a package, silently, and rules using the class fail at `run()` with
-`could not resolve class: Applicant`. With it at `build()` but not `load()`, they fail at `run()` naming the class
-in full, `could not resolve class: com.plugin.Applicant`.
+is imported as a package, silently. Put it around both: with one alone, what `run()` does depends on how the rule
+uses the class, and the message differs.
+
+```text
+The loader is around   A rule creating one: new Applicant()             A rule reading a static: Applicant.MAX
+load() only            could not resolve class: Applicant               unresolvable property or identifier: Applicant
+build() only           could not resolve class: com.plugin.Applicant    works
+build() and load()     works                                            works
+```
 
 ```java
 ClassLoader original = Thread.currentThread().getContextClassLoader();

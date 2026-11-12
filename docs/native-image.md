@@ -25,14 +25,14 @@ the errors an image gives when one is missing.
 
 ## 🚀 Quick start
 
-The engine and MVEL work in a native image when two things are true:
+The engine and MVEL work in a native image when:
 
 1. MVEL runs with its JIT off, as the engine sets it.
 2. The image registers, for reflection, every class and method your rules read, write or call.
 
-The [native-smoke](../native-smoke/src/main/java/com/example/nativesmoke/Main.java) application in this repository
+The [native-smoke](../native-smoke/src/main/java/com/example/nativesmoke/Main.java) application
 does both, and CI builds and runs it on every pull request. These are CI's commands, run from the repository's root;
-`-H:+ReportExceptionStackTraces` only makes a failed build print its stack traces:
+`-H:+ReportExceptionStackTraces` only makes a failed build print stack traces:
 
 ```bash
 ./gradlew :native-smoke:installDist -PnullAway=false   # GraalVM CE 21.0.2 is older than NullAway's JDK 21.0.8
@@ -49,37 +49,40 @@ ends with:
 native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
-`bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and `jit=off`
+`bean` and `map` are the rules' results, `image=true` says the binary runs as a native image, and `jit=off`
 that MVEL's JIT is off. `factName=rejected` means the image rejected a fact named after a class in an imported package,
 as the JVM does; MVEL checks only names its rules' text holds, so the smoke's rule names `Date` in a comment. `prime`
-beside it is the control: an engine that imports the application's own class and no package ran its rule as it should.
+beside it is the control: an engine that imports the application's own class and no package ran its rule.
 
 `hidden=prime,gold,standard` says the default output writer set two properties, and `FactProperties` read one, on
 classes that aren't public, through each class's own methods: the image has no metadata for the public types above
 them.
 
+`typedFacts=...,ran` says two facts declared with a `FactType` reached a language with their type arguments, the
+second naming an application class, and a run's list passed the engine's check.
+
 `deadline=timeout,platform` says a run whose action spins until an action it registered with
 [`onCancel`](languages/custom.md#-stopping-a-run) stops it failed with its 200 ms timeout, and that the engine ran
 that action on a platform thread.
 
-`dateResource` and `dateFactValue` are diagnostics, and no result is held to them. `dateResource=false` says the
-image served no class file for `java.util.Date` as a resource; the check doesn't ask an image for one, which is why
+`dateResource` and `dateFactValue` are diagnostics; no result is held to them. `dateResource=false` says the
+image served no class file for `java.util.Date` as a resource; the check doesn't ask an image for one, so
 the name is rejected all the same. `dateFactValue=rejected` says a rule reading `Date` never ran, because the check
-rejected the fact first. The same code on the JVM prints `dateResource=true` and `image=false`, and every other
-value the same; run it with
+rejected the fact first. On the JVM the same code prints `dateResource=true`, `image=false` and
+the rest unchanged; run it with
 `java -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main`.
 
-Nothing else is needed to build and run an image: no `native-image` option beyond the usual ones, no metadata for
+An image needs nothing else: no `native-image` option beyond the usual ones, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
 `META-INF/services` file, as the JVM does. An image built to fail on a class it has no metadata for works too, given
 the package list [Strict metadata](#-strict-metadata) describes.
 
 ## ⚡ MVEL's JIT stays off
 
-MVEL's JIT optimizer generates classes while rules run. A native image can't load a class that wasn't in it when it
-was built, so with the JIT on the first condition fails. The engine makes MVEL's reflective optimizer the default
+MVEL's JIT optimizer generates classes while rules run. A native image can't load a class it wasn't
+built with, so with the JIT on the first condition fails. The engine makes MVEL's reflective optimizer the default
 before it compiles a rule, so no flag is needed unless MVEL runs earlier; see
-[MVEL's optimizer](languages/mvel.md#mvels-optimizer). Reflective accessors work in an image as long as their targets
+[MVEL's optimizer](languages/mvel.md#mvels-optimizer). Reflective accessors work in an image when their targets
 are [registered](#-registering-your-classes).
 
 > [!IMPORTANT]
@@ -101,7 +104,7 @@ preparing MVEL reads a property of, calls two methods on, one taking a `String`,
 `native-image` reads the file from the class path; you do nothing.
 
 **What your application registers.** Everything your rules reach, in your own
-`src/main/resources/META-INF/native-image/<group>/<artifact>/reflect-config.json`, which `native-image` also finds on
+`src/main/resources/META-INF/native-image/<group>/<artifact>/reflect-config.json`, also on
 the class path. For the sample's rules:
 
 | The rules do | Register | Sample entry |
@@ -114,7 +117,8 @@ the class path. For the sample's rules:
 The sample also sets `queryAllPublicMethods` on each class its rules use, and `allPublicFields` on `Main$Applicant`
 and `Main$LoanDecision`. Its `reflect-config.json` is
 [the full file](../native-smoke/src/main/resources/META-INF/native-image/com.example/native-smoke/reflect-config.json).
-Rules reading a bean's getters, a `Map` fact or a public field weren't tested.
+Rules reading a bean's getters, a `Map` fact or a public field weren't tested. A
+[`FactType`](fact-types.md#-declaring-a-fact-with-type-arguments) needs no entry, in a strict image too.
 
 ### Finding what to register
 
@@ -127,7 +131,7 @@ java -agentlib:native-image-agent=config-output-dir=native-smoke/build/agent-con
 ```
 
 The agent overwrites the files in its output directory, so point it at a scratch directory, not at your
-`reflect-config.json`. Then compare what it wrote with your file, and copy what's new.
+`reflect-config.json`. Then compare its output with your file, and copy what's new.
 
 For the sample, the agent recorded `put` on `java.util.Map`, the interface, and `java.util.HashMap` only for looking
 its methods up, and an image built from its output ran. A hand-written file that listed `HashMap` with no `put`
@@ -218,26 +222,26 @@ the build. Built unscoped that way, the sample printed each site, and its run st
 `native-image` builds an image without Flight Recorder support unless you pass `--enable-monitoring=jfr`. In such an
 image, the engine records none of its [Flight Recorder events](listeners-and-logging.md#-flight-recorder-events), and
 runs work as usual. It checks once, and logs this at DEBUG on the `io.github.brantunger.unruly.engine` logger,
-followed by the error that stopped the events loading:
+then the error that stopped the events loading:
 
 ```text
 The engine records no Flight Recorder events here, because they can't be loaded: ...
 ```
 
-Built with `--enable-monitoring=jfr`, the image can load the event classes, so the engine uses them as it does on the
+Built with `--enable-monitoring=jfr`, the image can load the event classes, so the engine uses them as on the
 JVM. Recording them in an image wasn't tested.
 
 ## 🧩 Other expression languages
 
 Only MVEL ships with the engine. A language of your own works in an image if it generates no classes while rules run,
 and registers the reflection it uses itself; see [Native image](languages/packaging.md#-native-image) for language
-authors. Your application still registers its fact and output classes, as above. No other language has been tested in an
+authors. Your application still registers its fact and output classes, as above. No other language was tested in an
 image.
 
 ## 🧪 What was tested
 
 CI's `native-image` job builds the native-smoke application with GraalVM Community Edition for JDK 21 (21.0.2) on
-Linux, and runs it. It then builds and runs it again with [strict metadata](#-strict-metadata) for the library's five
+Linux, and runs it. It then builds and runs it with [strict metadata](#-strict-metadata) for the library's five
 packages. The application checks its own results and exits with 1 if one is wrong. It covers:
 
 - a first-match engine with a class and a package import, a record fact read by property and a bean output an

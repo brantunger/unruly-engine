@@ -7,6 +7,7 @@ which types are nullable.
 [← Documentation index](README.md)
 
 - [Using the engine from Kotlin](#-using-the-engine-from-kotlin)
+- [Declaring a fact with type arguments](#-declaring-a-fact-with-type-arguments)
 - [Upgrading Kotlin code from 1.4 or earlier](#-upgrading-kotlin-code-from-14-or-earlier)
 
 ---
@@ -56,6 +57,35 @@ val decision: LoanDecision? = engine.run(facts)   // null when no rule matched
 | `FactReference.name` | `String` |
 | `RuleCompilationException.ruleName`, `RuleExecutionException.ruleName` | `String?` |
 | `RuleCompilationException.expressionKind`, `RuleExecutionException.expressionKind` | `ExpressionKind?` |
+
+## 🧬 Declaring a fact with type arguments
+
+A [`FactType`](fact-types.md) declares a fact with its type arguments, such as a `List<String>`. In Kotlin, write
+it as an anonymous object. For a read-only `List`, `Set` or `Map`, annotate the element or value type:
+
+```kotlin
+import io.github.brantunger.unruly.api.FactType
+
+val engine: RulesEngine<LoanDecision> = RulesEngineBuilder.firstMatch(::LoanDecision)
+    .fact("applicant", Applicant::class.java)
+    .fact("tags", object : FactType<List<@JvmSuppressWildcards String>>() {})
+    .fact("applicantsById", object : FactType<Map<String, @JvmSuppressWildcards Applicant>>() {})
+    .build()
+```
+
+Without the annotation, Kotlin records a wildcard, because its read-only collections are covariant:
+`object : FactType<List<String>>() {}` declares `List<? extends String>`, and `Map<String, Applicant>` declares
+`Map<String, ? extends Applicant>`. The engine accepts both. MVEL reads only the fact's class, so nothing changes
+there. A language that checks element types is given the wildcard where Java's `List<String>` gives it `String`.
+
+There are two ways to declare `List<String>` itself:
+
+| Write | The language is told | Use it when |
+| --- | --- | --- |
+| `object : FactType<List<@JvmSuppressWildcards String>>() {}` | `List<String>` | You want the declaration to keep Kotlin's read-only `List`, `Set` or `Map`, the type the rest of your code uses. Annotate each argument that would become a wildcard: `Map<String, @JvmSuppressWildcards Applicant>` |
+| `object : FactType<MutableList<String>>() {}` | `List<String>` | You want the shortest form and nothing to annotate, unless an argument is itself a read-only collection, which still needs the annotation. The token only declares the type: a run checks the value's class, so a read-only list is still accepted |
+
+Checked with Kotlin 2.4.10.
 
 ## 🔼 Upgrading Kotlin code from 1.4 or earlier
 

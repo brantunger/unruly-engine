@@ -67,10 +67,18 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * Each type is one of two kinds: a {@link Class}, or a {@link java.lang.reflect.ParameterizedType} whose raw type
      * is a {@code Class}, such as {@code java.util.List<java.lang.String>}, for a fact declared with its type
      * arguments. A fact declared with a {@link io.github.brantunger.unruly.api.FactType} is given as the type the
-     * token stands for, never as the token. A parameterized type's own type arguments are as the application wrote
-     * them, and can be any {@link Type}, a wildcard or a type variable included. A language with no use for type
-     * arguments reads each type's class with {@link #rawClass(Type)}; one that casts a value to {@code Class} fails
-     * with a {@link ClassCastException} for a fact declared with type arguments.
+     * token stands for, never as the token: a {@code FactType<List<String>>} as that parameterized type, and a
+     * {@code FactType<String>} as {@code String.class}. A parameterized type's own type arguments are as the
+     * application wrote them, and can be any {@link Type}, a wildcard or a type variable included. A language with no
+     * use for type arguments reads each type's class with {@link #rawClass(Type)}; one that casts a value to
+     * {@code Class} fails with a {@link ClassCastException} for a fact declared with type arguments.
+     * </p>
+     *
+     * <p>
+     * A language that reads type arguments, such as a list's element type, reads a {@link WildcardType} as its upper
+     * bound, {@code getUpperBounds()[0]}. An argument can be a wildcard that the application's source doesn't show:
+     * Kotlin's read-only {@code List}, {@code Set} and {@code Map} are covariant, so a Kotlin
+     * {@code FactType<List<String>>} is given as {@code java.util.List<? extends java.lang.String>}.
      * </p>
      *
      * <p>
@@ -92,7 +100,13 @@ public sealed interface CompileContext permits io.github.brantunger.unruly.core.
      * engine checks a run's value against, and all that a language with no use for type arguments reads of a
      * declaration. It allocates nothing for a type the engine accepted.
      *
-     * @param type A type, such as a value of {@code declaredFacts()}
+     * <p>
+     * It's for a declared type, not for one of a parameterized type's type arguments. An argument can be a wildcard or
+     * a type variable, which this method rejects with a message about a fact's type: read a wildcard's upper bound
+     * first, as {@link #declaredFacts()} describes.
+     * </p>
+     *
+     * @param type A declared fact's type: a value of {@code declaredFacts()}, or a type a fact could be declared with
      * @return The type's class, which is primitive only if {@code type} is that primitive class
      * @throws NullPointerException     if {@code type} is {@code null}
      * @throws IllegalArgumentException if {@code type} is neither, so no fact can be declared with it: a
