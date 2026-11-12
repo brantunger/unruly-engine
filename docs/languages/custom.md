@@ -170,9 +170,9 @@ own `IllegalStateException` around such a failure is safe to let through.
 
 **The `CompileContext`** carries what the engine was built with, all optional: the Java packages and classes from
 `imports(...)` with `classLoader()`, the `load()` or `validate()` thread's context class loader; `outputType()`, or
-`Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, primitives as wrappers, with
-`allFactsDeclared()`. Reject a name nobody declared only when that is `true`: otherwise a run may supply undeclared
-facts.
+`Object`; `options()`, from `.option("my", "key", "value")`; and `declaredFacts()`, `Class`es (primitives as
+wrappers) or [`ParameterizedType`s](../fact-types.md#-what-a-language-is-told), with `allFactsDeclared()`. Reject
+an undeclared name only if that is `true`: otherwise runs may supply one.
 
 **Defining classes.** Define them in a loader that delegates to both `classLoader()` and your runtime's own loader,
 whose classes the context loader may not see.

@@ -46,7 +46,7 @@ The engine logs every fact name it rejects at ERROR, so those lines come before 
 ends with:
 
 ```text
-native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform dateResource=false dateFactValue=rejected image=true jit=off
+native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
 `bean` and `map` are what the rules produced, `image=true` says the binary is running as a native image, and `jit=off`

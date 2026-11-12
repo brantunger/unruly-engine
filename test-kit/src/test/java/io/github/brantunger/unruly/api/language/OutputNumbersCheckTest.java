@@ -27,9 +27,10 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@code convertsOutputNumbers()}, must fail a language whose doubles never reach an {@code int} setter, one that
  * rounds a fraction to set one (#1127), one that narrows a double beyond the setter's type, or an infinity, to the
  * type's extreme, one that sets a {@code long} from a whole double past 2<sup>53</sup>, where a double no longer
- * counts by ones, either side of zero, one that rounds a double for a {@code long} setter, and one that rounds a
- * {@link BigDecimal}, or keeps a long one's low bits, to set an {@code int} or a {@code long} (#1264). Each of the int
- * setter's refusals, each {@code BigDecimal}, and NaN and -Infinity on the long setter, is pinned on its own: a
+ * counts by ones, either side of zero, one that rounds a double for a {@code long} setter, one that rounds a
+ * {@link BigDecimal}, or keeps a long one's low bits, to set an {@code int} or a {@code long} (#1264), and one that
+ * keeps the low bits of a {@link Long} to set an {@code int} (#1384). Each of the int setter's refusals, each
+ * {@code BigDecimal}, each {@code Long}, and NaN and -Infinity on the long setter, is pinned on its own: a
  * language that mishandles one infinity, NaN, or a finite whole double below an int, and nothing else fails naming
  * it, and so does one that sets a wrong {@code long} for 3.0E9 without refusing anything. Apart from
  * {@link ContractKitChecksTest}, which has to compile without {@link ExpressionCompiler#convertOutput}.
@@ -304,6 +305,43 @@ class OutputNumbersCheckTest {
                 () -> runCheck(optingIn(wholeDecimals), CHECK));
 
         assertTrue(failure.getMessage().startsWith("the BigDecimal 3E9 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language whose doubles are converted exactly, and whose Longs are narrowed with intValue(), which"
+            + " keeps the low 32 bits of one beyond an int, fails, naming the Long and the setter (#1384)")
+    void narrowingLongsFails() {
+        ExpressionLanguage narrowing = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> value instanceof Long number && target == int.class
+                        ? number.intValue() : DoubleNumbers.convert(value, target));
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(narrowing), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Long 3000000000 was set on setCreditScore(int)"),
+                failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("a language that refuses a Long above an int and narrows the rest with intValue() fails, naming the"
+            + " Long below an int and the setter (#1384)")
+    void narrowingLongsBelowIntFails() {
+        ExpressionLanguage boundedAbove = converting(doubleNumbers(new ToyExpressionLanguage("toy-doubles", true)),
+                (value, target) -> {
+                    if (!(value instanceof Long number) || target != int.class) {
+                        return DoubleNumbers.convert(value, target);
+                    }
+                    if (number > Integer.MAX_VALUE) {
+                        throw new IllegalArgumentException(number + " is out of an int's range");
+                    }
+                    return number.intValue();
+                });
+
+        AssertionFailedError failure = assertThrows(AssertionFailedError.class,
+                () -> runCheck(optingIn(boundedAbove), CHECK));
+
+        assertTrue(failure.getMessage().startsWith("the Long -3000000000 was set on setCreditScore(int)"),
                 failure.getMessage());
     }
 

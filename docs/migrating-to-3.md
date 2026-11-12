@@ -18,6 +18,7 @@ every 2.0 change, and still requires Java 21.
 - [The api.exception package is gone](#-the-apiexception-package-is-gone)
 - [Upgrade the test kit with the engine](#-upgrade-the-test-kit-with-the-engine)
 - [Language implementers](#-language-implementers)
+  - [A language compiled against 2.x](#a-language-compiled-against-2x)
 - [If you implement RulesEngine](#-if-you-implement-rulesengine)
 
 ---
@@ -32,10 +33,12 @@ every 2.0 change, and still requires Java 21.
 | Build a GraalVM native image with strict metadata | [Native images](#native-images) |
 | Test a language with `unruly-engine-test` | [Upgrade the test kit with the engine](#-upgrade-the-test-kit-with-the-engine) |
 | Write an expression language | [The imports](#-the-apiexception-package-is-gone), then [Language implementers](#-language-implementers) |
+| Declare facts with `fact(name, X.class)` or `facts(map)` | Nothing: both compile and run as before; see [Language implementers](#-language-implementers) for what's new |
 | Implement `RulesEngine` | [The imports](#-the-apiexception-package-is-gone), then [If you implement RulesEngine](#-if-you-implement-rulesengine) |
 
 Nothing in your rule text changes. In code you rebuild, the compiler catches every change on this page. It can't
-catch two: a [jar compiled against 2.x](#jars-compiled-against-2x) that you run without rebuilding it, and reading
+catch two: a [jar compiled against 2.x](#jars-compiled-against-2x) that you run without rebuilding it, which
+includes a [language that reads a declared fact's type as a `Class`](#a-language-compiled-against-2x), and reading
 an exception a 2.x program [serialized](#serialized-exceptions).
 
 ## 🚨 The api.exception package is gone
@@ -74,10 +77,11 @@ Or delete each old import and let your IDE add the new one. A wildcard import, `
 `.../io/github/brantunger/unruly/api/exception/RuleExecutionException.html` becomes
 `.../io/github/brantunger/unruly/api/RuleExecutionException.html`.
 
-No method was renamed, and no signature changed beyond the package of a type it names. So once the imports compile,
-the rest does: `RuleListener.onError(Rule, RuleExecutionException)`, `RulesEngine.validate`'s
-`List<RuleCompilationException>`, `Expression(String, ExpressionKind, String)` and
-`CompileContext.warn(Expression, InvalidExpressionException.Issue)` keep their shapes.
+No method was renamed, and this change alters no signature beyond the package of a type it names. So once the
+imports compile, the rest does, except a language's read of [`declaredFacts()`](#-language-implementers):
+`RuleListener.onError(Rule, RuleExecutionException)`, `RulesEngine.validate`'s `List<RuleCompilationException>`,
+`Expression(String, ExpressionKind, String)` and `CompileContext.warn(Expression, InvalidExpressionException.Issue)`
+keep their shapes.
 
 The old package isn't kept as deprecated aliases: an enum in a public signature can't be aliased, so 3.0 ships no
 class in `api.exception`. A 2.x source fails to compile until its imports change, and a jar compiled against 2.x
@@ -157,8 +161,68 @@ then picks.
 
 ## 🔨 Language implementers
 
-Nothing beyond [the imports](#-the-apiexception-package-is-gone) yet: the interfaces in `api.language` keep their
-methods and shapes. Changes to the language SPI that land in 3.0.0 are added here.
+**What changed:** `CompileContext.declaredFacts()` returns `Map<String, java.lang.reflect.Type>`, where 2.x returned
+`Map<String, Class<?>>`. An application can now declare a fact with its type arguments,
+`fact("tags", new FactType<List<String>>() { })`, and a language is told the whole type, so a typed language can
+check what a rule does with a list's elements. See [Fact types](fact-types.md).
+
+**Who is affected:** a language that reads `declaredFacts()`. Code that declares facts isn't:
+`fact(name, X.class)`, `facts(map)` and the `LanguageTestContexts.compile(...)` overloads take every argument they
+took in 2.x, a `Map<String, Class<?>>` included, and need no change.
+
+**What to change:** where your language reads a declared type.
+
+| 2.x | 3.0 |
+| --- | --- |
+| `Map<String, Class<?>> declared = context.declaredFacts();` | `Map<String, Type> declared = context.declaredFacts();` |
+| `Class<?> type = declared.get(name);` | `Type declaredType = declared.get(name);`, then, if it isn't `null`, `Class<?> type = CompileContext.rawClass(declaredType);` |
+| `for (Map.Entry<String, Class<?>> fact : declared.entrySet())` | `for (Map.Entry<String, Type> fact : declared.entrySet())` |
+
+Keep the `null` check: `declared.get(name)` is `null` for a name nobody declared, as in 2.x, and `rawClass` throws
+`NullPointerException` for `null`.
+
+Each value is one of two kinds: a `Class`, as before, for a fact declared with a class literal, a primitive still as
+its wrapper; or a `ParameterizedType` whose raw type is a `Class`, such as `java.util.List<java.lang.String>`. A
+`FactType` never reaches you: you get the type it stands for. The builder rejects every other kind of `Type` when
+the fact is declared, so you never see one.
+
+- **`CompileContext.rawClass(type)`**, a static method new in 3.0, returns the class of either kind: the class
+  itself, or `List` for `List<String>`. A language with no use for type arguments calls it, as MVEL does.
+- **The engine checks a run's value against that class only.** A value's type arguments are erased, so a fact
+  declared as a `List<String>` can hold a list of anything; don't rely on the elements' type without checking it.
+- **A parameterized type's arguments are as the application wrote them,** wildcards included.
+
+### A language compiled against 2.x
+
+Rebuild a language jar compiled against 2.x, as [Jars compiled against 2.x](#jars-compiled-against-2x) says: most
+also name a moved type, such as `InvalidExpressionException`, `ExpressionKind` or `source.kind()`, and fail on it
+whatever the application declares, with `NoClassDefFoundError` or `NoSuchMethodError`. This change adds one more
+failure, which is the only one for a language that names no moved type.
+
+The call to `declaredFacts()` itself still links, because the method's erased signature is unchanged, and it returns
+without error. What happens next depends on how the application declared its facts:
+
+| The application declares | A 2.x language that reads the type as a `Class` |
+| --- | --- |
+| Every fact with a class, `fact("tags", List.class)`, as on 2.x | Reads `interface java.util.List`, as on 2.x |
+| A fact with type arguments, `fact("tags", new FactType<List<String>>() { })` | `ClassCastException` where it reads that fact's type, by `get` or while iterating |
+| The same, and the language only prints the type or passes it on as an object | No error: it sees the `ParameterizedType`, `java.util.List<java.lang.String>` |
+
+The `ClassCastException` surfaces wherever the language reads the value. `load()` throws, and `validate()` returns,
+a `RuleCompilationException` with it as the cause, whose message depends on the place. For a read in `newCompiler`:
+
+```text
+The '<name>' expression language failed to create a compiler: class sun.reflect.generics.reflectiveObjects.ParameterizedTypeImpl cannot be cast to class java.lang.Class ...
+```
+
+For a read in `compileCondition`, it starts `Condition for rule '<rule>' failed to compile: class ...` instead.
+
+Nothing fails silently, but nothing fails until an application declares a fact with type arguments, so rebuild the
+language against 3.0 rather than wait for it: the compiler then rejects the read,
+`incompatible types: Map<String,Type> cannot be converted to Map<String,Class<?>>`.
+
+An application or a test compiled against 2.x that only declares facts, with `fact(String, Class)`, `facts(Map)` or
+`LanguageTestContexts.compile(...)`, links at those calls and runs them unchanged on 3.0.
 
 ## 🧰 If you implement RulesEngine
 

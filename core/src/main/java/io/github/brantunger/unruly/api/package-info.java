@@ -25,7 +25,9 @@
  *   <li><b>Rules:</b> {@link io.github.brantunger.unruly.api.Rule}</li>
  *   <li><b>Facts:</b> {@link io.github.brantunger.unruly.api.FactStore} and its built-in implementation
  *   {@link io.github.brantunger.unruly.api.FactMap}; {@link io.github.brantunger.unruly.api.FactReference} and its
- *   built-in implementation {@link io.github.brantunger.unruly.api.Fact}</li>
+ *   built-in implementation {@link io.github.brantunger.unruly.api.Fact}; and
+ *   {@link io.github.brantunger.unruly.api.FactType}, which declares a fact with its type arguments, such as a
+ *   {@code List<String>}</li>
  *   <li><b>Results and output:</b> {@link io.github.brantunger.unruly.api.RunResult},
  *   {@link io.github.brantunger.unruly.api.RuleEvaluation} (one rule's outcome),
  *   {@link io.github.brantunger.unruly.api.OutputWriter} (how properties an action returns are set on the

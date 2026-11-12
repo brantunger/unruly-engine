@@ -297,7 +297,8 @@ class RecordMethodsTest {
             return which == 0 ? "a" : "b";
         } else if (raw.isEnum()) {
             return raw.getEnumConstants()[which];
-        } else if (raw == Class.class) {
+        } else if (raw == Class.class || raw == Type.class) {
+            // A declared fact's type is a Type, and a class is the simplest one a fact can be declared with.
             return which == 0 ? Object.class : String.class;
         } else if (raw == ClassLoader.class) {
             return which == 0 ? ClassLoader.getSystemClassLoader() : ClassLoader.getPlatformClassLoader();

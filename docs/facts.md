@@ -237,8 +237,8 @@ changes it, but they also share every value in it, so a value one run's rules ch
 
 ## 📣 Declaring facts
 
-Tell the engine which facts its rules use, and what type each one is. Nothing has to be declared, and an engine that
-declares nothing behaves exactly as before.
+Tell the engine which facts its rules use, and what type each one is: a class, or a
+[`FactType`](fact-types.md) to say what a list holds. Nothing has to be declared.
 
 ```java
 RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)

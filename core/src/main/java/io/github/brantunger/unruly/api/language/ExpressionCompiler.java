@@ -161,11 +161,14 @@ public interface ExpressionCompiler extends AutoCloseable {
      * the target accepts as it is, or one it accepts widened. A primitive target, such as {@code int.class}, takes its
      * wrapper. Return the value unchanged for a target this language has no conversion for, such as a type it doesn't
      * know: the writer tries the next setter, and fails the write as it does without a conversion, with the message
-     * that names the setters, when none takes the value. Throw an {@link IllegalArgumentException} naming the value and
-     * the target to refuse a conversion that would change the value, such as a fraction, {@code NaN}, an infinity or a
-     * number too large for an {@code int}: the writer still tries the property's other setters, and when none takes the
-     * value, it fails the write with the first refusal, which fails the rule naming it and the property. Anything else
-     * it throws fails the write at once. A writer of an application's own gets it as an
+     * that names the setters, when none takes the value. {@link String} is such a target, even for a language that
+     * has a string form of every number: a number is never converted to a {@code String}, so a rule that puts 1.5 on
+     * a {@code setName(String)} fails rather than setting {@code "1.5"}, which the contract kit's
+     * {@code outputUnconvertibleValueFailsTheRule} checks. Throw an {@link IllegalArgumentException} naming the value
+     * and the target to refuse a conversion that would change the value, such as a fraction, {@code NaN}, an infinity
+     * or a number too large for an {@code int}: the writer still tries the property's other setters, and when none
+     * takes the value, it fails the write with the first refusal, which fails the rule naming it and the property.
+     * Anything else it throws fails the write at once. A writer of an application's own gets it as an
      * {@link io.github.brantunger.unruly.api.OutputConverter}, and may call it as it likes, or not at all. It's never
      * called with {@code null}, which every setter taking a reference accepts.
      * </p>
@@ -180,8 +183,9 @@ public interface ExpressionCompiler extends AutoCloseable {
      * @param value  The value an action returned, not {@code null}
      * @param target The type of a setter's parameter, possibly primitive
      * @return The converted value, which the target accepts, or {@code value} where this language has no conversion
-     *         for the target. {@code null} is a value too, which the first setter taking a reference takes, so return
-     *         it only to set the property to {@code null}, never for a conversion that isn't there.
+     *         for the target, as for a number and a {@code String} target. {@code null} is a value too, which the
+     *         first setter taking a reference takes, so return it only to set the property to {@code null}, never for
+     *         a conversion that isn't there.
      * @throws IllegalArgumentException if this language refuses to convert the value to the target; its message
      *                                  should name the value and the target, as the rule's failure quotes it
      */

@@ -178,10 +178,11 @@ its thread busy after the check fails.
 them if your variables have a namespace of their own, such as SpEL's `#y`: otherwise the variable checks read a fact
 named `y`, which isn't there, and pass whatever your language does with its variables.
 
-`bothConditions(condition, other)` must evaluate `condition` first, as MVEL's `condition + " && " + other` does: the
+`bothConditions(condition, other)` must evaluate `condition` first, and fail when it fails,
+[unlike CEL's `&&`](contract-kit-upgrading.md#-upgrading-to-30), as MVEL's `condition + " && " + other` does: the
 condition checks read `nest.value`, which starts the nested run, then `x`, which finds any state that run left on the
-thread. A language that evaluates the right side first isn't checked. The nested-run checks run on a thread of their
-own, so per-thread state left there can't reach later checks.
+thread. A language that evaluates the right side first isn't checked. The nested-run checks have their own thread,
+so per-thread state stays there.
 
 For `usableFactNamesAccepted`, return the names your `checkFactName` might wrongly reject, such as `credit_score2`.
 

@@ -4,6 +4,7 @@ import io.github.brantunger.unruly.api.Fact;
 import io.github.brantunger.unruly.api.FactMap;
 import io.github.brantunger.unruly.api.FactReference;
 import io.github.brantunger.unruly.api.FactStore;
+import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.Rule;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
 import io.github.brantunger.unruly.api.RunOptions;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 import java.io.IOException;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -495,6 +498,29 @@ class LanguageTestContextsTest {
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactName, false)),
                 () -> assertNullMessage("type must not be null", () -> LanguageTestContexts.compile(
                         Set.of(), Set.of(), loader, Object.class, Map.of(), nullFactType, false)));
+    }
+
+    @Test
+    @DisplayName("a fact declared with a FactType is given as the parameterized type it stands for, as an engine gives"
+            + " it, by each compile method that takes declarations (#1390)")
+    void declaredFactsWithTypeArguments() {
+        ClassLoader loader = getClass().getClassLoader();
+        Map<String, Type> declared = Map.of("tags", new FactType<List<String>>() {
+        }, "age", int.class);
+
+        List<CompileContext> contexts = List.of(
+                LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false),
+                LanguageTestContexts.compile(Set.of(), Set.of(), loader, Object.class, Map.of(), declared, false,
+                        List.of()),
+                LanguageTestContexts.compile(new ToyExpressionLanguage(), Set.of(), Set.of(), loader, Object.class,
+                        Map.of(), declared, false, List.of()));
+
+        for (CompileContext context : contexts) {
+            ParameterizedType tags = assertInstanceOf(ParameterizedType.class, context.declaredFacts().get("tags"));
+            assertEquals("java.util.List<java.lang.String>", tags.getTypeName());
+            assertSame(List.class, CompileContext.rawClass(tags));
+            assertSame(Integer.class, context.declaredFacts().get("age"));
+        }
     }
 
     @Test

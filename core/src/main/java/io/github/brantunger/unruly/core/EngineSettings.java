@@ -2,9 +2,11 @@ package io.github.brantunger.unruly.core;
 
 import io.github.brantunger.unruly.api.language.ExpressionLanguage;
 
+import java.lang.reflect.Type;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -36,7 +38,10 @@ final class EngineSettings {
     // The settings kept as the builder gave them.
     private final Class<?> outputType;
     private final Map<String, Map<String, String>> options;
-    private final Map<String, Class<?>> declaredFacts;
+    // The declared facts as languages are told them, and the class a run's value of each is checked against, a
+    // primitive class as it was declared: both worked out once, here, from the types the builder was given.
+    private final Map<String, Type> declaredFacts;
+    private final Map<String, Class<?>> declaredClasses;
     private final boolean allFactsDeclared;
     private final Map<String, List<String>> languageImports;
     private final CopyLimit copyLimit;
@@ -45,6 +50,7 @@ final class EngineSettings {
 
     private EngineSettings(LanguageRegistry languages, List<ExpressionLanguage> languagesInUse,
                            Set<String> packageImports, Set<Class<?>> classImports, ReservedNames reservedNames,
+                           Map<String, Type> declaredFacts, Map<String, Class<?>> declaredClasses,
                            EngineConfiguration<?> configuration) {
         this.languages = languages;
         this.languagesInUse = languagesInUse;
@@ -53,7 +59,8 @@ final class EngineSettings {
         this.reservedNames = reservedNames;
         this.outputType = configuration.outputType();
         this.options = configuration.options();
-        this.declaredFacts = configuration.declaredFacts();
+        this.declaredFacts = declaredFacts;
+        this.declaredClasses = Map.copyOf(declaredClasses);
         this.allFactsDeclared = configuration.allFactsDeclared();
         this.languageImports = configuration.languageImports();
         this.copyLimit = configuration.copyLimit();
@@ -63,14 +70,16 @@ final class EngineSettings {
 
     /**
      * Resolves the builder's settings: checks each declared fact as
-     * {@link EngineCompileContext#checkDeclaration(String, Class)} does, takes or finds the languages and picks the
+     * {@link EngineCompileContext#checkDeclaration(String, Type)} does, and reads its type's class and the type to
+     * tell languages, once, takes or finds the languages and picks the
      * default one, reads the names they reserve, checks the declared names, options and language imports against
      * them, and resolves the imports with the building thread's context class loader, in that order.
      *
      * @param configuration The builder's settings
      * @return The settings, resolved
      * @throws IllegalArgumentException if a fact is declared with a blank name, or one of the engine's languages
-     *                                  reserves for every rule list; if a language's own import has more than 1,000
+     *                                  reserves for every rule list, or with a type that is neither a class nor a
+     *                                  parameterized type; if a language's own import has more than 1,000
      *                                  characters; or if an import can't be resolved, as
      *                                  {@link ImportResolver#resolve(String)} describes
      * @throws IllegalStateException    if the languages or the default language can't be resolved, a language's
@@ -80,9 +89,8 @@ final class EngineSettings {
      */
     static EngineSettings resolve(EngineConfiguration<?> configuration) {
         // checkDeclaration names a null fact name or type itself.
-        for (Map.Entry<String, Class<?>> fact : configuration.declaredFacts().entrySet()) {
-            EngineCompileContext.checkDeclaration(fact.getKey(), fact.getValue());
-        }
+        Map<String, Class<?>> declaredClasses = new LinkedHashMap<>();
+        Map<String, Type> declaredFacts = EngineCompileContext.resolve(configuration.declaredFacts(), declaredClasses);
         LanguageRegistry languages = LanguageRegistry.resolve(configuration.languages(),
                 configuration.defaultLanguage(), ImportResolver.contextClassLoader());
         // A language that reserves its names only for the rule lists that use them has them checked when such a rule
@@ -117,7 +125,7 @@ final class EngineSettings {
         }
         return new EngineSettings(languages, languagesInUse(languages, configuration),
                 Collections.unmodifiableSet(packages), Collections.unmodifiableSet(classes), reservedNames,
-                configuration);
+                declaredFacts, declaredClasses, configuration);
     }
 
     /**
@@ -228,12 +236,23 @@ final class EngineSettings {
     }
 
     /**
-     * Returns the declared type of each fact, a primitive type as it was declared.
+     * Returns the declared type of each fact as languages are told it: a primitive class as its wrapper, and a
+     * parameterized type as it was declared. A compile context keeps it without checking it again.
      *
-     * @return The types, by fact name
+     * @return The types, by fact name, as a {@link DeclaredFacts}
      */
-    Map<String, Class<?>> declaredFacts() {
+    Map<String, Type> declaredFacts() {
         return declaredFacts;
+    }
+
+    /**
+     * Returns the class of each fact's declared type, which a run's value is checked against: a primitive class as
+     * it was declared, and a parameterized type's raw class as the type gave it when the engine was built.
+     *
+     * @return The classes, by fact name; unmodifiable
+     */
+    Map<String, Class<?>> declaredClasses() {
+        return declaredClasses;
     }
 
     /**
