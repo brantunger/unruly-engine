@@ -201,7 +201,7 @@ saying why:
 | Needed | Why |
 | --- | --- |
 | `requireDeclaredFacts()`, and at least one fact declared | Otherwise a name nobody declared may still be supplied at run time, so it isn't a mistake |
-| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules. A [`List<String>`](../fact-types.md) counts as a `List` |
+| No fact declared as `Object`, a `Map`, a `Collection`, or an array of one of them; [`List<String>` passes](../fact-types.md#-strong-typing-in-mvel) | MVEL's strict mode rejects `order.id` on a `Map`, `items[0].qty` on a `List` and any property of an `Object`, so one such fact would reject working rules |
 | `outputType(...)` set to a type that isn't one of those | An action writes to `output`, so its type has to be checkable too |
 
 Strong typing also changes arithmetic; see the Division row of
@@ -210,7 +210,7 @@ Strong typing also changes arithmetic; see the Division row of
 See [Declaring facts](../facts.md#-declaring-facts) for `fact(...)` and `requireDeclaredFacts()`. Strong typing
 doesn't catch a condition that isn't a boolean; the engine checks that for every language.
 
-- It rejects some rules that work without it:
+- It rejects some rules that work without it, and [more over collections](../fact-types.md#rules-it-still-rejects):
 
   | Without strong typing | With it |
   | --- | --- |
