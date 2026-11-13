@@ -45,7 +45,7 @@ Requires **Java 21** or later. Upgrading? See [Migrating to 3.0](docs/migrating-
 
 <!-- x-release-please-start-version -->
 ```groovy
-implementation 'io.github.brantunger:unruly-engine:2.35.4'
+implementation 'io.github.brantunger:unruly-engine:3.0.0'
 ```
 <!-- x-release-please-end -->
 
@@ -56,7 +56,7 @@ implementation 'io.github.brantunger:unruly-engine:2.35.4'
 
 <!-- x-release-please-start-version -->
 ```kotlin
-implementation("io.github.brantunger:unruly-engine:2.35.4")
+implementation("io.github.brantunger:unruly-engine:3.0.0")
 ```
 <!-- x-release-please-end -->
 
@@ -70,7 +70,7 @@ implementation("io.github.brantunger:unruly-engine:2.35.4")
 <dependency>
     <groupId>io.github.brantunger</groupId>
     <artifactId>unruly-engine</artifactId>
-    <version>2.35.4</version>
+    <version>3.0.0</version>
 </dependency>
 ```
 
@@ -82,7 +82,7 @@ implementation("io.github.brantunger:unruly-engine:2.35.4")
         <dependency>
             <groupId>io.github.brantunger</groupId>
             <artifactId>unruly-engine-bom</artifactId>
-            <version>2.35.4</version>
+            <version>3.0.0</version>
             <type>pom</type>
             <scope>import</scope>
         </dependency>
