@@ -216,9 +216,9 @@ public final class MvelExpressionLanguage implements ExpressionLanguage {
         // on one failing for the life of the JVM (#1210).
         initialize(MethodHandles.lookup(), List.of(MvelExpressionCompiler.class, Imports.class,
                 Imports.SharedLookupConfiguration.class, Imports.LoopGuard.class, DeclaredTypes.class,
-                ClassNameRoots.class, ExactNameClassLoader.ClassLookup.class, MvelExpression.Copy.class,
-                ASTBinaryTree.class, MvelSession.class, ActionVariables.class, StackResetResolverFactory.class,
-                MVELRuntime.class, StackElement.class));
+                DeclaredInput.class, ClassNameRoots.class, ExactNameClassLoader.ClassLookup.class,
+                MvelExpression.Copy.class, ASTBinaryTree.class, MvelSession.class, ActionVariables.class,
+                StackResetResolverFactory.class, MVELRuntime.class, StackElement.class));
         MvelCompileErrors.warmUp();
         // A pass or run that asks for the class loader more than CallSites.UNCOUNTED_CALLS times walks the stack, which
         // first initializes the JDK's classes that walk one, so this walks it once each way (#1099).

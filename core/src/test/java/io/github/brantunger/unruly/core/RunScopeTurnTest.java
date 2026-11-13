@@ -208,6 +208,7 @@ class RunScopeTurnTest {
     void runScopedKeyMadeByAThreadWaitingForTheTurnThrows() throws Exception {
         RunScope scope = new RunScope();
         CountDownLatch xRuns = new CountDownLatch(1);
+        CountDownLatch plainRuns = new CountDownLatch(1);
         AtomicReference<Thread> maker = new AtomicReference<>();
         AtomicReference<IllegalStateException> refused = new AtomicReference<>();
         AtomicReference<Value> x = new AtomicReference<>();
@@ -215,12 +216,18 @@ class RunScopeTurnTest {
         AtomicReference<Throwable> failed = new AtomicReference<>();
         Thread holder = daemon(() -> x.set(scope.getClosing("x", () -> {
             xRuns.countDown();
+            // Once the other thread is in the init of "plain", the scope holds the key as being made, which is what the
+            // request below is refused for. Its wait alone doesn't say so: a thread can wait before it has asked.
+            TestSupport.await(plainRuns);
             awaitWaiting(maker);
             refused.set(assertThrows(IllegalStateException.class, () -> scope.get("plain", Object::new)));
             return new Value("x");
         })), failed);
         TestSupport.await(xRuns);
-        maker.set(daemon(() -> plain.set(scope.get("plain", () -> scope.getClosing("y", () -> new Value("y")))),
+        maker.set(daemon(() -> plain.set(scope.get("plain", () -> {
+            plainRuns.countDown();
+            return scope.getClosing("y", () -> new Value("y"));
+        })),
                 failed));
         holder.join(TimeUnit.SECONDS.toMillis(10));
         maker.get().join(TimeUnit.SECONDS.toMillis(10));
@@ -239,6 +246,7 @@ class RunScopeTurnTest {
     void runScopedKeyMadeByAThreadEndingTheRunThrows() throws Exception {
         RunScope scope = new RunScope();
         CountDownLatch xRuns = new CountDownLatch(1);
+        CountDownLatch plainRuns = new CountDownLatch(1);
         AtomicReference<Thread> ender = new AtomicReference<>();
         AtomicReference<IllegalStateException> refused = new AtomicReference<>();
         AtomicReference<Value> x = new AtomicReference<>();
@@ -246,12 +254,16 @@ class RunScopeTurnTest {
         AtomicReference<Throwable> failed = new AtomicReference<>();
         Thread holder = daemon(() -> x.set(scope.getClosing("x", () -> {
             xRuns.countDown();
+            // Once the other thread is in the init of "plain", the scope holds the key as being made, which is what the
+            // request below is refused for. Its wait alone doesn't say so: a thread can wait before it has asked.
+            TestSupport.await(plainRuns);
             awaitWaiting(ender);
             refused.set(assertThrows(IllegalStateException.class, () -> scope.get("plain", Object::new)));
             return new Value("x");
         })), failed);
         TestSupport.await(xRuns);
         ender.set(daemon(() -> scope.get("plain", () -> {
+            plainRuns.countDown();
             handedBack.set(scope.end());
             return "plain";
         }), failed));

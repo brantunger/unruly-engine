@@ -5,6 +5,7 @@ import io.github.brantunger.unruly.api.FactStore;
 import io.github.brantunger.unruly.api.FactType;
 import io.github.brantunger.unruly.api.OutputWriter;
 import io.github.brantunger.unruly.api.Rule;
+import io.github.brantunger.unruly.api.RuleCompilationException;
 import io.github.brantunger.unruly.api.RuleExecutionException;
 import io.github.brantunger.unruly.api.RulesEngine;
 import io.github.brantunger.unruly.api.RulesEngineBuilder;
@@ -43,8 +44,10 @@ import java.util.concurrent.atomic.AtomicReference;
  * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a pooled
  * platform thread. And it declares two facts with their type arguments, one of them a class of its own, with
  * {@code FactType}, whose constructor reads the generic superclass of the anonymous class it's written as, which the
- * image has no metadata for, and checks what a language is told. It prints one line and exits with 1 if a result is
- * wrong.
+ * image has no metadata for, and checks what a language is told. And it declares a {@code List<String>} fact to MVEL
+ * with its strongTyping option on, which reads the type parameters of {@code java.util.List} and of the interfaces it
+ * extends to tell MVEL the fact's type argument, and checks that MVEL rejects a misspelled method of an element when
+ * the rule loads and runs a rule that calls a real one. It prints one line and exits with 1 if a result is wrong.
  */
 public final class Main {
 
@@ -77,6 +80,15 @@ public final class Main {
      */
     private static final String TYPED_FACTS = "java.util.List<java.lang.String>,"
             + "java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran";
+
+    /**
+     * What MVEL's strong typing does with a {@code List<String>} fact: a rule that calls a method {@code String}
+     * doesn't have on an element fails to load, and one that calls {@code length()} loads and runs.
+     */
+    private static final String TYPED_LIST = "checked,prime";
+
+    /** The part of MVEL's message that says which method of which class a rule called that the class doesn't have. */
+    private static final String MISSPELLED = "java.lang.String.lenght()";
 
     /**
      * The fact the rules read.
@@ -227,12 +239,13 @@ public final class Main {
         String hidden = hiddenOutcome();
         String deadline = deadlineOutcome();
         String typedFacts = typedFactsOutcome();
+        String typedList = typedListOutcome();
         boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
                 && "prime,gold,standard".equals(hidden) && "timeout,platform".equals(deadline)
-                && TYPED_FACTS.equals(typedFacts);
+                && TYPED_FACTS.equals(typedFacts) && TYPED_LIST.equals(typedList);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
                 + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
-                + " typedFacts=" + typedFacts
+                + " typedFacts=" + typedFacts + " typedList=" + typedList
                 + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (jitDefault() ? "on" : "off"));
@@ -459,6 +472,38 @@ public final class Main {
             return told.get() + ",ran";
         } catch (RuntimeException e) {
             return e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).replaceAll("\\s+", " ");
+        }
+    }
+
+    // A List<String> fact under MVEL's strongTyping option, which is refused as dynamic unless the mvel module can tell
+    // MVEL its type argument: for that it reads the type parameters of java.util.List, and of the interfaces between
+    // it and Collection, which the image has no metadata of this application's for. The first rule calls a method
+    // String doesn't have on an element, which MVEL rejects when the rule loads only if it was told the element is a
+    // String; the second calls one it has, and runs.
+    private static String typedListOutcome() {
+        try (RulesEngine<LoanDecision> engine = RulesEngineBuilder.firstMatch(LoanDecision::new)
+                .outputType(LoanDecision.class)
+                .fact("labels", new FactType<List<String>>() {
+                })
+                .requireDeclaredFacts().option("mvel", "strongTyping", "true").build()) {
+            String misspelled;
+            try {
+                engine.load(List.of(Rule.builder().ruleName("misspelled").condition("labels[0].lenght() > 0")
+                        .action("output.rate = 'prime'").build()));
+                misspelled = "loaded";
+            } catch (RuleCompilationException e) {
+                String message = String.valueOf(e.getMessage()).replace('\n', ' ');
+                misspelled = message.contains(MISSPELLED) ? "checked" : "RuleCompilationException: " + message;
+            }
+            engine.load(List.of(Rule.builder().ruleName("spelled").condition("labels[0].length() > 0")
+                    .action("output.rate = 'prime'").build()));
+            FactStore<Object> facts = new FactMap<>();
+            facts.setValue("labels", List.of("a"));
+            LoanDecision decision = engine.run(facts);
+            return misspelled + "," + (decision == null ? "not matched" : decision.getRate());
+        } catch (RuntimeException e) {
+            // In one line, as the status line is.
+            return e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()).replace('\n', ' ');
         }
     }
 

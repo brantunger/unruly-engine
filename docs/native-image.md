@@ -42,14 +42,14 @@ native-image --no-fallback -H:+ReportExceptionStackTraces -cp 'native-smoke/buil
 native-smoke/build/native/native-smoke
 ```
 
-The engine logs every fact name it rejects at ERROR, so those lines come before the status line a correct image
-ends with:
+The engine logs at ERROR every fact name it rejects and the `typedList` check's misspelled rule, so those lines precede
+the status line a correct image ends with:
 
 ```text
-native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran dateResource=false dateFactValue=rejected image=true jit=off
+native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran typedList=checked,prime dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
-`bean` and `map` are the rules' results, `image=true` says the binary runs as a native image, and `jit=off`
+`bean` and `map` are the rules' results, `image=true` says the binary is a native image, and `jit=off`
 that MVEL's JIT is off. `factName=rejected` means the image rejected a fact named after a class in an imported package,
 as the JVM does; MVEL checks only names its rules' text holds, so the smoke's rule names `Date` in a comment. `prime`
 beside it is the control: an engine that imports the application's own class and no package ran its rule.
@@ -59,23 +59,25 @@ classes that aren't public, through each class's own methods: the image has no m
 them.
 
 `typedFacts=...,ran` says two facts declared with a `FactType` reached a language with their type arguments, the
-second naming an application class, and a run's list passed the engine's check.
+second naming an application class, and a run's list passed the engine's check. `typedList=checked,prime` says
+MVEL's [strong typing](fact-types.md#-strong-typing-in-mvel) took a `List<String>` fact, failed `load()` on an
+element's misspelled method, and ran a rule calling `length()`.
 
 `deadline=timeout,platform` says a run whose action spins until an action it registered with
 [`onCancel`](languages/custom.md#-stopping-a-run) stops it failed with its 200 ms timeout, and that the engine ran
 that action on a platform thread.
 
 `dateResource` and `dateFactValue` are diagnostics; no result is held to them. `dateResource=false` says the
-image served no class file for `java.util.Date` as a resource; the check doesn't ask an image for one, so
-the name is rejected all the same. `dateFactValue=rejected` says a rule reading `Date` never ran, because the check
-rejected the fact first. On the JVM the same code prints `dateResource=true`, `image=false` and
+image served no `java.util.Date` class file; the check doesn't ask an image for one, so
+the name is rejected anyway. `dateFactValue=rejected` says a rule reading `Date` never ran, because the check
+rejected the fact first. The JVM prints `dateResource=true`, `image=false` and
 the rest unchanged; run it with
 `java -cp 'native-smoke/build/install/native-smoke/lib/*' com.example.nativesmoke.Main`.
 
-An image needs nothing else: no `native-image` option beyond the usual ones, no metadata for
+An image needs nothing else: no extra `native-image` option, no metadata for
 `unruly-engine-core`, and no change to how you build engines or load rules. `native-image` finds MVEL through its
-`META-INF/services` file, as the JVM does. An image built to fail on a class it has no metadata for works too, given
-the package list [Strict metadata](#-strict-metadata) describes.
+`META-INF/services` file, as the JVM does. An image built with
+[strict metadata](#-strict-metadata) works too, given its package list.
 
 ## ⚡ MVEL's JIT stays off
 
@@ -92,7 +94,7 @@ are [registered](#-registering-your-classes).
 
 ## 🪞 Registering your classes
 
-A native image keeps reflection only for what it was told about. MVEL reads facts and writes the output by
+A native image keeps only the reflection it was told about. MVEL reads facts and writes the output by
 reflection, so the image must register those classes.
 
 **What the `unruly-engine` jar ships.** `META-INF/native-image/io.github.brantunger/unruly-engine/reflect-config.json`
@@ -113,6 +115,7 @@ the class path. For the sample's rules:
 | Set a bean output's property: `output.rate = 'prime'` | The setter | `Main$LoanDecision`: `setRate(String)` |
 | Call a method on a JDK output: `output.put('rate', 'standard')` | That method of the JDK class | `java.util.HashMap`: `put(Object, Object)` |
 | Call a JDK static method: `Math.max(applicant.income, 0)` | That method | `java.lang.Math`: `max(int, int)` |
+| Call a method on a typed list's element: `labels[0].length()` | That method | `java.lang.String`: `length()` |
 
 The sample also sets `queryAllPublicMethods` on each class its rules use, and `allPublicFields` on `Main$Applicant`
 and `Main$LoanDecision`. Its `reflect-config.json` is
@@ -131,12 +134,12 @@ java -agentlib:native-image-agent=config-output-dir=native-smoke/build/agent-con
 ```
 
 The agent overwrites the files in its output directory, so point it at a scratch directory, not at your
-`reflect-config.json`. Then compare its output with your file, and copy what's new.
+`reflect-config.json`. Then copy what's new into your file.
 
 For the sample, the agent recorded `put` on `java.util.Map`, the interface, and `java.util.HashMap` only for looking
 its methods up, and an image built from its output ran. A hand-written file that listed `HashMap` with no `put`
 anywhere failed with `MissingReflectionRegistrationError` naming `HashMap.put`, and registering `put` on `HashMap`
-fixed it. When you write an entry by hand, register the method on the class the error names.
+fixed it. In a hand-written entry, register the method on the class the error names.
 
 ## 🚧 Gotchas
 
@@ -229,7 +232,7 @@ The engine records no Flight Recorder events here, because they can't be loaded:
 ```
 
 Built with `--enable-monitoring=jfr`, the image can load the event classes, so the engine uses them as on the
-JVM. Recording them in an image wasn't tested.
+JVM.
 
 ## 🧩 Other expression languages
 
@@ -262,7 +265,7 @@ name: an image rejects such a name where a rule's text holds it, as the JVM does
 
 The application checks that outcome, so a change either way turns CI red. A fact named after a single imported class is
 matched against the simple names of the classes the engine already loaded, so it never reaches that lookup; that is from
-reading the code, and no image has run it.
+reading the code.
 
 Not tested: Oracle GraalVM, GraalVM for other JDK versions, Windows and macOS images, the module path, frameworks'
 own native support such as Spring Boot's, listeners, the other builder options, a fact named after a

@@ -243,7 +243,7 @@ such as `java.util.List<java.lang.String>`. A `FactType` never reaches you: you 
 builder rejects every other kind of `Type` when the fact is declared, so you never see one.
 
 - **`CompileContext.rawClass(type)`**, a static method new in 3.0, returns the class of either kind: the class
-  itself, or `List` for `List<String>`. A language with no use for type arguments calls it, as MVEL does.
+  itself, or `List` for `List<String>`. A language with no use for type arguments calls it.
 - **The engine checks a run's value against that class only.** A value's type arguments are erased, so a fact
   declared as a `List<String>` can hold a list of anything; don't rely on the elements' type without checking it.
 - **A parameterized type's arguments are as the application wrote them,** wildcards included.

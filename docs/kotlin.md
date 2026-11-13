@@ -75,8 +75,10 @@ val engine: RulesEngine<LoanDecision> = RulesEngineBuilder.firstMatch(::LoanDeci
 
 Without the annotation, Kotlin records a wildcard, because its read-only collections are covariant:
 `object : FactType<List<String>>() {}` declares `List<? extends String>`, and `Map<String, Applicant>` declares
-`Map<String, ? extends Applicant>`. The engine accepts both. MVEL reads only the fact's class, so nothing changes
-there. A language that checks element types is given the wildcard where Java's `List<String>` gives it `String`.
+`Map<String, ? extends Applicant>`. The engine accepts both, and so does MVEL's
+[strong typing](fact-types.md#-strong-typing-in-mvel), which reads `? extends String` as `String` and checks a rule
+against it either way. Another language that checks element types is given the wildcard where Java's `List<String>`
+gives it `String`.
 
 There are two ways to declare `List<String>` itself:
 

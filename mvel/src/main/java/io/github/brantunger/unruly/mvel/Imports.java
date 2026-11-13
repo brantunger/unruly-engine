@@ -30,7 +30,7 @@ final class Imports {
     private final Set<Class<?>> classes;
     private final ExactNameClassLoader classLoader;
     private final Set<String> notClasses;
-    private final Map<String, Class<?>> inputs;
+    private final Map<String, DeclaredInput> inputs;
     private final ClassNameRoots classNameRoots;
 
     /**
@@ -59,10 +59,11 @@ final class Imports {
      * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations
      *                    created with {@link #newConfiguration()}
      * @param inputs      The type of each name an expression may refer to, for compiling with strong typing, or an
-     *                    empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
+     *                    empty map to compile as MVEL does by default. See {@link DeclaredTypes}. Not copied: the
+     *                    map is the caller's to make unmodifiable, and a {@link DeclaredInput} never changes.
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ExactNameClassLoader classLoader, Set<String> notClasses,
-            Map<String, Class<?>> inputs) {
+            Map<String, DeclaredInput> inputs) {
         this.packages = packages;
         this.classes = classes;
         this.classLoader = classLoader;
@@ -92,7 +93,7 @@ final class Imports {
     }
 
     /** The type of each name an expression may refer to, or an empty map to compile as MVEL does by default. */
-    Map<String, Class<?>> inputs() {
+    Map<String, DeclaredInput> inputs() {
         return inputs;
     }
 

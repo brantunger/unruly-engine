@@ -47,6 +47,13 @@
     ]
   },
   {
+    "name": "java.lang.String",
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "length", "parameterTypes": []}
+    ]
+  },
+  {
     "name": "java.util.HashMap",
     "queryAllPublicMethods": true,
     "methods": [

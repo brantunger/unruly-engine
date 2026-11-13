@@ -463,8 +463,26 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
             // Applied here, not only where the rule list loads, because a session compiles the expression again for
             // its own copy: without this, only the first copy would be the one that was type-checked.
             context.setStrongTyping(true);
-            imports.inputs().forEach(context::addInput);
+            imports.inputs().forEach((name, input) -> addInput(context, name, input));
         }
         return context;
+    }
+
+    /**
+     * Tells a context the type of one name an expression may refer to: its class, and its type arguments if it has
+     * any, which a collection or a map declared with type arguments MVEL can check its elements by does. MVEL reads
+     * them as the type parameters of the class, in order (see {@link DeclaredTypes}).
+     *
+     * @param context The context of one compilation
+     * @param name    The name
+     * @param input   Its type
+     */
+    private static void addInput(ParserContext context, String name, DeclaredInput input) {
+        Class<?>[] typeArguments = input.typeArguments();
+        if (typeArguments.length == 0) {
+            context.addInput(name, input.type());
+        } else {
+            context.addInput(name, input.type(), typeArguments);
+        }
     }
 }

@@ -29,7 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * unknown fact fails {@code load()} instead of a run. It's an option because strong typing also rejects rules that
  * work without it (#362), and it fails loading when it can't apply: MVEL's strict mode rejects property access on a
  * {@code Map}, a {@code Collection} or an {@code Object}, so one dynamic declaration would turn working rules into
- * compile errors.
+ * compile errors. A collection or a map declared with type arguments MVEL can check isn't dynamic (#1411, see
+ * {@link MvelTypedFactsTest}).
  */
 @DisplayName("with strongTyping on, MVEL compiles against declared facts, so a typo fails when the rules load")
 class MvelStrongTypingTest {
@@ -327,12 +328,22 @@ class MvelStrongTypingTest {
     }
 
     @Test
-    @DisplayName("with strongTyping on, a fact declared as a List<String> fails load() as a List does: MVEL reads the"
-            + " type's class alone (#1390)")
-    void aListOfStringsFactFailsLoading() {
-        assertCantApply(strongTyping(builder -> builder.fact("items", new FactType<List<String>>() {
-                })), "output.score = 1",
-                "fact 'items' is declared as java.util.List, whose members MVEL can't check");
+    @DisplayName("with strongTyping on, a fact declared as a List<String> is type-checked, where a List fails "
+            + "load(): a valid rule over it loads and runs, and a misspelled method of an element fails load() "
+            + "(#1411)")
+    void aListOfStringsFactIsChecked() {
+        RulesEngine<Decision> engine = strongTyping(builder -> builder.fact("items", new FactType<List<String>>() {
+        })).build();
+        FactStore<Object> facts = applicant();
+        facts.setValue("items", List.of("Alexandra", "Bo"));
+
+        engine.load(List.of(rule("items[0].length() > 3 && items.size() == 2", "output.score = items[0].length()")));
+        assertEquals(9, engine.run(facts).getScore());
+
+        RuleCompilationException thrown = assertThrows(RuleCompilationException.class,
+                () -> engine.load(List.of(rule("items[0].lengthh() > 3", "output.score = 1"))));
+        assertTrue(thrown.getMessage().contains("strict-mode"), thrown.getMessage());
+        assertTrue(thrown.getMessage().contains("lengthh"), thrown.getMessage());
     }
 
     @Test
