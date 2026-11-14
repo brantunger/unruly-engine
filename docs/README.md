@@ -63,6 +63,7 @@ Pick the reading order that matches what you're doing, or find a guide in the ta
 | ⚡ [MVEL](languages/mvel.md) | Rule authors | MVEL syntax, imports and built-in class names, facts, strong typing, compile errors, compiled copies, virtual threads and security |
 | 🚧 [MVEL gotchas](languages/mvel-gotchas.md) | Rule authors | Where MVEL compares, computes, assigns or calls code differently from Java, what to write instead, why a rule can start failing after about 50 runs, what compiles slowly, and what MVEL logs itself |
 | 🔤 [MVEL fact names](languages/mvel-fact-names.md) | Rule authors | Which fact names MVEL rejects, which facts it checks at all, where that check is only a best effort, and the name `output` |
+| 🔤 [Facts and properties in MVEL](languages/mvel-property-reads.md) | Rule authors | Where an MVEL rule reads a property from a value, why a fact of the same name fails the run there, and what declaring facts changes |
 | 🧩 [Expression languages](languages/README.md) | Application developers | Choosing a language per rule, how the engine picks one, what a language can offer, and what to depend on |
 | 🔨 [Writing a language](languages/custom.md) | Language authors | The lifecycle, compile errors, facts, fact names and sessions for a language of your own |
 | 📤 [Converting values for the output](languages/output-conversion.md) | Language authors | How the default output writer asks a language to convert a returned value for a setter, the contract of `convertOutput`, which conversions are exact enough to make, and an example |

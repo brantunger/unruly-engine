@@ -18,6 +18,7 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
@@ -215,7 +216,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         // MVEL's WARNING for a failed method call or indexed read can quote a fact unescaped; the engine escapes it.
         boolean outermost = MvelWarningFilter.enter();
         try {
-            return run(session, context.facts());
+            return run(session, context.facts(), context.facts());
         } catch (RuntimeException e) {
             // What the rule's Java code threw, so a failure has the same cause before and after MVEL's JIT.
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
@@ -230,7 +231,7 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         // output in place.
         boolean outermost = MvelWarningFilter.enter();
         try {
-            run(session, new ActionVariables(context.facts(), context.output()));
+            run(session, new ActionVariables(context.facts(), context.output()), context.facts());
         } catch (RuntimeException e) {
             throw CalledCodeFailures.<RuntimeException>unwrapped(e);
         } finally {
@@ -323,9 +324,13 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
         });
     }
 
-    // Compiles an expression of the warm-up, with v's type declared, in a context of its own, and runs it once.
+    // Compiles an expression of the warm-up, with v's type declared, in a context of its own, and runs it once, with
+    // the variables a run reads its facts through, so reading v walks the stack as a run's first read of a fact does.
     private static Object warmUpEvaluate(String source, Map<String, Object> variables) {
-        return MVEL.executeExpression(warmUpCompile(source), (Object) null, variables);
+        GuardedVariables guarded = new GuardedVariables(variables, variables, Set.of());
+        Object result = MVEL.executeExpression(warmUpCompile(source), (Object) null, guarded);
+        guarded.finished();
+        return result;
     }
 
     // Compiles an expression of the warm-up, with v's type declared, in a context of its own, without running it.
@@ -401,25 +406,43 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
      * {@link OutOfMemoryError}, which is thrown as it is, with nothing allocated for it. MVEL never ended a run
      * normally once it had thrown one, in 46 expressions stopped after each number of calls up to 30.
      *
+     *
+     * <p>
+     * MVEL reads the variables through a {@link GuardedVariables}, in place of the factory it makes itself for a map
+     * of them, so a fact can't take the place of a property MVEL reads from a value: a run that supplies such a fact
+     * fails with a {@link GuardedVariables.FactReadAsProperty}, whatever MVEL threw for it, or returned. The
+     * variables the expression assigned are written to {@code variables} once MVEL returns or throws, as MVEL's own
+     * factory writes them, unless the run went round in a loop or threw a {@link VirtualMachineError}.
+     * </p>
+     *
      * @param session   The run's session
      * @param variables The names the expression reads, and their values
+     * @param facts     The run's facts, which are among {@code variables}
      * @return What the expression returned
-     * @throws Imports.RunLoop if MVEL went round in a loop in the run
+     * @throws Imports.RunLoop                     if MVEL went round in a loop in the run
+     * @throws GuardedVariables.FactReadAsProperty if a fact stands where MVEL would read it in place of a property
      */
     // What MVEL throws, an Error or a checked exception it throws unchecked too, is thrown again as it is, unless the
     // run went round in a loop. Identity tells whether MVEL let the loop's own Error out.
     @SuppressWarnings("PMD.CompareObjectsWithEquals")
-    private Object run(Session session, Map<String, ?> variables) {
+    private Object run(Session session, Map<String, ?> variables, Map<String, ?> facts) {
         Copy copy = mvelSession(session).compiled(this);
         copy.configuration().startRun();
+        GuardedVariables guarded = new GuardedVariables(variables, facts, imports.declaredFacts());
+        Object result;
         try {
-            return MVEL.executeExpression(copy.expression(), (Object) null, variables);
+            result = MVEL.executeExpression(copy.expression(), (Object) null, guarded);
         } catch (VirtualMachineError e) {
             // Fatal: as it is, with nothing allocated for it.
             throw e;
         } catch (Throwable e) {
             Imports.RunLoop loop = copy.configuration().runLoop();
-            if (loop == null || loop == e) {
+            if (loop == null) {
+                // The refusal itself, if the run had one, in place of what MVEL wrapped it in.
+                guarded.finished();
+                throw e;
+            }
+            if (loop == e) {
                 throw e;
             }
             // A wrapper of the loop itself would make a chain that loops back to it.
@@ -428,6 +451,8 @@ final class MvelExpression implements CompiledCondition, CompiledAction {
             }
             throw loop;
         }
+        guarded.finished();
+        return result;
     }
 
     /**

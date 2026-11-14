@@ -43,8 +43,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * past its timeout with an action registered with onCancel, which the engine's timer thread starts on a pooled
  * platform thread. And it declares two facts with their type arguments, one of them a class of its own, with
  * {@code FactType}, whose constructor reads the generic superclass of the anonymous class it's written as, which the
- * image has no metadata for, and checks what a language is told. It prints one line and exits with 1 if a result is
- * wrong.
+ * image has no metadata for, and checks what a language is told. And it runs rules that read a property from a value,
+ * with and without a fact named like the property, which the engine tells apart by the frames of MVEL's calls. It
+ * prints one line and exits with 1 if a result is wrong.
  */
 public final class Main {
 
@@ -64,6 +65,26 @@ public final class Main {
      * the way MVEL does; this application is what holds both platforms to the one answer.
      */
     private static final String FACT_NAME = "rejected,prime";
+
+    /** The part of the message a rule fails with when a fact stands where the rule reads a property of a value. */
+    private static final String PROPERTY_READ = "can't be read in place of a property";
+
+    /**
+     * What MVEL's rules do where they read a property from a value, on the JVM and in a native image alike: a fact
+     * can't stand in for a property read from a value, so a run that supplies one named like the property fails the
+     * rule, after a value in parentheses and inside a with block, and a projection's collection and a with block's
+     * own target, which aren't such places, are read as facts.
+     */
+    private static final String PROPERTY_READS = "refused,refused,read,read";
+
+    /** The rate a property-read check's rule gives when it runs, and what the check then answers. */
+    private static final String READ = "read";
+
+    /** A condition that always holds. */
+    private static final String ALWAYS = "true";
+
+    /** What a property-read check answers with when a run did something else, before what it did. */
+    private static final String NOT_EXPECTED = "unexpected: ";
 
     /** The name of the language whose action spins until its run passes its deadline, and of its rule. */
     private static final String SPIN = "spin";
@@ -227,12 +248,13 @@ public final class Main {
         String hidden = hiddenOutcome();
         String deadline = deadlineOutcome();
         String typedFacts = typedFactsOutcome();
+        String propertyReads = propertyReadsOutcome();
         boolean ok = "prime".equals(bean) && "standard,raised".equals(map) && FACT_NAME.equals(factName)
                 && "prime,gold,standard".equals(hidden) && "timeout,platform".equals(deadline)
-                && TYPED_FACTS.equals(typedFacts);
+                && TYPED_FACTS.equals(typedFacts) && PROPERTY_READS.equals(propertyReads);
         System.out.println("native smoke " + (ok ? "OK" : "FAILED") + ": bean=" + bean + " map=" + map
                 + " factName=" + factName + " hidden=" + hidden + " deadline=" + deadline
-                + " typedFacts=" + typedFacts
+                + " typedFacts=" + typedFacts + " propertyReads=" + propertyReads
                 + " dateResource=" + dateResource()
                 + " dateFactValue=" + dateFactValue() + " image=" + nativeImage()
                 + " jit=" + (jitDefault() ? "on" : "off"));
@@ -326,6 +348,47 @@ public final class Main {
                 return decision == null ? "no match" : decision.getRate();
             } catch (IllegalArgumentException e) {
                 return "unexpected: " + e.getMessage();
+            }
+        }
+    }
+
+    // Where MVEL's rules read a property from a value, which the engine tells from the frames of MVEL's own calls, by
+    // class, method and line, as a JVM and an image must both report them. The first two rules read a property after
+    // a value in parentheses and inside a with block, and each run supplies a fact named like the property, which no
+    // engine here declares: the rule must fail, saying so. The last two read facts where a rule may: a projection's
+    // collection and its filter, and a with block's own target in a statement of the block. Each refusal is logged at
+    // ERROR, so a green run prints those lines before its "native smoke OK:" line.
+    private static String propertyReadsOutcome() {
+        FactStore<Object> scored = applicant(760, 50_000);
+        scored.setValue("creditScore", 300);
+        FactStore<Object> rated = applicant(760, 50_000);
+        rated.setValue("baseRate", "other");
+        FactStore<Object> listed = applicant(760, 50_000);
+        listed.setValue("scores", List.of(700, 800));
+        listed.setValue("least", 750);
+        FactStore<Object> noted = applicant(760, 50_000);
+        noted.setValue("notes", new HashMap<String, Object>());
+        return propertyRead("(applicant).creditScore >= 750", "output.put('rate', 'read')", scored, "creditScore")
+                + "," + propertyRead(ALWAYS, "with (output) { put('rate', baseRate) }", rated, "baseRate")
+                + "," + propertyRead("($ in scores if $ > least).size() == 1", "output.put('rate', 'read')", listed,
+                        "scores")
+                + "," + propertyRead(ALWAYS, "with (notes) { put('rate', 'read') }; output.put('rate', "
+                        + "notes.get('rate'))", noted, "notes");
+    }
+
+    // Runs one rule on an engine that declares no fact: "read" if it gave the rate read, "refused" if it failed
+    // because the named fact can't be read in place of a property, or else what happened.
+    private static String propertyRead(String condition, String action, FactStore<Object> facts, String fact) {
+        try (RulesEngine<Map<String, Object>> engine = RulesEngineBuilder.<Map<String, Object>>firstMatch(HashMap::new)
+                .build()) {
+            engine.load(List.of(Rule.builder().ruleName("reads").condition(condition).action(action).build()));
+            try {
+                Map<String, Object> output = engine.run(facts);
+                return output != null && output.containsValue(READ) ? READ : NOT_EXPECTED + output;
+            } catch (RuleExecutionException e) {
+                String message = String.valueOf(e.getMessage());
+                return message.contains(PROPERTY_READ) && message.contains("'" + fact + "'")
+                        ? "refused" : NOT_EXPECTED + message;
             }
         }
     }
