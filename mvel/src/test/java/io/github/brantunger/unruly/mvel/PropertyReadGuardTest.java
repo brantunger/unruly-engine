@@ -498,9 +498,11 @@ class PropertyReadGuardTest {
         }
     }
 
+    // The nested call is Objects.toString, which has one method that takes one argument: of String.valueOf's two that
+    // take a null, MVEL calls the one the JDK lists last, and on JDK 25 that is the one for a char[], which throws.
     static Stream<String> laterRuns() {
         return Stream.of("p = order.peer; output.put('r', ?p.tier)", "output.put('r', (order).?peer.tier)",
-                "p = order.peer; output.put('r', String.valueOf(?p.tier))");
+                "p = order.peer; output.put('r', java.util.Objects.toString(?p.tier))");
     }
 
     @Test
