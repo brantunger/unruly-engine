@@ -31,6 +31,7 @@ final class Imports {
     private final ExactNameClassLoader classLoader;
     private final Set<String> notClasses;
     private final Map<String, Class<?>> inputs;
+    private final Set<String> declared;
     private final ClassNameRoots classNameRoots;
 
     /**
@@ -63,11 +64,31 @@ final class Imports {
      */
     Imports(Set<String> packages, Set<Class<?>> classes, ExactNameClassLoader classLoader, Set<String> notClasses,
             Map<String, Class<?>> inputs) {
+        this(packages, classes, classLoader, notClasses, inputs, Set.of());
+    }
+
+    /**
+     * Creates the imports from each part as it is, for an engine that declared facts.
+     *
+     * @param packages    Package names, imported with all their classes
+     * @param classes     Classes imported one by one
+     * @param classLoader The class loader that finds the classes in {@code packages}, which asks the application's
+     *                    class loader for them
+     * @param notClasses  Names found not to be a class in any of {@code packages}, shared by the configurations
+     *                    created with {@link #newConfiguration()}
+     * @param inputs      The type of each name an expression may refer to, for compiling with strong typing, or an
+     *                    empty map to compile as MVEL does by default. See {@link DeclaredTypes}.
+     * @param declared    The names of the facts the engine declared, which a with block's body and a projection's
+     *                    element may read. See {@link GuardedVariables}.
+     */
+    Imports(Set<String> packages, Set<Class<?>> classes, ExactNameClassLoader classLoader, Set<String> notClasses,
+            Map<String, Class<?>> inputs, Set<String> declared) {
         this.packages = packages;
         this.classes = classes;
         this.classLoader = classLoader;
         this.notClasses = notClasses;
         this.inputs = inputs;
+        this.declared = declared;
         this.classNameRoots = classLoader.classNameRoots();
     }
 
@@ -94,6 +115,11 @@ final class Imports {
     /** The type of each name an expression may refer to, or an empty map to compile as MVEL does by default. */
     Map<String, Class<?>> inputs() {
         return inputs;
+    }
+
+    /** The names of the facts the engine declared, or an empty set if it declared none. */
+    Set<String> declaredFacts() {
+        return declared;
     }
 
     /** The first part of the name of each class found while the rule list's expressions compiled, and the rest. */

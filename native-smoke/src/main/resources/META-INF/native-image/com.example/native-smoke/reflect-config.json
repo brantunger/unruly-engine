@@ -47,9 +47,17 @@
     ]
   },
   {
+    "name": "java.util.ArrayList",
+    "queryAllPublicMethods": true,
+    "methods": [
+      {"name": "size", "parameterTypes": []}
+    ]
+  },
+  {
     "name": "java.util.HashMap",
     "queryAllPublicMethods": true,
     "methods": [
+      {"name": "get", "parameterTypes": ["java.lang.Object"]},
       {"name": "put", "parameterTypes": ["java.lang.Object", "java.lang.Object"]}
     ]
   }

@@ -42,11 +42,10 @@ native-image --no-fallback -H:+ReportExceptionStackTraces -cp 'native-smoke/buil
 native-smoke/build/native/native-smoke
 ```
 
-The engine logs every fact name it rejects at ERROR, so those lines come before the status line a correct image
-ends with:
+A correct image logs rejected fact names and failed rules at ERROR, then ends with:
 
 ```text
-native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran dateResource=false dateFactValue=rejected image=true jit=off
+native smoke OK: bean=prime map=standard,raised factName=rejected,prime hidden=prime,gold,standard deadline=timeout,platform typedFacts=java.util.List<java.lang.String>,java.util.Map<java.lang.String, com.example.nativesmoke.Main$Applicant>,ran propertyReads=refused,refused,read,read dateResource=false dateFactValue=rejected image=true jit=off
 ```
 
 `bean` and `map` are the rules' results, `image=true` says the binary runs as a native image, and `jit=off`
@@ -60,6 +59,9 @@ them.
 
 `typedFacts=...,ran` says two facts declared with a `FactType` reached a language with their type arguments, the
 second naming an application class, and a run's list passed the engine's check.
+
+For `propertyReads`, see
+[Facts and properties in MVEL](languages/mvel-property-reads.md#-what-the-run-fails-with).
 
 `deadline=timeout,platform` says a run whose action spins until an action it registered with
 [`onCancel`](languages/custom.md#-stopping-a-run) stops it failed with its 200 ms timeout, and that the engine ran
